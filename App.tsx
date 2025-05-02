@@ -5,13 +5,15 @@
  * @format
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import type {PropsWithChildren} from 'react';
 import {
+  Button,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
+  TouchableOpacity,
   useColorScheme,
   View,
 } from 'react-native';
@@ -54,7 +56,42 @@ function Section({children, title}: SectionProps): React.JSX.Element {
   );
 }
 
+import { NativeModules } from 'react-native';
+import TdLib from 'react-native-tdlib';
 function App(): React.JSX.Element {
+
+const { MyMathModule } = NativeModules;
+
+async function initializeTdLib() {
+  console.log("hello man this is tdlib")
+  // Start TDLib
+await TdLib.startTdLib({
+    api_id: 19661737,
+    api_hash: '28b0dd4e86b027fd9a2905d6c343c6bb'
+  });
+
+  // Login with phone number
+  await TdLib.login({
+    countrycode: '+98',
+    phoneNumber: '9924508531'
+  });
+
+  // Verify phone number
+  await TdLib.verifyPhoneNumber('12345'); // Replace with the OTP you received
+
+  // Verify password (Optional)
+  await TdLib.verifyPassword('password');
+
+  // Get current profile
+  const profile = await TdLib.getProfile();
+  console.log(profile);
+}
+
+
+useEffect(() => {
+  console.log("alli")
+  MyMathModule.addNumbers(3, 5).then((result: any) => console.log('Result:', result));
+})
   const isDarkMode = useColorScheme() === 'dark';
 
   const backgroundStyle = {
@@ -103,6 +140,9 @@ function App(): React.JSX.Element {
             Read the docs to discover what to do next:
           </Section>
           <LearnMoreLinks />
+          <TouchableOpacity onPress={() => initializeTdLib()}>
+            <Text>the test</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>

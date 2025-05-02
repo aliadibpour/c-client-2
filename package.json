@@ -10,8 +10,10 @@
     "test": "jest"
   },
   "dependencies": {
+    "prebuilt-tdlib": "^0.1008047.0",
     "react": "19.0.0",
-    "react-native": "0.79.1"
+    "react-native": "0.79.1",
+    "react-native-tdlib": "^1.0.2"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
