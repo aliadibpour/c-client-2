@@ -10,6 +10,7 @@ buildscript {
     repositories {
         google()
         mavenCentral()
+        jcenter()  // Ensure jcenter is included, it may still be necessary
     }
     dependencies {
         classpath("com.android.tools.build:gradle")

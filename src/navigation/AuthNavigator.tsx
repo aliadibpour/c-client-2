@@ -1,11 +1,19 @@
-import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-const Stack = createNativeStackNavigator();
+import LoginScreen from '../screens/auth/Login';
+import VerifyScreen from '../screens/auth/Verify';
+import IntroScreen from '../screens/auth/Intro';
 
-export default function AuthNavigator() {
+const Stack = createNativeStackNavigator<any>();
+
+export default function App() {
   return (
-    <Stack.Navigator>
-      null
-    </Stack.Navigator>
+    <NavigationContainer>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="/Intro" component={IntroScreen} />
+        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="Verify" component={VerifyScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }

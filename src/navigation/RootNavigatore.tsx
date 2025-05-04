@@ -3,7 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
 
-const Stack = createNativeStackNavigator();
+const Stack = createNativeStackNavigator<any>();
 
 export default function RootNavigator() {
   const isLoggedIn = false;
