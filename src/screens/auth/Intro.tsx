@@ -18,19 +18,19 @@ const slides = [
     key: 'slide1',
     title: 'ستاره‌های جوان',
     text: 'مجموعه‌ای از بازیکنان خاص ایران و اروپا در دوران جوانی',
-    image: require('../../assets/qq.jpg'),
+    image: require('../../assets/images/qq.jpg'),
   },
   {
     key: 'slide2',
     title: 'لحظه‌های تاریخی',
     text: 'تصاویر تاریخی و بامزه از فوتبال دنیا',
-    image: require('../../assets/ww.jpg'),
+    image: require('../../assets/images/qq.jpg'),
   },
   {
     key: 'slide3',
     title: 'نتایج خاص',
     text: 'نتایج به‌یادماندنی و جذاب تاریخ فوتبال',
-    image: require('../../assets/ww.jpg'),
+    image: require('../../assets/images/qq.jpg'),
   },
 ];
 

@@ -47,6 +47,7 @@ export default function TabNavigator() {
 
   return (
     <Tab.Navigator
+      initialRouteName="Home"
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,

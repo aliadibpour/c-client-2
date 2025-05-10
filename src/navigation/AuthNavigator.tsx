@@ -6,14 +6,12 @@ import IntroScreen from '../screens/auth/Intro';
 
 const Stack = createNativeStackNavigator<any>();
 
-export default function App() {
+export default function AuthNavigator() {
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="/Intro" component={IntroScreen} />
+      <Stack.Navigator initialRouteName='Intro' screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="Intro" component={IntroScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Verify" component={VerifyScreen} />
       </Stack.Navigator>
-    </NavigationContainer>
   );
 }

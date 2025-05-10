@@ -1,10 +1,12 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StyleSheet, View } from 'react-native';
-import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { DefaultTheme, NavigationContainer, ThemeProvider } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Home from "./src/screens/tabs/Home";
+import IntroScreen from './src/screens/auth/Intro';
+import RootNavigator from './src/navigation/RootNavigatore';
 
 // SplashScreen.preventAutoHideAsync();
 
@@ -34,18 +36,29 @@ function App(): React.JSX.Element {
     },
   };
 
+
+  // const [isAuth, setIsAuth] = useState<boolean | null>(null);
+  // useEffect(() => {
+  //   const checkAuth = async () => {
+  //     const authStatus = await AsyncStorage.getItem("auth-status");
+  //     setIsAuth(JSON.parse(authStatus || '{"register": false}').register);
+  //   };
+
+  //   checkAuth();
+  // },[])
+
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={MyDarkTheme}>
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.container}>
             <View style={styles.contentWrapper}>
-              <Home />
+              <NavigationContainer>
+                <RootNavigator />
+              </NavigationContainer>
             </View>
           </View>
         </SafeAreaView>
       </ThemeProvider>
-    </GestureHandlerRootView>
   );
 }
 
