@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Home from "./src/screens/tabs/Home";
 import IntroScreen from './src/screens/auth/Intro';
 import RootNavigator from './src/navigation/RootNavigatore';
+import TdLib from 'react-native-tdlib';
 
 // SplashScreen.preventAutoHideAsync();
 
@@ -48,17 +49,17 @@ function App(): React.JSX.Element {
   // },[])
 
   return (
+    <NavigationContainer>
       <ThemeProvider value={MyDarkTheme}>
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.container}>
             <View style={styles.contentWrapper}>
-              <NavigationContainer>
-                <RootNavigator />
-              </NavigationContainer>
+              <RootNavigator />
             </View>
           </View>
         </SafeAreaView>
       </ThemeProvider>
+    </NavigationContainer>
   );
 }
 

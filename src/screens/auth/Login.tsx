@@ -5,36 +5,59 @@ import {
     TouchableOpacity,
     StyleSheet,
     Dimensions,
+    ToastAndroid,
+    BackHandler,
   } from 'react-native';
-  import LinearGradient from 'react-native-linear-gradient';
-//   import Icon from 'react-native-vector-icons/FontAwesome5';
-  import { useState } from 'react';
-  import AsyncStorage from '@react-native-async-storage/async-storage';
-  import { useNavigation } from '@react-navigation/native';
+import LinearGradient from 'react-native-linear-gradient';
+import { useEffect, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNavigation } from '@react-navigation/native';
+import { TelegramService } from '../../services/TelegramService';
+import TdLib from 'react-native-tdlib';
+    
+export default function LoginScreen({navigation}: any) {
+  const [phone, setPhone] = useState('');
+  const backPressCount = useRef(0);
+
+  const validatePhone = (value: string) => {
+    const cleaned = value.replace(/[^0-9]/g, '');
+    return cleaned.length === 11 && cleaned.startsWith('09');
+  };
   
-  const { width } = Dimensions.get('window');
+  const handleStart = async () => {
+    // if (!phone.trim()) return;
+    // if (!validatePhone(phone)) return;
   
-  export default function LoginScreen() {
-    const navigation = useNavigation();
-    const [phone, setPhone] = useState('');
-  
-    const validatePhone = (value: string) => {
-      const cleaned = value.replace(/[^0-9]/g, '');
-      return cleaned.length === 11 && cleaned.startsWith('09');
-    };
-  
-    const handleStart = async () => {
-      if (!phone.trim()) return;
-      if (!validatePhone(phone)) return;
-  
-      await AsyncStorage.setItem("auth-status", JSON.stringify({ register: false, route: "verify" }));
-      navigation.goBack()
-    };
+    await AsyncStorage.setItem("auth-status", JSON.stringify({ register: false, route: "verify" }));
+    await TelegramService.start()
+    await TelegramService.login("+98", "9127680356")
+    //navigation.navigate("Verify")
+  };
   
     // const handleGuest = () => {
     //   navigation.navigate('PickTeams');
     // };
-  
+  useEffect(() => {
+    const backAction = () => {
+      if (backPressCount.current === 0) {
+        backPressCount.current = 1;
+        setTimeout(() => {
+          backPressCount.current = 0;
+        }, 2000);
+        return true;
+      } else {
+        BackHandler.exitApp();
+        return true;
+      }
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      backAction
+    );
+
+    return () => backHandler.remove();
+  }, []);
     return (
       <View style={styles.container}>
         <Text style={styles.title}> خوش اومدی 👋</Text>
