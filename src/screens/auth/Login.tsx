@@ -1,165 +1,149 @@
-import {
-    View,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    StyleSheet,
-    Dimensions,
-    ToastAndroid,
-    BackHandler,
-  } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
-import { useEffect, useRef, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
-import { TelegramService } from '../../services/TelegramService';
-import TdLib from 'react-native-tdlib';
-    
-export default function LoginScreen({navigation}: any) {
-  const [phone, setPhone] = useState('');
-  const backPressCount = useRef(0);
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Button } from 'react-native';
+import CountryPicker from 'react-native-country-picker-modal';
 
-  const validatePhone = (value: string) => {
-    const cleaned = value.replace(/[^0-9]/g, '');
-    return cleaned.length === 11 && cleaned.startsWith('09');
+const LoginScreen = () => {
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const [countryCode, setCountryCode] = useState('IR');
+  const [callingCode, setCallingCode] = useState('98');
+
+  const handleKeyPress = (digit:any) => {
+    if (digit === 'back') {
+      setPhoneNumber((prev) => prev.slice(0, -1));
+    } else {
+      setPhoneNumber((prev) => prev + digit);
+    }
   };
-  
-  const handleStart = async () => {
-    // if (!phone.trim()) return;
-    // if (!validatePhone(phone)) return;
-  
-    await AsyncStorage.setItem("auth-status", JSON.stringify({ register: false, route: "verify" }));
-    await TelegramService.start()
-    await TelegramService.login("+98", "9127680356")
-    //navigation.navigate("Verify")
-  };
-  
-    // const handleGuest = () => {
-    //   navigation.navigate('PickTeams');
-    // };
-  useEffect(() => {
-    const backAction = () => {
-      if (backPressCount.current === 0) {
-        backPressCount.current = 1;
-        setTimeout(() => {
-          backPressCount.current = 0;
-        }, 2000);
-        return true;
-      } else {
-        BackHandler.exitApp();
-        return true;
-      }
-    };
 
-    const backHandler = BackHandler.addEventListener(
-      'hardwareBackPress',
-      backAction
-    );
+  const renderKey = (digit:any) => (
+    <TouchableOpacity
+      key={digit}
+      style={digit ? styles.keyButton : { opacity: 0, width: '30%' }}
+      onPress={() => handleKeyPress(digit)}
+    >
+      <Text style={styles.keyText}>{digit === 'back' ? '⌫' : digit}</Text>
+    </TouchableOpacity>
+  );
 
-    return () => backHandler.remove();
-  }, []);
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}> خوش اومدی 👋</Text>
-        <Text style={styles.subtitle}>
-          شمارتو وارد کن، کد ارسال میشه به تلگرامت
-        </Text>
-  
-        <TextInput
-          placeholder="شماره موبایل"
-          placeholderTextColor="#999"
-          keyboardType="number-pad"
-          style={styles.input}
-          value={phone}
-          onChangeText={setPhone}
-          maxLength={11}
-        />
-  
-        <TouchableOpacity onPress={handleStart} style={styles.shadowWrapper}>
-          <LinearGradient
-            colors={['#0088cc', '#1c9ce6']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.button}
-          >
-            {/* <Icon name="telegram-plane" size={18} color="#fff" style={{ marginRight: 10 }} /> */}
-            <Text style={styles.buttonText}>ورود با تلگرام</Text>
-          </LinearGradient>
-        </TouchableOpacity>
-  
-        <TouchableOpacity style={styles.guestButton}>
-          <Text style={styles.guestText}>ورود به عنوان مهمان</Text>
-        </TouchableOpacity>
+  const keyboard = [
+    ['1', '2', '3'],
+    ['4', '5', '6'],
+    ['7', '8', '9'],
+    ['', '0', 'back']
+  ];
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Your Phone</Text>
+      <Text style={styles.subtitle}>Please confirm your country code and enter your phone number.</Text>
+
+      <View style={styles.keyboard}>
+        {keyboard.map((row, rowIndex) => (
+          <View key={rowIndex} style={styles.keyRow}>
+            {row.map(renderKey)}
+          </View>
+        ))}
       </View>
-    );
-  }
+
+      <View style={styles.phoneBox}>
+        <TouchableOpacity style={styles.countryRow} onPress={() => setShowCountryPicker(true)}>
+          <CountryPicker
+            withFlag
+            withCallingCode
+            withEmoji
+            countryCode={(countryCode as any)}
+            withCallingCodeButton={true}
+            onSelect={(country) => {
+              setCountryCode(country.cca2);
+              setCallingCode(country.callingCode[0]);
+            }}
+            visible={false} // hide the picker here
+            theme={{
+              backgroundColor: '#111',
+              onBackgroundTextColor: 'white',
+              filterPlaceholderTextColor: '#888',
+            }}
+          />
+        </TouchableOpacity>
+        <Text style={styles.phoneText}>{phoneNumber}</Text>
+      </View>
+
+      <Button color="primary" title='sumbit'/>
+
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#000',
+    padding: 24,
+  },
+  title: {
+    fontSize: 22,
+    color: 'white',
+    textAlign: 'center',
+    marginTop: 16,
+    fontWeight: 'bold',
+  },
+  subtitle: {
+    textAlign: 'center',
+    color: 'gray',
+    marginVertical: 8,
+  },
+countryRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginRight: 8,
+},
+  countryText: {
+    color: 'white',
+    fontSize: 18,
+  },
+  codeText: {
+    color: 'white',
+    fontSize: 18,
+  },
+phoneBox: {
+  flexDirection: 'row-reverse',
+  alignItems: 'center',
+  borderBottomWidth: 1,
+  borderBottomColor: '#444',
+  paddingVertical: 13,
+  marginVertical: 35
+},
+phoneText: {
+  marginHorizontal:14,
+  color: 'white',
+  fontSize: 17,
+  letterSpacing: 2,
+},
+  keyboard: {
+    position: 'absolute',
+    bottom: 5,
+    left: 0,
+    right: 0,
+  },
+  keyRow: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-evenly',
+    marginVertical: 8,
+  },
+  keyButton: {
+    width: '30%',
+    paddingVertical: 12,
+    borderRadius: 7,
+    backgroundColor: '#222',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  keyText: {
+    color: 'white',
+    fontSize: 22,
+  },
   
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: '#0d0d0d',
-      justifyContent: 'center',
-      paddingHorizontal: 24,
-    },
-    title: {
-      fontSize: 28,
-      color: '#fff',
-      fontFamily: 'vazir',
-      marginBottom: 10,
-      textAlign: 'center',
-    },
-    subtitle: {
-      fontSize: 16,
-      color: '#aaa',
-      textAlign: 'center',
-      marginBottom: 30,
-      fontFamily: 'vazir',
-    },
-    input: {
-      width: '100%',
-      paddingVertical: 12,
-      paddingHorizontal: 16,
-      borderRadius: 10,
-      backgroundColor: '#1a1a1a',
-      borderWidth: 1,
-      borderColor: '#333',
-      color: '#fff',
-      fontSize: 16,
-      fontFamily: 'vazir',
-      marginBottom: 10,
-    },
-    shadowWrapper: {
-      width: '100%',
-      borderRadius: 10,
-      shadowColor: '#0088cc',
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.3,
-      shadowRadius: 10,
-      elevation: 5,
-      marginBottom: 20,
-    },
-    button: {
-      flexDirection: 'row',
-      paddingVertical: 14,
-      paddingHorizontal: 20,
-      borderRadius: 10,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    buttonText: {
-      color: '#fff',
-      fontSize: 17,
-      fontFamily: 'vazir',
-    },
-    guestButton: {
-      paddingVertical: 10,
-      alignItems: 'center',
-    },
-    guestText: {
-      color: '#888',
-      fontSize: 16,
-      fontFamily: 'vazir',
-      textDecorationLine: 'underline',
-    },
-  });
-  
+});
+
+export default LoginScreen;
