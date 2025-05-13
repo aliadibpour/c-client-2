@@ -1,31 +1,11 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { DefaultTheme, NavigationContainer, ThemeProvider } from '@react-navigation/native';
-import { useEffect, useState } from 'react';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import Home from "./src/screens/tabs/Home";
-import IntroScreen from './src/screens/auth/Intro';
+import React, { useCallback, useEffect, useState } from 'react';
 import RootNavigator from './src/navigation/RootNavigatore';
-import TdLib from 'react-native-tdlib';
-
-// SplashScreen.preventAutoHideAsync();
+import TdLib, { TdLibParameters } from 'react-native-tdlib';
 
 function App(): React.JSX.Element {
-//   const [loaded, error] = useFonts({
-//     'vazir': require('./../assets/fonts/vazir-font-v16.1.0/Vazir.ttf'),
-//   });
-
-//   useEffect(() => {
-//     AsyncStorage.clear()
-//     if (loaded || error) {
-//       SplashScreen.hideAsync();
-//     }
-//   }, [loaded, error]);
-
-  // if (!loaded) {
-  //   return null;
-  // }
 
   const MyDarkTheme = {
     ...DefaultTheme,
@@ -37,17 +17,43 @@ function App(): React.JSX.Element {
     },
   };
 
+    const parameters = {
+      api_id: 19661737,
+      api_hash: "28b0dd4e86b027fd9a2905d6c343c6bb"
+  } as TdLibParameters;
 
-  // const [isAuth, setIsAuth] = useState<boolean | null>(null);
-  // useEffect(() => {
-  //   const checkAuth = async () => {
-  //     const authStatus = await AsyncStorage.getItem("auth-status");
-  //     setIsAuth(JSON.parse(authStatus || '{"register": false}').register);
-  //   };
 
-  //   checkAuth();
-  // },[])
+useEffect(() => {
+  TdLib.startTdLib(parameters)
+    .then(r => {
+      console.log('✅ StartTdLib:', r);
+      return TdLib.getAuthorizationState();
+    })
+    .then(r => {
+      console.log('✅ InitialAuthState:', r);
+      const state = JSON.parse(r);
+      if (state['@type'] === 'authorizationStateReady') {
+        getProfile();
+      }
+    })
+    .catch(err => {
+      console.error('❌ TDLib Init or AuthState Error:', err);
+    });
+}, []);
 
+
+
+  const [profile, setProfile] = React.useState<any>(null);
+  const getProfile = useCallback(() => {
+    TdLib.getProfile().then(result => {
+      console.log('User Profile:', result);
+      const profile = Platform.select({
+        ios: result,
+        android: JSON.parse(result),
+      });
+      setProfile(profile);
+    });
+  }, []);
   return (
     <NavigationContainer>
       <ThemeProvider value={MyDarkTheme}>

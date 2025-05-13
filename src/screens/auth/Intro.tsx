@@ -10,21 +10,22 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import StepProgressBar from '../../components/auth/StepProgressBar';
 
 const { width } = Dimensions.get('window');
 
 const slides = [
   {
     key: 'slide1',
-    title: 'ستاره‌های جوان',
-    text: 'مجموعه‌ای از بازیکنان خاص ایران و اروپا در دوران جوانی',
+    title: "اتمسفر هواداران فوتبال",
+    text: "اکوسیستم هواداریه تیم های پر طرفدار ایران و اروپا همراه با پوشش نتایج , اخبار و حاشیه ها",
     image: require('../../assets/images/qq.jpg'),
   },
   {
     key: 'slide2',
-    title: 'لحظه‌های تاریخی',
-    text: 'تصاویر تاریخی و بامزه از فوتبال دنیا',
-    image: require('../../assets/images/qq.jpg'),
+    title: 'ضد سانسور/زنده',
+    text: "محتوای برنامه بدون فیلتر توسط جامعه ی حاضر بصورت زنده و در لحظه ایجاد میشود",
+    image: require('../../assets/images/ww.jpg'),
   },
   {
     key: 'slide3',
@@ -73,11 +74,16 @@ export default function IntroScreen({ navigation }:any) {
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.slide}>
+        <StepProgressBar currentStep={1} totalSteps={6} />
         <View style={styles.imageContainer}>
+          <LinearGradient
+            colors={['black', 'rgba(0,0,0,0.01)', 'transparent']}
+            style={styles.gradientOverlayTop}
+          />
           <Image source={slide.image} style={styles.image} resizeMode="cover" />
           <LinearGradient
             colors={['transparent', 'rgba(0,0,0,0.77)', 'black']}
-            style={styles.gradientOverlay}
+            style={styles.gradientOverlayBottom}
           />
         </View>
 
@@ -85,15 +91,6 @@ export default function IntroScreen({ navigation }:any) {
           <Text style={styles.title}>{slide.title}</Text>
           <Text style={styles.text}>{slide.text}</Text>
         </View>
-      </View>
-
-      <View style={styles.dotsContainer}>
-        {slides.map((_, index) => (
-          <View
-            key={index}
-            style={[styles.dot, currentIndex === index && styles.activeDot]}
-          />
-        ))}
       </View>
 
       <View style={styles.buttonContainer}>
@@ -127,16 +124,22 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
-    position: 'absolute',
   },
-  gradientOverlay: {
+  gradientOverlayBottom: {
     position: 'absolute',
     bottom: 0,
     width: '100%',
-    height: 115,
+    height: 145,
+  },
+  gradientOverlayTop: {
+    position: 'absolute',
+    top: 0,
+    width: '100%',
+    height:100,
+    zIndex:2,
   },
   titleContainer: {
-    marginTop: -40,
+    marginTop: -50,
     backgroundColor: 'transparent',
     padding: 10,
     alignItems: 'center',
@@ -156,41 +159,28 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: 'rgba(250, 250, 250, 0.8)',
     fontFamily: 'vazir',
-    marginTop: 25,
+    marginTop: 15,
     textShadowColor: 'rgba(0, 0, 0, 0.6)',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 2,
   },
   button: {
     backgroundColor: 'white',
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    borderRadius: 5,
-    width: '95%',
+    paddingVertical: 10,
+    borderRadius: 10,
+    width: '85%',
     alignSelf: 'center',
+    marginBottom: 15
   },
   buttonText: {
     color: 'black',
-    fontSize: 18,
+    fontSize: 19,
+    fontWeight: "bold",
     textAlign: 'center',
     fontFamily: 'vazir',
   },
   buttonContainer: {
     width: '100%',
     marginVertical: 7,
-  },
-  dotsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: 5,
-    backgroundColor: '#ccc',
-    margin: 4,
-  },
-  activeDot: {
-    backgroundColor: 'white',
   },
 });

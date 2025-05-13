@@ -15,8 +15,9 @@ import {
   useClearByFocusCell,
 } from 'react-native-confirmation-code-field';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Keyboard } from '../../components/auth/Keyboard';
 
 I18nManager.forceRTL(true);
 
@@ -34,11 +35,7 @@ export default function VerifyScreen() {
   const ref = useBlurOnFulfill({ value, cellCount: CELL_COUNT });
   const [props, getCellOnLayoutHandler] = useClearByFocusCell({ value, setValue });
 
-
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const route = useRoute();
-  const { phone } = route.params as { phone: string };
-
   const { width } = useWindowDimensions();
 
   useEffect(() => {
@@ -48,9 +45,6 @@ export default function VerifyScreen() {
   }, [value]);
 
   const verifyCode = async () => {
-    console.log('phone:', phone);
-    console.log('code:', value);
-
     setLoading(true);
     try {
       await AsyncStorage.setItem("auth-status", JSON.stringify({ register: false, route: "pick-teams" }));
@@ -66,6 +60,7 @@ export default function VerifyScreen() {
   return (
     <View style={[styles.container, { paddingHorizontal: width * 0.08 }]}>
       <Text style={styles.title}>کد تأیید رو وارد کن</Text>
+      <Text style={styles.description}>کد به تلگرام شما در دستگاه دیگه ارسال شده</Text>
 
       <CodeField
         ref={ref}
@@ -76,10 +71,15 @@ export default function VerifyScreen() {
         rootStyle={styles.codeFieldRoot}
         keyboardType="number-pad"
         textContentType="oneTimeCode"
+        editable={false} // 👈 این خط کیبورد اصلی را غیرفعال می‌کند
         renderCell={({ index, symbol, isFocused }) => (
           <View
             key={index}
-            style={[styles.cell, isFocused && styles.focusCell]}
+            style={[
+              styles.cell,
+              isFocused && styles.focusCell,
+              symbol && styles.filledCell,
+            ]}
             onLayout={getCellOnLayoutHandler(index)}
           >
             <Text style={styles.cellText}>
@@ -89,41 +89,59 @@ export default function VerifyScreen() {
         )}
       />
 
+
+      <Keyboard setState={setValue}/>
+
+      {loading && <ActivityIndicator size="large" color="#fff" />}
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
-    justifyContent: 'center',
-    paddingTop: 60,
+    marginTop: 100
   },
   title: {
     fontSize: 22,
-    textAlign: 'right',
-    fontWeight: '600',
-    marginBottom: 32,
+    fontWeight: 'bold',
     color: '#fff',
+    textAlign: 'center',
+    marginBottom: 8,
+    fontFamily: 'vazir',
+  },
+  description: {
+    fontSize: 16,
+    color: '#aaa',
+    textAlign: 'center',
+    marginBottom: 32,
     fontFamily: 'vazir',
   },
   codeFieldRoot: {
-    marginBottom: 30,
-    justifyContent: 'space-between',
+    justifyContent: "center",
     flexDirection: 'row',
+    gap: 12,
+    marginHorizontal: 10,
+    direction: "ltr"
   },
   cell: {
-    width: 44,
-    height: 50,
-    borderBottomWidth: 2,
-    borderColor: '#555',
+    width: 40,
+    height: 40,
+    borderRadius: 5,
+    borderWidth: 1.4,
+    borderColor: '#444',
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#111',
+  },
+  filledCell: {
+    borderColor: '#fff',
   },
   cellText: {
     color: '#fff',
-    fontSize: 22,
+    fontSize: 24,
     fontFamily: 'vazir',
   },
   focusCell: {
