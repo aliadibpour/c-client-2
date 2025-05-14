@@ -17,6 +17,7 @@
     "@react-navigation/native-stack": "^7.3.11",
     "axios": "^1.9.0",
     "libphonenumber-js": "^1.12.8",
+    "phosphor-react-native": "^2.3.1",
     "prebuilt-tdlib": "^0.1008047.0",
     "react": "19.0.0",
     "react-native": "^0.79.2",

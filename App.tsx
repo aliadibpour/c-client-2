@@ -4,6 +4,7 @@ import { DefaultTheme, NavigationContainer, ThemeProvider } from '@react-navigat
 import React, { useCallback, useEffect, useState } from 'react';
 import RootNavigator from './src/navigation/RootNavigatore';
 import TdLib, { TdLibParameters } from 'react-native-tdlib';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 function App(): React.JSX.Element {
 
@@ -22,24 +23,31 @@ function App(): React.JSX.Element {
       api_hash: "28b0dd4e86b027fd9a2905d6c343c6bb"
   } as TdLibParameters;
 
+  useEffect(() => {
+    const setAuthJwt = async() => {
+      const authStatus = await AsyncStorage.getItem("auth-status");
+      if (!authStatus) await AsyncStorage.setItem("auth-status", JSON.stringify({register: false, route: "Intro"}))// to default open intro screen
+    }
+    setAuthJwt()
+  },[])
 
-useEffect(() => {
-  TdLib.startTdLib(parameters)
-    .then(r => {
-      console.log('✅ StartTdLib:', r);
-      return TdLib.getAuthorizationState();
-    })
-    .then(r => {
-      console.log('✅ InitialAuthState:', r);
-      const state = JSON.parse(r);
-      if (state['@type'] === 'authorizationStateReady') {
-        getProfile();
-      }
-    })
-    .catch(err => {
-      console.error('❌ TDLib Init or AuthState Error:', err);
-    });
-}, []);
+  useEffect(() => {
+    TdLib.startTdLib(parameters)
+      .then(r => {
+        console.log('✅ StartTdLib:', r);
+        return TdLib.getAuthorizationState();
+      })
+      .then(r => {
+        console.log('✅ InitialAuthState:', r);
+        const state = JSON.parse(r);
+        if (state['@type'] === 'authorizationStateReady') {
+          getProfile();
+        }
+      })
+      .catch(err => {
+        console.error('❌ TDLib Init or AuthState Error:', err);
+      });
+  }, []);
 
 
 

@@ -23,7 +23,7 @@ const slides = [
   },
   {
     key: 'slide2',
-    title: 'ضد سانسور/زنده',
+    title: 'ضد سانسور / زنده',
     text: "محتوای برنامه بدون فیلتر توسط جامعه ی حاضر بصورت زنده و در لحظه ایجاد میشود",
     image: require('../../assets/images/ww.jpg'),
   },
@@ -74,7 +74,7 @@ export default function IntroScreen({ navigation }:any) {
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.slide}>
-        <StepProgressBar currentStep={1} totalSteps={6} />
+        <StepProgressBar currentStep={currentIndex} totalSteps={6} />
         <View style={styles.imageContainer}>
           <LinearGradient
             colors={['black', 'rgba(0,0,0,0.01)', 'transparent']}

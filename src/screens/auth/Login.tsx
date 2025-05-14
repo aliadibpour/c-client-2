@@ -12,8 +12,10 @@ const LoginScreen = ({navigation} :any) => {
   const [callingCode, setCallingCode] = useState('98');
 
   const submitHandle = async () => {
+    //await TelegramService.logout()
     const a = await TelegramService.getAuthState()
     console.log(a);
+    await TelegramService.login("+98", "9924508531")
     const fullNumber = `+${callingCode}${phoneNumber}`;
     const parsed = parsePhoneNumberFromString(fullNumber);
 
@@ -23,7 +25,7 @@ const LoginScreen = ({navigation} :any) => {
       console.log('Invalid phone number for selected country.');
     }
 
-    navigation.navigate("Verify")
+    //navigation.navigate("Verify")
   }
 
   return (
@@ -31,21 +33,18 @@ const LoginScreen = ({navigation} :any) => {
       <Text style={styles.title}>Your Phone</Text>
       <Text style={styles.subtitle}>Please confirm your country code and enter your phone number.</Text>
 
-      <Keyboard setState={setPhoneNumber}/>
-
       <View style={styles.phoneBox}>
         <TouchableOpacity style={styles.countryRow} onPress={() => setShowCountryPicker(true)}>
           <CountryPicker
             withFlag
-            withCallingCode
             withEmoji
             countryCode={(countryCode as any)}
             withCallingCodeButton={true}
             onSelect={(country) => {
-              setCountryCode(country.cca2);
               setCallingCode(country.callingCode[0]);
+              setCountryCode(country.cca2);
             }}
-            visible={false} // hide the picker here
+            visible={false}
             theme={{
               backgroundColor: '#111',
               onBackgroundTextColor: 'white',
@@ -55,11 +54,12 @@ const LoginScreen = ({navigation} :any) => {
         </TouchableOpacity>
         <Text style={styles.phoneText}>{phoneNumber}</Text>
       </View>
-
       <TouchableOpacity style={styles.Button} onPress={() => submitHandle()}>
-        <Text style={{color: "white"}}>Submit</Text>
+        <Text style={{color: "#000"}}>==</Text>
       </TouchableOpacity>
 
+
+      <Keyboard setState={setPhoneNumber}/>
     </View>
   );
 };
@@ -69,6 +69,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
     padding: 24,
+    justifyContent: "center",
   },
   title: {
     fontSize: 22,
@@ -110,11 +111,15 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
   Button: {
-    backgroundColor: "#235",
+    justifyContent: "center",
+    width: 60,
+    height: 60,
+    backgroundColor: "#fff",
     color: "white",
     alignItems: "center",
-    borderRadius: 5,
-    padding:10
+    borderRadius: "100%",
+    padding:8,
+    marginBottom:100
   }
 });
 

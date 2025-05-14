@@ -18,6 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Keyboard } from '../../components/auth/Keyboard';
+import { TelegramService } from '../../services/TelegramService';
 
 I18nManager.forceRTL(true);
 
@@ -46,9 +47,12 @@ export default function VerifyScreen() {
 
   const verifyCode = async () => {
     setLoading(true);
+    await TelegramService.verifyCode(value)
+    const a = await TelegramService.getAuthState()
+    console.log(a);
     try {
       await AsyncStorage.setItem("auth-status", JSON.stringify({ register: false, route: "pick-teams" }));
-      navigation.replace('PickTeams');
+      //navigation.replace('PickTeams');
     } catch (err: any) {
       Alert.alert('خطا', err.message);
       setValue('');
@@ -71,7 +75,7 @@ export default function VerifyScreen() {
         rootStyle={styles.codeFieldRoot}
         keyboardType="number-pad"
         textContentType="oneTimeCode"
-        editable={false} // 👈 این خط کیبورد اصلی را غیرفعال می‌کند
+        editable={false}
         renderCell={({ index, symbol, isFocused }) => (
           <View
             key={index}
