@@ -5,7 +5,6 @@ import VerifyScreen from '../screens/auth/Verify';
 import IntroScreen from '../screens/auth/Intro';
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ActivityIndicator, View } from 'react-native';
 
 const Stack = createNativeStackNavigator<any>();
 
@@ -24,10 +23,10 @@ export default function AuthNavigator() {
 
   
   if (!initialRouteName) {
-    return null; // یا یه loading spinner
+    return null;
   }
   return (
-    <Stack.Navigator initialRouteName={initialRouteName} screenOptions={{ headerShown: false }}>
+    <Stack.Navigator initialRouteName={"Intro"} screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Intro" component={IntroScreen} />
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Verify" component={VerifyScreen} />

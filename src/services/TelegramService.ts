@@ -43,7 +43,9 @@ export class TelegramService {
    */
   static async verifyCode(code: string) {
     try {
-      await TdLib.verifyPhoneNumber(code);
+      const q = await TdLib.verifyPhoneNumber(code);
+      console.log("q", q);
+      
     } catch (e) {
       console.error("Code verification failed:", e);
       throw e;
@@ -92,5 +94,16 @@ export class TelegramService {
       console.error("Failed to get authorization state:", e);
       return null;
     }
+  }
+
+  static async getUpdate() {
+    const request = {
+      '@type': 'updateAuthorizationState',
+      only_locales: true,
+    };
+    const a = await TdLib.td_json_client_send(request)
+    console.log('====================================');
+    console.log(a);
+    console.log('====================================');
   }
 }

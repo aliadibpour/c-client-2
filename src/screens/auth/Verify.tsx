@@ -24,19 +24,15 @@ I18nManager.forceRTL(true);
 
 const CELL_COUNT = 5;
 
-type RootStackParamList = {
-  Verify: { phone: string };
-  PickTeams: undefined;
-};
-
-export default function VerifyScreen() {
+export default function VerifyScreen({navigation}: any) {
   const [value, setValue] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isValid, setIsValid] = useState<null | boolean>(null);
+
 
   const ref = useBlurOnFulfill({ value, cellCount: CELL_COUNT });
   const [props, getCellOnLayoutHandler] = useClearByFocusCell({ value, setValue });
 
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { width } = useWindowDimensions();
 
   useEffect(() => {
@@ -47,19 +43,27 @@ export default function VerifyScreen() {
 
   const verifyCode = async () => {
     setLoading(true);
-    await TelegramService.verifyCode(value)
-    const a = await TelegramService.getAuthState()
-    console.log(a);
     try {
+      await TelegramService.verifyCode(value); // اگر موفق بود ادامه می‌دهد
+
+      setIsValid(true);
+
       await AsyncStorage.setItem("auth-status", JSON.stringify({ register: false, route: "pick-teams" }));
-      //navigation.replace('PickTeams');
+      navigation.navigate("Tabs", { screen: "PickTeams" });
+
     } catch (err: any) {
-      Alert.alert('خطا', err.message);
-      setValue('');
+      setIsValid(false); // یعنی اشتباهه
+      setTimeout(() => {
+        setValue('');
+        setIsValid(null);
+      }, 1500);
+
+      Alert.alert('خطا', 'کد وارد شده اشتباه است');
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <View style={[styles.container, { paddingHorizontal: width * 0.08 }]}>
@@ -78,18 +82,21 @@ export default function VerifyScreen() {
         editable={false}
         renderCell={({ index, symbol, isFocused }) => (
           <View
-            key={index}
-            style={[
-              styles.cell,
-              isFocused && styles.focusCell,
-              symbol && styles.filledCell,
-            ]}
-            onLayout={getCellOnLayoutHandler(index)}
-          >
-            <Text style={styles.cellText}>
-              {symbol || (isFocused ? <Cursor /> : null)}
-            </Text>
-          </View>
+          key={index}
+          style={[
+            styles.cell,
+            isFocused && styles.focusCell,
+            symbol && styles.filledCell,
+            isValid === false && styles.errorCell,
+            isValid === true && styles.successCell,
+          ]}
+          onLayout={getCellOnLayoutHandler(index)}
+        >
+          <Text style={styles.cellText}>
+            {symbol || (isFocused ? <Cursor /> : null)}
+          </Text>
+        </View>
+
         )}
       />
 
@@ -131,8 +138,8 @@ const styles = StyleSheet.create({
     direction: "ltr"
   },
   cell: {
-    width: 40,
-    height: 40,
+    width: 37,
+    height: 37,
     borderRadius: 5,
     borderWidth: 1.4,
     borderColor: '#444',
@@ -145,10 +152,17 @@ const styles = StyleSheet.create({
   },
   cellText: {
     color: '#fff',
-    fontSize: 24,
+    fontSize: 20,
     fontFamily: 'vazir',
   },
   focusCell: {
     borderColor: '#1E90FF',
   },
+  errorCell: {
+  borderColor: '#ff4d4f',
+  },
+  successCell: {
+    borderColor: '#4caf50',
+  },
+
 });

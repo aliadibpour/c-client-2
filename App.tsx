@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import RootNavigator from './src/navigation/RootNavigatore';
 import TdLib, { TdLibParameters } from 'react-native-tdlib';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { TelegramService } from './src/services/TelegramService';
 
 function App(): React.JSX.Element {
 
@@ -25,6 +26,7 @@ function App(): React.JSX.Element {
 
   useEffect(() => {
     const setAuthJwt = async() => {
+      //await AsyncStorage.clear()
       const authStatus = await AsyncStorage.getItem("auth-status");
       if (!authStatus) await AsyncStorage.setItem("auth-status", JSON.stringify({register: false, route: "Intro"}))// to default open intro screen
     }
@@ -37,16 +39,20 @@ function App(): React.JSX.Element {
         console.log('✅ StartTdLib:', r);
         return TdLib.getAuthorizationState();
       })
-      .then(r => {
+      .then(async(r) => {
         console.log('✅ InitialAuthState:', r);
         const state = JSON.parse(r);
         if (state['@type'] === 'authorizationStateReady') {
           getProfile();
+          // getLast10Messages(-1001457166593)
+          // listenForMessages();
         }
       })
       .catch(err => {
         console.error('❌ TDLib Init or AuthState Error:', err);
       });
+    TelegramService.getUpdate()
+
   }, []);
 
 
@@ -62,6 +68,109 @@ function App(): React.JSX.Element {
       setProfile(profile);
     });
   }, []);
+
+
+
+
+
+//   const getLast10Messages = async (chatId: number) => {
+//   // Step 1: ارسال درخواست برای گرفتن تاریخچه‌ی پیام‌ها
+//     try {
+//       const a = await TdLib.td_json_client_send({
+//       '@type': 'getChatHistory',
+//       chat_id: chatId,
+//       from_message_id: 0, 
+//       limit: 10,
+//       only_local: false
+//     });
+//     console.log('Last 10 messages:', a);
+//     } catch (error) {
+//       console.log(error)
+//     }
+//   };
+
+//   const listenForMessages = () => {
+//   const interval = setInterval(async () => {
+//     const raw = await TdLib.td_json_client_receive();
+//     if (!raw) return;
+
+//     const update = typeof raw === 'string' ? JSON.parse(raw) : raw;
+//     console.log("📥 TDLib Update:", update);
+
+//     if (update['@type'] === 'messages') {
+//       console.log('✅ Last 10 messages:', update.messages);
+//       clearInterval(interval); // فقط یک بار می‌خوای
+//     }
+//   }, 500);
+// };
+
+
+
+const fetchSupportedLanguages = async () => {
+  try {
+    const request1 = {
+      '@type': 'setOption',
+      name: 'localization_target',
+      value: {
+        '@type': 'optionValueString',
+        value: 'android',
+      },
+    };
+
+    TdLib.td_json_client_send(request1);
+
+    const waitForOk = async (): Promise<boolean> => {
+      const start = Date.now();
+      while (Date.now() - start < 3000) {
+        const res = await TdLib.td_json_client_receive();
+        if (!res) continue;
+        const json = JSON.parse(res);
+        if (json['@type'] === 'ok') return true;
+        if (json['@type'] === 'error') {
+          console.error("❌ Error from TDLib:", json);
+          return false;
+        }
+      }
+      return false;
+    };
+
+    const ok = await waitForOk();
+    if (!ok) throw new Error("❌ setOption did not succeed");
+
+    const request2 = {
+      '@type': 'getLocalizationTargetInfo',
+      only_locales: true,
+    };
+    TdLib.td_json_client_send(request2);
+
+    const start = Date.now();
+    while (Date.now() - start < 5000) {
+      const res = await TdLib.td_json_client_receive();
+      if (!res) continue;
+      const json = JSON.parse(res);
+      if (json['@type'] === 'localizationTargetInfo') {
+        console.log("✅ Supported languages:", json);
+        return;
+      }
+      if (json['@type'] === 'error') {
+        throw new Error(`❌ TDLib error: ${json.message}`);
+      }
+    }
+    throw new Error("❌ Timeout: no response to getLocalizationTargetInfo");
+
+  } catch (err) {
+    console.error("❌ fetchSupportedLanguages error:", err);
+  }
+};
+
+
+  useEffect(() => {
+    fetchSupportedLanguages();
+  }, []);
+
+
+
+
   return (
     <NavigationContainer>
       <ThemeProvider value={MyDarkTheme}>

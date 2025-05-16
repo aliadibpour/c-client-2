@@ -16,6 +16,7 @@ import {
   CommentsIcon,
 } from "../assets/icons/index";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import PickTeams from "../screens/tabs/PickTeams";
 
 const Tab = createBottomTabNavigator();
 
@@ -34,17 +35,6 @@ export default function TabNavigator() {
 
   if (isAuth === null) return null;
 
-  if (!isAuth) {
-    // به جای Redirect از Navigation استفاده می‌کنیم
-    return (
-      <View style={styles.centered}>
-        <Text style={{ color: "white", fontFamily: "vazir" }}>
-          لطفاً ابتدا وارد شوید.
-        </Text>
-      </View>
-    );
-  }
-
   return (
     <Tab.Navigator
       initialRouteName="Home"
@@ -54,6 +44,10 @@ export default function TabNavigator() {
         tabBarStyle: styles.tabBar,
       }}
     >
+      <Tab.Screen
+        name="PickTeams"
+        component={PickTeams}
+      />
       <Tab.Screen
         name="Home"
         component={Home}

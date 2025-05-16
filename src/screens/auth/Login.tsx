@@ -11,22 +11,35 @@ const LoginScreen = ({navigation} :any) => {
   const [countryCode, setCountryCode] = useState('IR');
   const [callingCode, setCallingCode] = useState('98');
 
-  const submitHandle = async () => {
+  const sendPhoneNumber = async () => {
     //await TelegramService.logout()
-    const a = await TelegramService.getAuthState()
-    console.log(a);
-    await TelegramService.login("+98", "9924508531")
-    const fullNumber = `+${callingCode}${phoneNumber}`;
-    const parsed = parsePhoneNumberFromString(fullNumber);
+    try {
+      const fullNumber = `+${callingCode}${phoneNumber}`;
+      const parsed = parsePhoneNumberFromString(fullNumber);
 
-    if (parsed && parsed.isValid()) {
-      console.log('Valid phone number:', parsed.number);
-    } else {
-      console.log('Invalid phone number for selected country.');
+      if (!parsed || !parsed.isValid()) {
+        Alert.alert("شماره اشتباه است", "لطفا شماره معتبر وارد کنید.");
+        return;
+      }
+
+      const result = await TelegramService.login(parsed.countryCallingCode, parsed.nationalNumber);
+      console.log(result)
+      const interval = setInterval(async () => {
+        const authState = await TelegramService.getAuthState();
+        console.log("Auth State:", authState);
+        const state = JSON.parse(authState);
+        console.log("aaa", state);
+        
+        if (state["@type"] === "authorizationStateWaitCode") {
+          clearInterval(interval);
+          navigation.navigate("Verify");
+        }
+      }, 500);
+    } catch (error) {
+      console.error("Login error:", error);
+      Alert.alert("خطا", "مشکلی در ارسال شماره پیش آمده است.");
     }
-
-    //navigation.navigate("Verify")
-  }
+  };
 
   return (
     <View style={styles.container}>
@@ -46,18 +59,20 @@ const LoginScreen = ({navigation} :any) => {
             }}
             visible={false}
             theme={{
-              backgroundColor: '#111',
+              backgroundColor: '#000',
               onBackgroundTextColor: 'white',
               filterPlaceholderTextColor: '#888',
+              primaryColorVariant: "#222",
             }}
           />
         </TouchableOpacity>
-        <Text style={styles.phoneText}>{phoneNumber}</Text>
+        <Text style={[styles.phoneText, phoneNumber === "" && {color: "#666"}]}>
+          {phoneNumber === '' ? '0000 000 000' : phoneNumber}
+        </Text>
       </View>
-      <TouchableOpacity style={styles.Button} onPress={() => submitHandle()}>
+      <TouchableOpacity style={styles.Button} onPress={() => sendPhoneNumber()}>
         <Text style={{color: "#000"}}>==</Text>
       </TouchableOpacity>
-
 
       <Keyboard setState={setPhoneNumber}/>
     </View>
@@ -84,9 +99,9 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   countryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 8,
+    backgroundColor: "#222",
+    padding: 12,
+    paddingHorizontal: 10,
   },
   countryText: {
     color: 'white',
@@ -99,15 +114,16 @@ const styles = StyleSheet.create({
   phoneBox: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#444',
-    paddingVertical: 13,
-    marginVertical: 35
+    borderWidth: 1.3,
+    borderColor: '#444',
+    marginVertical: 35,
+    borderRadius:5,
+    overflow: "scroll"
   },
   phoneText: {
     marginHorizontal:14,
     color: 'white',
-    fontSize: 17,
+    fontSize: 18,
     letterSpacing: 2,
   },
   Button: {
