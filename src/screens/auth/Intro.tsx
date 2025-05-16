@@ -36,7 +36,7 @@ const slides = [
 ];
 
 export default function IntroScreen({ navigation }:any) {
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [isAnimating, setIsAnimating] = useState(false);
   const blackOverlay = useRef(new Animated.Value(0)).current;
 
@@ -74,7 +74,7 @@ export default function IntroScreen({ navigation }:any) {
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.slide}>
-        <StepProgressBar currentStep={currentIndex} totalSteps={6} />
+        <StepProgressBar currentStep={currentIndex+1} totalSteps={6} />
         <View style={styles.imageContainer}>
           <LinearGradient
             colors={['black', 'rgba(0,0,0,0.01)', 'transparent']}

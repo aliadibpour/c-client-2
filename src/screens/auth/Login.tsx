@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Button, Alert } from 'react-native';
 import CountryPicker from 'react-native-country-picker-modal';
 import { TelegramService } from '../../services/TelegramService';
 import parsePhoneNumberFromString from 'libphonenumber-js';
 import { Keyboard } from '../../components/auth/Keyboard';
+import TdLib from 'react-native-tdlib';
 
 const LoginScreen = ({navigation} :any) => {
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -11,8 +12,26 @@ const LoginScreen = ({navigation} :any) => {
   const [countryCode, setCountryCode] = useState('IR');
   const [callingCode, setCallingCode] = useState('98');
 
+
   const sendPhoneNumber = async () => {
     //await TelegramService.logout()
+
+
+    const phoneRequest = {
+      '@type': 'setAuthenticationPhoneNumber',
+      phone_number: "+989924508531",
+    };
+
+    try {
+      const response = TdLib.td_json_client_send(phoneRequest);
+      console.log('✅ RESPONSE:', response);
+    } catch (error) {
+      console.log('❌ ERROR:', error);
+    }
+
+const authState = await TelegramService.getAuthState();
+        console.log("Auth State:", authState);
+
     try {
       const fullNumber = `+${callingCode}${phoneNumber}`;
       const parsed = parsePhoneNumberFromString(fullNumber);
@@ -115,10 +134,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     alignItems: 'center',
     borderWidth: 1.3,
-    borderColor: '#444',
+    borderColor: '#222',
     marginVertical: 35,
     borderRadius:5,
-    overflow: "scroll"
+    overflow: "scroll",
   },
   phoneText: {
     marginHorizontal:14,
