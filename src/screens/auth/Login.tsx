@@ -1,100 +1,119 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Button, Alert } from 'react-native';
-import CountryPicker from 'react-native-country-picker-modal';
+import { View, Text, TouchableOpacity, StyleSheet, Button, Alert, Modal } from 'react-native';
 import { TelegramService } from '../../services/TelegramService';
 import parsePhoneNumberFromString from 'libphonenumber-js';
 import { Keyboard } from '../../components/auth/Keyboard';
+import { ActivityIndicator } from 'react-native';
+import ModalMessage from '../../components/auth/ModalMessage';
 import TdLib from 'react-native-tdlib';
 
 const LoginScreen = ({navigation} :any) => {
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [showCountryPicker, setShowCountryPicker] = useState(false);
-  const [countryCode, setCountryCode] = useState('IR');
-  const [callingCode, setCallingCode] = useState('98');
-
+  const [modalMessage, setModalMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const sendPhoneNumber = async () => {
-    //await TelegramService.logout()
+  //await TelegramService.logout()
+  navigation.navigate("Verify",
+    { phoneNumber:"99245086534" }
+  );
 
-
-    const phoneRequest = {
-      '@type': 'setAuthenticationPhoneNumber',
-      phone_number: "+989924508531",
-    };
-
-    try {
-      const response = TdLib.td_json_client_send(phoneRequest);
-      console.log('✅ RESPONSE:', response);
-    } catch (error) {
-      console.log('❌ ERROR:', error);
+  if (isSubmitting) return;
+  try {
+    const fullNumber = `+98${phoneNumber}`;
+    const parsed = parsePhoneNumberFromString(fullNumber);
+    if (!parsed || !parsed.isValid()) {
+      if (phoneNumber) setModalMessage("شماره‌ی وارد شده معتبر نمی‌باشد");
+      else setModalMessage("لطفا شماره تلفن را وارد کنید");
+      setModalVisible(true);
+      setIsSubmitting(false);
+      return;
     }
 
-const authState = await TelegramService.getAuthState();
-        console.log("Auth State:", authState);
+    setIsSubmitting(true);
+    setLoading(true); 
 
-    try {
-      const fullNumber = `+${callingCode}${phoneNumber}`;
-      const parsed = parsePhoneNumberFromString(fullNumber);
+    const timeout = setInterval(async () => {
+      setModalMessage("اتصال برقرار نشد.پس از وصل شدن اتصال و فیلترشکن کد ارسال خواهد شد");
+      setModalVisible(true);
+    }, 15000);
 
-      if (!parsed || !parsed.isValid()) {
-        Alert.alert("شماره اشتباه است", "لطفا شماره معتبر وارد کنید.");
-        return;
-      }
+    await TelegramService.login(parsed.countryCallingCode, parsed.nationalNumber);
 
-      const result = await TelegramService.login(parsed.countryCallingCode, parsed.nationalNumber);
-      console.log(result)
-      const interval = setInterval(async () => {
-        const authState = await TelegramService.getAuthState();
-        console.log("Auth State:", authState);
-        const state = JSON.parse(authState);
-        console.log("aaa", state);
+    const interval = setInterval(async () => {
+      try {
+        const authState: any = await TelegramService.getAuthState();
+        const authType = JSON.parse(authState.data)["@type"];
+        console.log("Auth State:", authType);
         
-        if (state["@type"] === "authorizationStateWaitCode") {
+        if (authType === "authorizationStateWaitCode") {
+          clearTimeout(timeout);
           clearInterval(interval);
-          navigation.navigate("Verify");
+          navigation.navigate("Verify",
+             { phoneNumber:fullNumber }
+          );
         }
-      }, 500);
-    } catch (error) {
-      console.error("Login error:", error);
-      Alert.alert("خطا", "مشکلی در ارسال شماره پیش آمده است.");
+      } catch (err) {
+        clearTimeout(timeout);
+        clearInterval(interval);
+        setModalMessage("خطایی در دریافت وضعیت احراز هویت به وجود آمد");
+        setModalVisible(true);
+      }
+    }, 500);
+
+    } catch (error: any) {
+      //await TelegramService.logout(); // اگر login خودش خطا داد
+      setModalMessage("خطایی در برقراری ارتباط به وجود آمد. لطفاً دوباره تلاش کنید.");
+      setModalVisible(true);
+      setIsSubmitting(false);
     }
   };
 
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Your Phone</Text>
-      <Text style={styles.subtitle}>Please confirm your country code and enter your phone number.</Text>
+      <Text style={styles.title}>خوش آمدی👋</Text>
+      <Text style={styles.subtitle}>
+         شماره ای را وارد کنید که حساب فعال تلگرام داشته باشد
+      </Text>
 
-      <View style={styles.phoneBox}>
-        <TouchableOpacity style={styles.countryRow} onPress={() => setShowCountryPicker(true)}>
-          <CountryPicker
-            withFlag
-            withEmoji
-            countryCode={(countryCode as any)}
-            withCallingCodeButton={true}
-            onSelect={(country) => {
-              setCallingCode(country.callingCode[0]);
-              setCountryCode(country.cca2);
-            }}
-            visible={false}
-            theme={{
-              backgroundColor: '#000',
-              onBackgroundTextColor: 'white',
-              filterPlaceholderTextColor: '#888',
-              primaryColorVariant: "#222",
-            }}
-          />
+      <View style={styles.inputWrapper}>
+        <View style={styles.phoneContainer}>
+          <View style={styles.phoneBox}>
+            <Text style={styles.phoneText}>{phoneNumber}</Text>
+          </View>
+          <Text style={styles.countryRow}>🇮🇷 +98</Text>
+        </View>
+
+
+        <TouchableOpacity
+          style={styles.Button}
+          onPress={sendPhoneNumber}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.ButtonText}>ورود با تلگرام</Text>
+          )}
         </TouchableOpacity>
-        <Text style={[styles.phoneText, phoneNumber === "" && {color: "#666"}]}>
-          {phoneNumber === '' ? '0000 000 000' : phoneNumber}
+
+        <Text style={styles.tipText}>
+          برای دریافت کد تایید تلگرام، حتما فیلترشکن (VPN) موبایل خود را روشن کنید!
         </Text>
       </View>
-      <TouchableOpacity style={styles.Button} onPress={() => sendPhoneNumber()}>
-        <Text style={{color: "#000"}}>==</Text>
-      </TouchableOpacity>
 
-      <Keyboard setState={setPhoneNumber}/>
+      <ModalMessage
+        visible={modalVisible}
+        errorMessage={modalMessage}
+        onClose={() => setModalVisible(false)}
+      />
+
+      <Keyboard setState={setPhoneNumber} />
     </View>
+
   );
 };
 
@@ -102,60 +121,76 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
-    padding: 24,
-    justifyContent: "center",
+    paddingHorizontal: 20,
+    paddingTop: 60,
   },
   title: {
-    fontSize: 22,
+    fontSize: 25,
     color: 'white',
     textAlign: 'center',
-    marginTop: 16,
     fontWeight: 'bold',
+    marginBottom: 10,
   },
   subtitle: {
+    fontSize: 17,
     textAlign: 'center',
-    color: 'gray',
-    marginVertical: 8,
+    color: '#cfd0d1',
+    paddingVertical: 8,
+    marginBottom:12
   },
-  countryRow: {
-    backgroundColor: "#222",
-    padding: 12,
-    paddingHorizontal: 10,
+  inputWrapper: {
+    width: '100%',
+    gap:15
   },
-  countryText: {
-    color: 'white',
-    fontSize: 18,
-  },
-  codeText: {
-    color: 'white',
-    fontSize: 18,
+  phoneContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 8,
+    gap: 10,
   },
   phoneBox: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    borderWidth: 1.3,
-    borderColor: '#222',
-    marginVertical: 35,
-    borderRadius:5,
-    overflow: "scroll",
+    flex: 1,
+    backgroundColor: '#222',
+    height: 55,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems:"flex-end",
+    paddingHorizontal:12
   },
   phoneText: {
-    marginHorizontal:14,
     color: 'white',
-    fontSize: 18,
+    fontSize: 17,
     letterSpacing: 2,
   },
+  countryRow: {
+    color: 'white',
+    fontSize: 18,
+    paddingHorizontal: 12,
+    height: 55,
+    backgroundColor: '#222',
+    borderRadius: 6,
+    lineHeight: 55
+  },
+    tipText: {
+    color: '#cfd0d1',
+    textAlign: 'left',
+    fontSize: 14,
+    padding:4,
+    lineHeight: 20,
+  },
   Button: {
-    justifyContent: "center",
-    width: 60,
-    height: 60,
-    backgroundColor: "#fff",
-    color: "white",
+    backgroundColor: "#229ED9",
     alignItems: "center",
-    borderRadius: "100%",
-    padding:8,
-    marginBottom:100
-  }
+    height: 55,
+    justifyContent: "center",
+    borderRadius: 8,
+  },
+  ButtonText: {
+    color: "#fff",
+    fontSize: 17,
+    fontWeight: "bold",
+  },
 });
+
 
 export default LoginScreen;

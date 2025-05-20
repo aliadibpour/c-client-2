@@ -1,109 +1,152 @@
-import TdLib from 'react-native-tdlib';
+import TdLib, { TdLibParameters } from 'react-native-tdlib';
+
+type Result<T> = {
+  success: boolean;
+  data?: T;
+  error?: string;
+};
 
 export class TelegramService {
   private static isStarted = false;
+  private static async delay(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
 
-  static async start() {
-    if (this.isStarted) return;
+  private static parameters = {
+    api_id: 19661737,
+    api_hash: "28b0dd4e86b027fd9a2905d6c343c6bb"
+  } as TdLibParameters;
+
+  static async start(): Promise<Result<void>> {
+    if (this.isStarted) return { success: true };
 
     try {
-      const authState = await TdLib.getAuthorizationState();
-      console.log("TDLib already running, state:", authState?.authorization_state);
+      const start = await TdLib.startTdLib(this.parameters);
+      console.log('✅ StartTdLib:', start);
+
       this.isStarted = true;
+
+      const authState = await TdLib.getAuthorizationState();
+      console.log('✅ InitialAuthState:', authState);
+
+      return { success: true };
     } catch (err) {
-      console.log("TDLib not started. Starting now...");
-      try {
-        await TdLib.startTdLib({
-          api_id: 19661737,
-          api_hash: "28b0dd4e86b027fd9a2905d6c343c6bb"
-        });
-        this.isStarted = true;
-      } catch (startError) {
-        console.error("Failed to start TDLib:", startError);
-        throw startError;
-      }
+      console.error('❌ TDLib Init or AuthState Error:', err);
+      return { success: false, error: translateError(err) };
     }
   }
 
-  /**
-   * Login user
-   */
-  static async login(countrycode: string, phoneNumber: string) {
+
+  static async login(countrycode: string, phoneNumber: string): Promise<Result<void>> {
     try {
-      await this.start(); // always ensure it's started
       await TdLib.login({ countrycode, phoneNumber });
+      return { success: true };
     } catch (e) {
       console.error("Login error:", e);
-      throw e;
+      return { success: false, error: translateError(e) };
     }
   }
 
-  /**
-   * Verify code
-   */
-  static async verifyCode(code: string) {
+  static async verifyCode(code: string): Promise<Result<any>> {
     try {
-      const q = await TdLib.verifyPhoneNumber(code);
-      console.log("q", q);
-      
+      const verifyCode = await TdLib.verifyPhoneNumber(code);
+      return { success: true, data: verifyCode };
     } catch (e) {
       console.error("Code verification failed:", e);
-      throw e;
+      return { success: false, error: translateError(e) };
     }
   }
 
-  /**
-   * Verify 2FA password
-   */
-  static async verifyPassword(password: string) {
+  static async verifyPassword(password: string): Promise<Result<void>> {
     try {
       await TdLib.verifyPassword(password);
+      return { success: true };
     } catch (e) {
       console.error("Password verification failed:", e);
-      throw e;
+      return { success: false, error: 'Password incorrect' };
     }
   }
 
-  /**
-   * Get user profile
-   */
-  static async getProfile() {
-    return await TdLib.getProfile();
+  static async getProfile(): Promise<Result<any>> {
+    try {
+      const profile = await TdLib.getProfile();
+      return { success: true, data: profile };
+    } catch (e) {
+      return { success: false, error: 'Failed to get profile' };
+    }
   }
 
-  /**
-   * Logout and reset status
-   */
-  static async logout() {
+  static async logout(): Promise<Result<void>> {
     try {
       await TdLib.logout();
       this.isStarted = false;
       console.log("Logged out.");
+      return { success: true };
     } catch (e) {
       console.error("Logout failed:", e);
+      return { success: false, error: 'Logout failed' };
     }
   }
 
-  /**
-   * Get current authorization state
-   */
-  static async getAuthState() {
+  static async getAuthState(): Promise<Result<any>> {
     try {
-      return await TdLib.getAuthorizationState();
+      const state = await TdLib.getAuthorizationState();
+      return { success: true, data: state };
     } catch (e) {
       console.error("Failed to get authorization state:", e);
-      return null;
+      return { success: false, error: 'Auth state unavailable' };
     }
   }
 
-  static async getUpdate() {
-    const request = {
-      '@type': 'updateAuthorizationState',
-      only_locales: true,
-    };
-    const a = await TdLib.td_json_client_send(request)
-    console.log('====================================');
-    console.log(a);
-    console.log('====================================');
+  static async getUpdate(): Promise<Result<any>> {
+    try {
+      const request = {
+        '@type': 'updateAuthorizationState',
+        only_locales: true,
+      };
+      const a = await TdLib.td_json_client_send(request);
+      console.log(a);
+      return { success: true, data: a };
+    } catch (e) {
+      return { success: false, error: 'Update request failed' };
+    }
   }
+
+  static async close(): Promise<Result<void>> {
+    try {
+      await TdLib.td_json_client_send({ "@type": "close" });
+      console.log('📴 TDLib closed');
+      this.isStarted = false;
+      return { success: true };
+    } catch (err) {
+      console.error('❌ Error closing TDLib:', err);
+      return { success: false, error: translateError(err) };
+    }
+  }
+
+  static async restart(): Promise<Result<void>> {
+    console.log('🔄 Restarting TDLib...');
+    await this.close();
+    await this.delay(1000);
+    return await this.start();
+  }
+
+}
+
+
+function translateError(error: any): string {
+  const message = typeof error === 'string' ? error : error?.message || '';
+
+  if (message.includes('PHONE_NUMBER_INVALID')) return 'شماره تلفن وارد شده نامعتبر است.';
+  if (message.includes('PHONE_CODE_INVALID')) return 'کد وارد شده اشتباه است.';
+  if (message.includes('PHONE_CODE_EXPIRED')) return 'کد منقضی شده است.';
+  if (message.includes('UNEXPECTED_PHONE_CODE')) return 'کدی که وارد کرده‌اید معتبر نیست.';
+  if (message.includes('PASSWORD_HASH_INVALID')) return 'رمز عبور اشتباه است.';
+  if (message.includes('SESSION_PASSWORD_NEEDED')) return 'نیاز به رمز دوم دارید.';
+  if (message.includes('FLOOD_WAIT')) return 'لطفاً چند دقیقه بعد دوباره تلاش کنید.';
+  if (message.includes('NETWORK') || message.includes('CONNECTION')) return 'مشکل در اتصال به اینترنت.';
+  if (message.includes('PHONE_NUMBER_OCCUPIED')) return 'این شماره قبلاً ثبت‌نام کرده است.';
+  if (message.includes('PHONE_NUMBER_FLOOD')) return 'تلاش‌های زیادی برای این شماره انجام شده است. لطفاً بعداً تلاش کنید.';
+
+  return 'خطای ناشناخته‌ای رخ داده است.';
 }

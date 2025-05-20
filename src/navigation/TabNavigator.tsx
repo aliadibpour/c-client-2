@@ -16,7 +16,7 @@ import {
   CommentsIcon,
 } from "../assets/icons/index";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import PickTeams from "../screens/tabs/PickTeams";
+import PickTeams from "../screens/setup/PickTeams";
 
 const Tab = createBottomTabNavigator();
 

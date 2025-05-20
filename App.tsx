@@ -34,41 +34,8 @@ function App(): React.JSX.Element {
   },[])
 
   useEffect(() => {
-    TdLib.startTdLib(parameters)
-      .then(r => {
-        console.log('✅ StartTdLib:', r);
-        return TdLib.getAuthorizationState();
-      })
-      .then(async(r) => {
-        console.log('✅ InitialAuthState:', r);
-        const state = JSON.parse(r);
-        if (state['@type'] === 'authorizationStateReady') {
-          getProfile();
-          // getLast10Messages(-1001457166593)
-          // listenForMessages();
-        }
-      })
-      .catch(err => {
-        console.error('❌ TDLib Init or AuthState Error:', err);
-      });
-    TelegramService.getUpdate()
-
+    TelegramService.start()
   }, []);
-
-
-  const [profile, setProfile] = React.useState<any>(null);
-  const getProfile = useCallback(() => {
-    TdLib.getProfile().then(result => {
-      console.log('User Profile:', result);
-      const profile = Platform.select({
-        ios: result,
-        android: JSON.parse(result),
-      });
-      setProfile(profile);
-    });
-  }, []);
-
-
 
   return (
     <NavigationContainer>

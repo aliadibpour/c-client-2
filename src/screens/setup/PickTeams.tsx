@@ -117,24 +117,15 @@ export default function PickTeams({navigation}: any) {
       />
 
       <TouchableOpacity
-        style={styles.startButton}
+        style={styles.Button}
         onPress={async () => {
           if (favorites.length === 0) {
             ToastAndroid.show("حداقل یک تیم انتخاب کن!", ToastAndroid.SHORT);
             return;
           }
-
-          // Save to AsyncStorage
-          await AsyncStorage.setItem(
-            "auth-status",
-            JSON.stringify({ register: true, route: "/" })
-          );
-
-          // Navigate
-          navigation.navigate("Home")
         }}
       >
-        <Text style={styles.startButtonText}>شروع اپلیکیشن</Text>
+        <Text style={styles.ButtonText}>شروع اپلیکیشن</Text>
       </TouchableOpacity>
 
     </View>
@@ -148,12 +139,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#333',
     margin: 6,
-    borderRadius: 10,
+    borderRadius: 8,
     alignItems: 'center',
+    justifyContent: "center",
     padding: 8,
   },
   teamLogo: { width: 28, height: 28, marginBottom: 6 },
-  teamName: { color: '#fff', fontSize: 12 },
+  teamName: { 
+    color: '#fff',
+    fontSize: 11.3,
+    textAlign: "center"
+  },
   selected: {
     borderColor: '#fff',
     borderWidth: 1.5,
@@ -172,15 +168,15 @@ const styles = StyleSheet.create({
   },
   favoriteText: { color: '#fff', marginRight: 5 },
   removeBtn: { color: '#fff', fontSize: 16 },
-  startButton: {
+  Button: {
     marginTop: 20,
     backgroundColor: '#fff',
-    borderRadius: 20,
-    paddingVertical: 10,
+    borderRadius: 8,
+    paddingVertical: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  startButtonText: {
+  ButtonText: {
     color: '#000',
     fontSize: 14,
     fontWeight: 'bold',

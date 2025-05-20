@@ -22,15 +22,20 @@
     "react": "19.0.0",
     "react-native": "^0.79.2",
     "react-native-confirmation-code-field": "^7.4.0",
+    "react-native-country-codes-picker": "^2.3.5",
     "react-native-country-picker-modal": "^2.0.0",
+    "react-native-elements": "^3.4.3",
     "react-native-gesture-handler": "^2.25.0",
     "react-native-linear-gradient": "^2.8.3",
+    "react-native-modal": "^14.0.0-rc.1",
+    "react-native-paper": "^5.14.4",
     "react-native-reanimated": "^3.17.5",
     "react-native-safe-area-context": "^5.4.0",
     "react-native-screens": "^4.10.0",
     "react-native-storage": "^1.0.1",
     "react-native-svg": "^15.11.2",
-    "react-native-tdlib": "^1.0.2"
+    "react-native-tdlib": "^1.0.2",
+    "react-native-vector-icons": "^10.2.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

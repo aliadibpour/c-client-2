@@ -1,4 +1,5 @@
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Vibration } from 'react-native';
 
 export const Keyboard = ({ setState }: { setState: React.Dispatch<React.SetStateAction<string>> }) => {
     const keyboard = [
@@ -19,6 +20,7 @@ export const Keyboard = ({ setState }: { setState: React.Dispatch<React.SetState
     );
 
     const handleKeyPress = (digit:any) => {
+        Vibration.vibrate(10); // vibrates for 10 milliseconds
         if (digit === 'back') {
         setState((prev: any) => prev.slice(0, -1));
         } else {
@@ -39,10 +41,10 @@ export const Keyboard = ({ setState }: { setState: React.Dispatch<React.SetState
 
 const styles = StyleSheet.create({
     keyboard: {
-    position: 'absolute',
-    bottom: 5,
-    left: 0,
-    right: 0,
+        position: 'absolute',
+        bottom: 5,
+        left: 0,
+        right: 0,
     },
     keyRow: {
         flexDirection: 'row-reverse',
@@ -51,7 +53,7 @@ const styles = StyleSheet.create({
     },
     keyButton: {
         width: '30%',
-        paddingVertical: 11,
+        paddingVertical: 11.7,
         borderRadius: 7,
         backgroundColor: '#222',
         justifyContent: 'center',

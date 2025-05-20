@@ -19,19 +19,37 @@ const slides = [
     key: 'slide1',
     title: "اتمسفر هواداران فوتبال",
     text: "اکوسیستم هواداریه تیم های پر طرفدار ایران و اروپا همراه با پوشش نتایج , اخبار و حاشیه ها",
-    image: require('../../assets/images/qq.jpg'),
+    image: require('../../assets/images/i.jpg'),
   },
   {
     key: 'slide2',
     title: 'ضد سانسور / زنده',
     text: "محتوای برنامه بدون فیلتر توسط جامعه ی حاضر بصورت زنده و در لحظه ایجاد میشود",
-    image: require('../../assets/images/ww.jpg'),
+    image: require('../../assets/images/p.jpg'),
   },
   {
     key: 'slide3',
     title: 'نتایج خاص',
     text: 'نتایج به‌یادماندنی و جذاب تاریخ فوتبال',
-    image: require('../../assets/images/qq.jpg'),
+    image: require('../../assets/images/i.jpg'),
+  },
+    {
+    key: 'slide4',
+    title: "اتمسفر هواداران فوتبال",
+    text: "اکوسیستم هواداریه تیم های پر طرفدار ایران و اروپا همراه با پوشش نتایج , اخبار و حاشیه ها",
+    image: require('../../assets/images/p.jpg'),
+  },
+  {
+    key: 'slide5',
+    title: 'ضد سانسور / زنده',
+    text: "محتوای برنامه بدون فیلتر توسط جامعه ی حاضر بصورت زنده و در لحظه ایجاد میشود",
+    image: require('../../assets/images/i.jpg'),
+  },
+  {
+    key: 'slide6',
+    title: 'نتایج خاص',
+    text: 'نتایج به‌یادماندنی و جذاب تاریخ فوتبال',
+    image: require('../../assets/images/i.jpg'),
   },
 ];
 
@@ -129,7 +147,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     width: '100%',
-    height: 145,
+    height: 155,
   },
   gradientOverlayTop: {
     position: 'absolute',
