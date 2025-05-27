@@ -3,9 +3,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ActivityIndicator } from 'react-native';
-import { View } from 'react-native-reanimated/lib/typescript/Animated';
-import PickTeams from '../screens/setup/PickTeams';
+import PickTeamsScreen from '../screens/setup/PickTeams';
+import RankTeamsScreen from '../screens/setup/RankTeams';
 
 const Stack = createNativeStackNavigator<any>();
 
@@ -29,7 +28,8 @@ export default function RootNavigator() {
       ) : (
         <Stack.Screen name="Auth" component={AuthNavigator} />
       )}
-      <Stack.Screen name="PickTeams" component={PickTeams} />
+      <Stack.Screen name="PickTeams" component={PickTeamsScreen} />
+      <Stack.Screen name="Priority" component={RankTeamsScreen} />
     </Stack.Navigator>
   );
 }

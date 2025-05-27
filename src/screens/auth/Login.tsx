@@ -16,9 +16,9 @@ const LoginScreen = ({navigation} :any) => {
 
   const sendPhoneNumber = async () => {
   //await TelegramService.logout()
-  navigation.navigate("Verify",
-    { phoneNumber:"99245086534" }
-  );
+  // navigation.navigate("Verify",
+  //   { phoneNumber:"99245086534" }
+  // );
 
   if (isSubmitting) return;
   try {
@@ -36,7 +36,7 @@ const LoginScreen = ({navigation} :any) => {
     setLoading(true); 
 
     const timeout = setInterval(async () => {
-      setModalMessage("اتصال برقرار نشد.پس از وصل شدن اتصال و فیلترشکن کد ارسال خواهد شد");
+      setModalMessage("اتصال برقرار نشد. منتظر میمانیم تا پس از وصل شدن اتصال و فیلترشکن کد ارسال کنیم");
       setModalVisible(true);
     }, 15000);
 
@@ -94,7 +94,7 @@ const LoginScreen = ({navigation} :any) => {
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color="#222" />
           ) : (
             <Text style={styles.ButtonText}>ورود با تلگرام</Text>
           )}
@@ -179,14 +179,14 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   Button: {
-    backgroundColor: "#229ED9",
+    backgroundColor: "#fff",
     alignItems: "center",
     height: 55,
     justifyContent: "center",
     borderRadius: 8,
   },
   ButtonText: {
-    color: "#fff",
+    color: "#000",
     fontSize: 17,
     fontWeight: "bold",
   },

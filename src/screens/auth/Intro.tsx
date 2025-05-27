@@ -161,6 +161,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     padding: 10,
     alignItems: 'center',
+    fontFamily: "IranianSans"
   },
   title: {
     fontSize: 28,
@@ -195,7 +196,7 @@ const styles = StyleSheet.create({
     fontSize: 19,
     fontWeight: "bold",
     textAlign: 'center',
-    fontFamily: 'vazir',
+    fontFamily: 'IranianSans',
   },
   buttonContainer: {
     width: '100%',

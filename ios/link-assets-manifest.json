@@ -1,0 +1,21 @@
+{
+  "migIndex": 1,
+  "data": [
+    {
+      "path": "src/assets/fonts/A-Iranian-Sans/Fontyab.com.url",
+      "sha1": "7f60d678e5ffb7f62fca820d9224de15b44cbb12"
+    },
+    {
+      "path": "src/assets/fonts/A-Iranian-Sans/Fontyab.ir.url",
+      "sha1": "f097c84ff0adab5a829a3657005d439c4ce55725"
+    },
+    {
+      "path": "src/assets/fonts/A-Iranian-Sans/IranianSans.ttf",
+      "sha1": "57a067c2bd298f39439b5a69ac6dce3803812623"
+    },
+    {
+      "path": "src/assets/fonts/A-Iranian-Sans/read me!.txt",
+      "sha1": "5bb848430318552aaf67f769227c8c9e3e73321e"
+    }
+  ]
+}
