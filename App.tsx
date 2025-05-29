@@ -19,10 +19,6 @@ function App(): React.JSX.Element {
     },
   };
 
-    const parameters = {
-      api_id: 19661737,
-      api_hash: "28b0dd4e86b027fd9a2905d6c343c6bb"
-  } as TdLibParameters;
 
   useEffect(() => {
     const setAuthJwt = async() => {
@@ -35,6 +31,7 @@ function App(): React.JSX.Element {
 
   useEffect(() => {
     TelegramService.start()
+    TelegramService.getAuthState()
   }, []);
 
   return (

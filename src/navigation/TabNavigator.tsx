@@ -45,10 +45,6 @@ export default function TabNavigator() {
       }}
     >
       <Tab.Screen
-        name="PickTeams"
-        component={PickTeams}
-      />
-      <Tab.Screen
         name="Home"
         component={Home}
         options={{
@@ -56,18 +52,6 @@ export default function TabNavigator() {
             <View style={styles.iconContainer}>
               <HouseIcon size={iconSize} outline={!focused} />
               <Text style={[styles.iconText, focused && styles.activeText]}>خانه</Text>
-            </View>
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Comments"
-        component={Comments}
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <View style={styles.iconContainer}>
-              <CommentsIcon size={iconSize} outline={!focused} />
-              <Text style={[styles.iconText, focused && styles.activeText]}>نظرات</Text>
             </View>
           ),
         }}

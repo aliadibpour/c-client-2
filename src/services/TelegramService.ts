@@ -131,6 +131,64 @@ export class TelegramService {
     return await this.start();
   }
 
+
+
+  static async getLastMessagesFromChannel(username = 'toofan_sorkh64') {
+    try {
+      // 1. ارسال درخواست جستجو کانال عمومی با یوزرنیم
+      await TdLib.td_json_client_send({
+        "@type": "searchPublicChat",
+        "username": username
+      });
+
+      // 2. صبر برای دریافت chat object
+      let chat = null;
+      const start = Date.now();
+      while (!chat && Date.now() - start < 5000) {  // 5 ثانیه timeout
+        const update: any = await TdLib.td_json_client_receive();
+        if (update && update["@type"] === "chat") {
+          chat = update;
+        }
+      }
+
+      if (!chat) throw new Error("⏰ Timeout waiting for result: chat");
+
+      const chatId = chat.id;
+
+      // 3. درخواست پیام‌ها
+      await TdLib.td_json_client_send({
+        "@type": "getChatHistory",
+        "chat_id": chatId,
+        "from_message_id": 0,
+        "offset": 0,
+        "limit": 10,
+        "only_local": false
+      });
+
+      // 4. صبر برای دریافت پیام‌ها
+      let messages = null;
+      const start2 = Date.now();
+      while (!messages && Date.now() - start2 < 5000) {
+        const update:any = await TdLib.td_json_client_receive();
+        if (update && update["@type"] === "messages") {
+          messages = update.messages;
+        }
+      }
+
+      if (!messages) throw new Error("⏰ Timeout waiting for result: messages");
+
+      console.log("📥 پیام‌ها:", messages);
+      return messages;
+    } catch (error) {
+      console.error("❌ خطا در دریافت پیام‌ها:", error);
+      return null;
+    }
+  }
+
+
+
+
+
 }
 
 

@@ -132,11 +132,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   subtitle: {
-    fontSize: 17,
+    fontSize: 16,
     textAlign: 'center',
     color: '#cfd0d1',
-    paddingVertical: 8,
-    marginBottom:12
+    marginTop:3,
+    marginBottom:22
   },
   inputWrapper: {
     width: '100%',
@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   Button: {
-    backgroundColor: "#fff",
+    backgroundColor: "#e8e8e8",
     alignItems: "center",
     height: 55,
     justifyContent: "center",

@@ -23,7 +23,7 @@ export default function RootNavigator() {
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {isAuth ? (
+      {!isAuth ? (
         <Stack.Screen name="Tabs" component={TabNavigator} />
       ) : (
         <Stack.Screen name="Auth" component={AuthNavigator} />
