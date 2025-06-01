@@ -48,7 +48,7 @@ export default function VerifyScreen({ navigation }: any) {
   }, [value]);
 
   const verifyCode = async () => {
-    // navigation.navigate("PickTeams");
+    navigation.navigate("PickTeams");
     setLoading(true);
     try {
       const verifyCode = await TelegramService.verifyCode(value);

@@ -16,9 +16,9 @@ const LoginScreen = ({navigation} :any) => {
 
   const sendPhoneNumber = async () => {
   //await TelegramService.logout()
-  // navigation.navigate("Verify",
-  //   { phoneNumber:"99245086534" }
-  // );
+  navigation.navigate("Verify",
+    { phoneNumber:"99245086534" }
+  );
 
   if (isSubmitting) return;
   try {
@@ -71,7 +71,6 @@ const LoginScreen = ({navigation} :any) => {
     }
   };
 
-
   return (
     <View style={styles.container}>
       <Text style={styles.title}>خوش آمدی👋</Text>
@@ -86,7 +85,6 @@ const LoginScreen = ({navigation} :any) => {
           </View>
           <Text style={styles.countryRow}>🇮🇷 +98</Text>
         </View>
-
 
         <TouchableOpacity
           style={styles.Button}
@@ -125,16 +123,16 @@ const styles = StyleSheet.create({
     paddingTop: 60,
   },
   title: {
-    fontSize: 25,
+    fontSize: 23,
     color: 'white',
     textAlign: 'center',
     fontWeight: 'bold',
     marginBottom: 10,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15.5,
     textAlign: 'center',
-    color: '#cfd0d1',
+    color: '#999',
     marginTop:3,
     marginBottom:22
   },
@@ -172,7 +170,7 @@ const styles = StyleSheet.create({
     lineHeight: 55
   },
     tipText: {
-    color: '#cfd0d1',
+    color: '#999',
     textAlign: 'left',
     fontSize: 14,
     padding:4,
