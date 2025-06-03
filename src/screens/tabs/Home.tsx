@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { Text, FlatList, View, StyleSheet } from "react-native";
+import { Text, FlatList, View, StyleSheet, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import TdLib from "react-native-tdlib";
+import { fromByteArray } from 'base64-js';
 import { TelegramService } from "../../services/TelegramService"; // Optional if unused
+import MessageItem from "../../components/tabs/home/MessageItem";
 
 export default function HomeScreen() {
   const [messages, setMessages] = useState<any[]>([]);
@@ -12,20 +14,12 @@ export default function HomeScreen() {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const history = await TdLib.getChatHistory(chatId, 0, 30);
-        console.log(history)
-
-        // Extract text from messages
-        const textMessages = history
-          .filter((msg: any) => msg?.content.caption) // Make sure it has text
-          .map((msg: any) => ({
-            id: msg.id,
-            text: msg.content.caption,
-          }));
-
-        setMessages(textMessages);
-      } catch (err) {
-        console.log("Error fetching history:", err);
+        const messages:any = await TdLib.getChatHistory(chatId, 0, 20);
+        const a = messages.map((item:any) => JSON.parse(item.raw_json))
+        console.log(a)
+        setMessages(a)
+      } catch (error) {
+        console.log(error)
       }
     };
 
@@ -37,11 +31,9 @@ export default function HomeScreen() {
       <Text style={styles.header}>Latest Messages</Text>
       <FlatList
         data={messages}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={({ item }) => (
-          <View style={styles.messageCard}>
-            <Text style={styles.messageText}>{item.text}</Text>
-          </View>
+        //keyExtractor={(item) => item.id.toString()}
+        renderItem={({ item }:any) => (
+          <MessageItem data={item}/>
         )}
       />
     </SafeAreaView>
