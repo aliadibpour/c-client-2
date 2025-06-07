@@ -1,9 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Text, FlatList, View, StyleSheet, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import TdLib from "react-native-tdlib";
-import { fromByteArray } from 'base64-js';
-import { TelegramService } from "../../services/TelegramService"; // Optional if unused
 import MessageItem from "../../components/tabs/home/MessageItem";
 
 export default function HomeScreen() {
@@ -14,7 +12,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const messages:any = await TdLib.getChatHistory(chatId, 0, 20);
+        const messages:any = await TdLib.getChatHistory(chatId, 0, 30);
         const a = messages.map((item:any) => JSON.parse(item.raw_json))
         console.log(a)
         setMessages(a)
