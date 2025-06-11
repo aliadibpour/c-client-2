@@ -6,6 +6,7 @@ import MessageHeader from "./MessageHeader";
 import Video from "react-native-video";
 import PhotoMessage from "./MessagePhoto";
 import VideoMessage from "./MessageVideo";
+import MessageReactions from "./MessageReaction";
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -73,8 +74,20 @@ export default function MessageItem({ data }: any) {
           {content.caption.text}
         </Text>
       )}
-{content?.photo && <PhotoMessage photo={content.photo} />}
-{content?.video && <VideoMessage video={content.video} />}
+      {content?.photo && <PhotoMessage photo={content.photo} />}
+      {content?.video && <VideoMessage video={content.video} />}
+
+      {data.interactionInfo?.reactions?.reactions?.length > 0 && (
+        <MessageReactions reactions={data.interactionInfo.reactions.reactions} />
+      )}
+
+      {
+        data.interactionInfo?.replyInfo?.replyCount > 0 && (
+          <Text style={{ color: "white", marginTop: 12 }}>
+            {data.interactionInfo.replyInfo.replyCount} کامنت
+          </Text>
+        ) 
+      }
     </View>
   );
 }
