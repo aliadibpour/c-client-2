@@ -74,8 +74,8 @@ export default function PhotoMessage({ photo }: Props) {
         <Image
           source={{ uri: photoPath }}
           style={{
-            width: displayWidth,
-            height: displayHeight,
+            width: displayWidth-50,
+            height: displayHeight-70,
             borderRadius: 8,
             backgroundColor: "#000",
           }}
