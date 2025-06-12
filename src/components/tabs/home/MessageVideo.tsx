@@ -78,7 +78,7 @@ export default function VideoMessage({ video }: Props) {
           style={{
             width: displayWidth,
             height: displayHeight,
-            borderRadius: 8,
+            borderRadius: 10,
             backgroundColor: "#000",
           }}
           controls

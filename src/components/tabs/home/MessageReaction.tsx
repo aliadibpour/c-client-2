@@ -1,5 +1,11 @@
-// components/MessageReactions.tsx
-import { View, Text, StyleSheet } from "react-native";
+import { useState } from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Animated,
+} from "react-native";
 
 interface Reaction {
   type: { emoji: string };
@@ -7,23 +13,39 @@ interface Reaction {
   isChosen: boolean;
 }
 
-export default function MessageReactions({ reactions }: { reactions: Reaction[] }) {
-  if (!reactions || reactions.length === 0) return null;
+interface Props {
+  reactions: Reaction[];
+  onReact?: (emoji: string) => void; // callback to send reaction
+}
+
+export default function InteractiveReactions({ reactions, onReact }: Props) {
+  const [selected, setSelected] = useState<string | null>(
+    reactions.find(r => r.isChosen)?.type.emoji || null
+  );
+
+  const handleReact = (emoji: string) => {
+    setSelected(emoji);
+    onReact?.(emoji); // send to parent if needed
+  };
 
   return (
     <View style={styles.container}>
-      {reactions.map((reaction, index) => (
-        <View
-          key={index}
-          style={[
-            styles.reactionBox,
-            reaction.isChosen && styles.chosenReaction,
-          ]}
-        >
-          <Text style={styles.emoji}>{reaction.type.emoji}</Text>
-          <Text style={styles.count}>{reaction.totalCount}</Text>
-        </View>
-      ))}
+      {reactions.map((reaction, idx) => {
+        const isSelected = selected === reaction.type.emoji;
+        return (
+          <TouchableOpacity
+            key={idx}
+            style={[
+              styles.reactionBox,
+              isSelected && styles.selectedBox,
+            ]}
+            onPress={() => handleReact(reaction.type.emoji)}
+          >
+            <Text style={styles.emoji}>{reaction.type.emoji}</Text>
+            <Text style={styles.count}>{reaction.totalCount}</Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -31,24 +53,26 @@ export default function MessageReactions({ reactions }: { reactions: Reaction[] 
 const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
+    gap: 10,
+    marginTop: 12,
     flexWrap: "wrap",
-    gap: 8,
-    marginTop: 10,
   },
   reactionBox: {
     flexDirection: "row",
-    backgroundColor: "#222",
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 10,
     alignItems: "center",
+    backgroundColor: "#222",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    minWidth: 50,
+    justifyContent: "center",
   },
-  chosenReaction: {
-    backgroundColor: "#444",
+  selectedBox: {
+    backgroundColor: "#777",
   },
   emoji: {
-    fontSize: 14,
-    marginRight: 3,
+    fontSize: 15,
+    marginRight: 5,
   },
   count: {
     color: "white",

@@ -12,7 +12,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const messages:any = await TdLib.getChatHistory(chatId, 0, 30);
+        const messages:any = await TdLib.getChatHistory(chatId, 0, 52);
         const a = messages.map((item:any) => JSON.parse(item.raw_json))
         console.log(a)
         setMessages(a)
@@ -41,7 +41,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000", // Black background like Platform X
+    backgroundColor: "#000",
     paddingHorizontal: 16,
   },
   header: {
