@@ -12,7 +12,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const messages:any = await TdLib.getChatHistory(chatId, 0, 52);
+        const messages:any = await TdLib.getChatHistory(chatId, 0, 24);
         const a = messages.map((item:any) => JSON.parse(item.raw_json))
         console.log(a)
         setMessages(a)

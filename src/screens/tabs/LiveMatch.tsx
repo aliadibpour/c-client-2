@@ -48,6 +48,7 @@ export default function LiveMatchScreen() {
     setLoading(true);
     setErrorText("");
     socketRef.current.emit("matchesResult", dayId, (response: any) => {
+        console.log(response)
       setLoading(false);
       if (response.matchResultExist) {
         setLiveMatches(response.matchesResult);
@@ -92,7 +93,9 @@ export default function LiveMatchScreen() {
               marginRight: 12,
               paddingVertical: 8,
               paddingHorizontal: 18,
-              borderRadius: 20,
+              borderRadius: 10,
+              height: 42,
+              justifyContent: "center",
               backgroundColor: index === selectedDayIndex ? "#1e90ff" : "#2c2c2e",
               borderWidth: index === selectedDayIndex ? 0 : 1,
               borderColor: "#444",
@@ -147,9 +150,17 @@ export default function LiveMatchScreen() {
                       borderColor: "#333",
                     }}
                   >
+                    <Image
+                    source={{ uri: match.homeTeamImage }}
+                    style={{ width: 24, height: 24, marginRight: 8, borderRadius: 6 }}
+                    />
                     <Text style={{ color: "#ddd", fontSize: 14 }}>{match.homeTeam}</Text>
                     <Text style={{ color: "#888" }}>vs</Text>
                     <Text style={{ color: "#ddd", fontSize: 14 }}>{match.awayTeam}</Text>
+                    <Image
+                    source={{ uri: match.awayTeamImage }}
+                    style={{ width: 24, height: 24, marginRight: 8, borderRadius: 6 }}
+                    />
                   </View>
                 ))}
               </View>

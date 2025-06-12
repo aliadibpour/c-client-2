@@ -1,4 +1,4 @@
-import { Dimensions, Text, View, ActivityIndicator, Image } from "react-native";
+import { Dimensions, Text, View, ActivityIndicator, Image, TouchableOpacity } from "react-native";
 import { useEffect, useMemo, useState } from "react";
 import TdLib from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
@@ -7,6 +7,7 @@ import Video from "react-native-video";
 import PhotoMessage from "./MessagePhoto";
 import VideoMessage from "./MessageVideo";
 import MessageReactions from "./MessageReaction";
+import { useNavigation } from "@react-navigation/native";
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -15,7 +16,7 @@ export default function MessageItem({ data }: any) {
   const [loading, setLoading] = useState(true);
 
   const content = data?.content;
-
+  const navigation:any = useNavigation()
   // Thumbnail base64 for video
   const thumbnailBase64 = useMemo(() => {
     const mini = content?.video?.minithumbnail?.data;
@@ -74,6 +75,13 @@ export default function MessageItem({ data }: any) {
           {content.caption.text}
         </Text>
       )}
+
+      {!!content?.text && (
+        <Text style={{ color: "white", marginBottom: 5 }}>
+          {content.text.text}
+        </Text>
+      )}
+
       {content?.photo && <PhotoMessage photo={content.photo} />}
       {content?.video && <VideoMessage video={content.video} />}
 
@@ -83,9 +91,18 @@ export default function MessageItem({ data }: any) {
 
       {
         data.interactionInfo?.replyInfo?.replyCount > 0 && (
-          <Text style={{ color: "white", marginTop: 12 }}>
-            {data.interactionInfo.replyInfo.replyCount} کامنت
-          </Text>
+          <TouchableOpacity
+            onPress={() =>
+              navigation.navigate("Comments", {
+                chatId: data.chatId,
+                messageId: data.id, // فرض بر این است که شناسه پیام داخل data.id است
+              })
+            }
+          >
+            <Text style={{ color: "white", marginTop: 12 }}>
+              {data.interactionInfo.replyInfo.replyCount} کامنت
+            </Text>
+          </TouchableOpacity>
         ) 
       }
     </View>
