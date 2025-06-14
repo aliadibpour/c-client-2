@@ -1,64 +1,15 @@
-import { Dimensions, Text, View, ActivityIndicator, Image, TouchableOpacity } from "react-native";
-import { useEffect, useMemo, useState } from "react";
-import TdLib from "react-native-tdlib";
-import { fromByteArray } from "base64-js";
+import { Dimensions, Text, View, TouchableOpacity } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import MessageHeader from "./MessageHeader";
-import Video from "react-native-video";
 import PhotoMessage from "./MessagePhoto";
 import VideoMessage from "./MessageVideo";
 import MessageReactions from "./MessageReaction";
-import { useNavigation } from "@react-navigation/native";
 
 const screenWidth = Dimensions.get("window").width;
 
 export default function MessageItem({ data }: any) {
-  const [videoPath, setVideoPath] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
+  const navigation: any = useNavigation();
   const content = data?.content;
-  const navigation:any = useNavigation()
-  // Thumbnail base64 for video
-  const thumbnailBase64 = useMemo(() => {
-    const mini = content?.video?.minithumbnail?.data;
-    return mini ? fromByteArray(mini) : null;
-  }, [data]);
-
-  const fileId = content?.video?.video?.id;
-  const width = content?.video?.width || 320;
-  const height = content?.video?.height || 240;
-
-  const maxWidth = screenWidth * 0.9;
-  const scaleFactor = width > 0 ? maxWidth / width : 1;
-  const displayWidth = width * scaleFactor;
-  const displayHeight = height * scaleFactor;
-
-  useEffect(() => {
-    let isMounted = true;
-    if (!fileId) return;
-
-    const downloadVideo = async () => {
-      try {
-        const result: any = await TdLib.downloadFile(fileId);
-        const file = JSON.parse(result.raw);
-
-        if (file.local?.isDownloadingCompleted && file.local.path) {
-          if (isMounted) {
-            setVideoPath(`file://${file.local.path}`);
-            setLoading(false);
-          }
-        } else if (file.local?.isDownloadingActive) {
-          // wait for next update
-        }
-      } catch (err) {
-        console.error("Video download error:", err);
-      }
-    };
-
-    downloadVideo();
-    return () => {
-      isMounted = false;
-    };
-  }, [fileId]);
 
   return (
     <View
@@ -89,22 +40,20 @@ export default function MessageItem({ data }: any) {
         <MessageReactions reactions={data.interactionInfo.reactions.reactions} />
       )}
 
-      {
-        data.interactionInfo?.replyInfo?.replyCount > 0 && (
-          <TouchableOpacity
-            onPress={() =>
-              navigation.navigate("Comments", {
-                chatId: data.chatId,
-                messageId: data.id, // فرض بر این است که شناسه پیام داخل data.id است
-              })
-            }
-          >
-            <Text style={{ color: "white", marginTop: 12 }}>
-              {data.interactionInfo.replyInfo.replyCount} کامنت
-            </Text>
-          </TouchableOpacity>
-        ) 
-      }
+      {data.interactionInfo?.replyInfo?.replyCount > 0 && (
+        <TouchableOpacity
+          onPress={() =>
+            navigation.navigate("Comments", {
+              chatId: data.chatId,
+              messageId: data.id,
+            })
+          }
+        >
+          <Text style={{ color: "white", marginTop: 12 }}>
+            {data.interactionInfo.replyInfo.replyCount} کامنت
+          </Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }

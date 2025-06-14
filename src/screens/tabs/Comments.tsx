@@ -19,6 +19,7 @@ export default function Comments() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    console.log("al")
     if (!chatId || !messageId) {
       setLoading(false);
       setError("Missing chatId or messageId.");
@@ -27,21 +28,33 @@ export default function Comments() {
 
     const fetchComments = async () => {
       try {
+        // Step 1: Get messageThreadId using getMessageComments
         const response: any = await TdLib.getMessageComments(chatId, messageId);
-
-        // If your native method returns { raw: string }
         const parsed = response?.raw ? JSON.parse(response.raw) : null;
+        console.log("Response from getMessageComments:", parsed);
 
-        if (!parsed || !Array.isArray(parsed.messages)) {
-          setError("Failed to fetch comments or empty messages.");
+        const threadId = parsed?.message?.messageThreadId;
+        if (!threadId) {
+          setError("Could not find message thread ID.");
           setComments([]);
-        } else {
-          setComments(parsed.messages);
+          return;
         }
 
-        console.log("Fetched comments:", parsed);
+        // Step 2: Get message thread history using getMessageThreadHistory
+        const historyResponse: any = await TdLib.getMessageThreadHistory(chatId, threadId,0,10);
+        const historyParsed = historyResponse?.raw ? JSON.parse(historyResponse.raw) : null;
+        console.log("Response from getMessageThreadHistory:", historyParsed);
+
+        if (!Array.isArray(historyParsed?.messages)) {
+          setError("No comments found in thread history.");
+          setComments([]);
+        } else {
+          setComments(historyParsed.messages);
+        }
+
+        console.log("Fetched thread comments:", historyParsed);
       } catch (err: any) {
-        console.error("Error loading comments:", err);
+        console.error("Error fetching comments:", err);
         setError(err?.message || "An unexpected error occurred.");
       } finally {
         setLoading(false);
@@ -54,14 +67,14 @@ export default function Comments() {
   const renderItem = ({ item }: any) => (
     <View style={styles.commentCard}>
       <Text style={styles.commentText}>
-        {item.content?.text?.text || "⛔️ No content"}
+        {item.content?.text?.text || "No content"}
       </Text>
     </View>
   );
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.header}>💬 Comments</Text>
+      <Text style={styles.header}>Comments</Text>
 
       {loading ? (
         <ActivityIndicator color="#fff" size="large" />

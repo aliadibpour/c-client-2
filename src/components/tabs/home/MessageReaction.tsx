@@ -23,6 +23,13 @@ export default function InteractiveReactions({ reactions, onReact }: Props) {
     reactions.find(r => r.isChosen)?.type.emoji || null
   );
 
+  const formatCount = (count: number) => {
+    if (count >= 1000) {
+      return (count / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+    }
+    return count.toString();
+  };
+
   const handleReact = (emoji: string) => {
     setSelected(emoji);
     onReact?.(emoji); // send to parent if needed
@@ -42,7 +49,7 @@ export default function InteractiveReactions({ reactions, onReact }: Props) {
             onPress={() => handleReact(reaction.type.emoji)}
           >
             <Text style={styles.emoji}>{reaction.type.emoji}</Text>
-            <Text style={styles.count}>{reaction.totalCount}</Text>
+            <Text style={styles.count}>{formatCount(reaction.totalCount)}</Text>
           </TouchableOpacity>
         );
       })}

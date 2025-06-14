@@ -1,4 +1,4 @@
-import { Dimensions, View, ActivityIndicator, Image } from "react-native";
+import { Dimensions, View, ActivityIndicator, Image, Pressable } from "react-native";
 import { useEffect, useMemo, useState } from "react";
 import TdLib from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
@@ -7,12 +7,14 @@ import Video from "react-native-video";
 const screenWidth = Dimensions.get("window").width;
 
 interface Props {
-  video: any; // content.video
+  video: any;
 }
 
 export default function VideoMessage({ video }: Props) {
   const [videoPath, setVideoPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [paused, setPaused] = useState(false); // 💡 Track playback state
+  const [showControls, setShowControls] = useState(false); // 🕹 Show native controls
 
   const fileId = video?.video?.id;
   const width = video?.width || 320;
@@ -54,6 +56,11 @@ export default function VideoMessage({ video }: Props) {
     };
   }, [fileId]);
 
+  const handlePress = () => {
+    setPaused((prev) => !prev); // ⏯ toggle play/pause
+    setShowControls(true); // show native controls on tap
+  };
+
   return (
     <View>
       {loading && (
@@ -73,17 +80,22 @@ export default function VideoMessage({ video }: Props) {
       )}
 
       {!loading && videoPath && (
-        <Video
-          source={{ uri: videoPath }}
-          style={{
-            width: displayWidth,
-            height: displayHeight,
-            borderRadius: 10,
-            backgroundColor: "#000",
-          }}
-          controls
-          resizeMode="contain"
-        />
+        <Pressable onPress={handlePress}>
+          <Video
+            source={{ uri: videoPath }}
+            style={{
+              width: displayWidth,
+              height: displayHeight,
+              borderRadius: 10,
+              backgroundColor: "#000",
+            }}
+            resizeMode="contain"
+            repeat
+            paused={paused}
+            controls={showControls}
+            muted={false}
+          />
+        </Pressable>
       )}
 
       {loading && (
