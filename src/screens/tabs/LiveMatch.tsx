@@ -81,7 +81,7 @@ export default function LiveMatchScreen() {
         onSelect={setSelectedDayIndex}
       />
 
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }} {...panResponder.panHandlers}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 0, paddingBottom: 40 }} {...panResponder.panHandlers}>
         {loading ? (
           <Text style={{ color: "#aaa", fontSize: 16, marginTop: 30, textAlign: "center" }}>
             در حال بارگذاری...

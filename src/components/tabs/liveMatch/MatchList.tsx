@@ -22,10 +22,10 @@ const MatchList: React.FC<Props> = ({ data }) => {
   return (
     <>
       {data.map((leagueItem, index) => (
-        <View key={index} style={{ marginBottom: 13, marginTop:20, borderRadius: 4, overflow: "hidden" }}>
+        <View key={index} style={{ overflow: "hidden" }}>
           {/* League Title */}
           <View style={{ flexDirection: "row", alignItems: "center",
-             backgroundColor: "#222", padding: 8, paddingHorizontal:13 }}>
+             backgroundColor: "#111", padding: 8, paddingHorizontal:15 }}>
             <Image
               source={{ uri: leagueItem.leagueImage }}
               style={{ width: 24, height: 24, marginRight: 8, borderRadius: 6 }}
@@ -36,7 +36,7 @@ const MatchList: React.FC<Props> = ({ data }) => {
           </View>
 
           {/* Matches */}
-          <View style={{padding: 10, backgroundColor: "#111" }}>
+          <View style={{padding: 10 }}>
             {leagueItem.matchList.map((match: any, i) => (
             <View
                 key={i}
@@ -45,7 +45,8 @@ const MatchList: React.FC<Props> = ({ data }) => {
                 alignItems: "center",
                 paddingVertical: 10,
                 borderBottomWidth: i !== leagueItem.matchList.length - 1 ? 1 : 0,
-                borderColor: "#222",
+                borderColor: "#111",
+                marginBottom: 8
                 }}
             >
                 {/* Home team name + image */}
@@ -55,18 +56,18 @@ const MatchList: React.FC<Props> = ({ data }) => {
                     numberOfLines={1}
                     ellipsizeMode="tail"
                 >
-                    {match.homeTeam.length > 15
+                    {match.homeTeam.length > 17
                     ? match.homeTeam.slice(0, 14) + "…"
                     : match.homeTeam}
                 </Text>
                 <Image
                     source={{ uri: match.homeTeamImage }}
-                    style={{ width: 24, height: 24, borderRadius: 6, marginLeft: 4 }}
+                    style={{ width: 25, height: 25, borderRadius: 6, marginLeft: 4 }}
                 />
                 </View>
 
                 {/* Score */}
-                <View style={{ width: 40, marginHorizontal:12 }}>
+                <View style={{ width: 40, marginHorizontal:15 }}>
                 <Text style={{ color: "#aaa", textAlign: "center", fontSize: 14 }}>
                     {match.score || "-"}
                 </Text>
@@ -83,14 +84,14 @@ const MatchList: React.FC<Props> = ({ data }) => {
                 >
                 <Image
                     source={{ uri: match.awayTeamImage }}
-                    style={{ width: 24, height: 24, borderRadius: 6, marginRight: 4 }}
+                    style={{ width: 25, height: 25, borderRadius: 6, marginRight: 4 }}
                 />
                 <Text
                     style={{ color: "#ddd", fontSize: 14 }}
                     numberOfLines={1}
                     ellipsizeMode="tail"
                 >
-                     {match.awayTeam.length > 15
+                     {match.awayTeam.length > 18
                         ? match.awayTeam.slice(0, 14) + "…"
                         : match.awayTeam}
                 </Text>
