@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Dimensions,
+  StyleSheet,
 } from "react-native";
 import { useEffect, useMemo, useState } from "react";
 import TdLib from "react-native-tdlib";
@@ -27,14 +28,19 @@ export default function PhotoMessage({ photo }: Props) {
 
   const screenWidth = Dimensions.get("window").width;
   const maxWidth = screenWidth * 0.8;
-  const maxDisplayHeight = 300;
+  const maxHeight = 300;
 
-  const scaleFactor = originalWidth > 0 ? maxWidth / originalWidth : 1;
-  const scaledHeight = originalHeight * scaleFactor;
+  // محاسبه نسبت تصویر
+  const aspectRatio = originalWidth / originalHeight;
 
-  const displayWidth = maxWidth;
-  const displayHeight =
-    scaledHeight > maxDisplayHeight ? maxDisplayHeight : scaledHeight;
+  // محاسبه عرض و ارتفاع نهایی با حفظ نسبت و محدودیت maxWidth و maxHeight
+  let displayWidth = maxWidth;
+  let displayHeight = displayWidth / aspectRatio;
+
+  if (displayHeight > maxHeight) {
+    displayHeight = maxHeight;
+    displayWidth = displayHeight * aspectRatio;
+  }
 
   const thumbnailBase64 = useMemo(() => {
     const mini = photo?.minithumbnail?.data;
@@ -74,7 +80,7 @@ export default function PhotoMessage({ photo }: Props) {
   };
 
   return (
-    <View>
+    <View style={styles.container}>
       <TouchableOpacity onPress={handleOpenFull} disabled={loading}>
         <Image
           source={{
@@ -82,18 +88,27 @@ export default function PhotoMessage({ photo }: Props) {
               ? `data:image/jpeg;base64,${thumbnailBase64}`
               : photoPath || undefined,
           }}
-          style={{
-            width: displayWidth,
-            height: displayHeight,
-            borderRadius: 8,
-            backgroundColor: "#111",
-            resizeMode: "cover", // مهم: برش از وسط
-          }}
+          style={[
+            styles.image,
+            {
+              width: displayWidth,
+              height: displayHeight,
+            },
+          ]}
+          resizeMode="contain"
         />
       </TouchableOpacity>
-      {loading && (
-        <ActivityIndicator color="white" style={{ marginTop: 10 }} />
-      )}
+      {loading && <ActivityIndicator color="white" style={{ marginTop: 10 }} />}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    marginVertical: 10,
+  },
+  image: {
+    borderRadius: 8,
+    backgroundColor: "#111",
+  },
+});
