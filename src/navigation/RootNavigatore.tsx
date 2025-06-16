@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import PickTeamsScreen from '../screens/setup/PickTeams';
 import RankTeamsScreen from '../screens/setup/RankTeams';
 import Comments from '../screens/tabs/Comments';
+import FullPhotoScreen from '../components/tabs/home/FullPhotoScreen';
 
 const Stack = createNativeStackNavigator<any>();
 
@@ -32,6 +33,7 @@ export default function RootNavigator() {
       <Stack.Screen name="PickTeams" component={PickTeamsScreen} />
       <Stack.Screen name="Priority" component={RankTeamsScreen} />
       <Stack.Screen name="Comments" component={Comments} />
+      <Stack.Screen name="FullPhoto" component={FullPhotoScreen} />
     </Stack.Navigator>
   );
 }

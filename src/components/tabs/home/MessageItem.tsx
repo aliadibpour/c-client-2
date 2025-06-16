@@ -1,40 +1,45 @@
 import { Dimensions, Text, View, TouchableOpacity } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useMemo } from "react";
+import { fromByteArray } from "base64-js";
 import MessageHeader from "./MessageHeader";
 import PhotoMessage from "./MessagePhoto";
 import VideoMessage from "./MessageVideo";
 import MessageReactions from "./MessageReaction";
+import { useNavigation } from "@react-navigation/native";
 
-const screenWidth = Dimensions.get("window").width;
+// 🧹 Clean text from trailing emojis + @user + link
+const cleanText = (text: string): string => {
+  return text
+    .replace(/[\p{Emoji}\s@‌\w]+@[\w_]+$/gu, "") // emoji(s) + @username
+    .replace(/@\w+$/gm, "")                      // any standalone @user
+    .replace(/https?:\/\/\S+$/gm, "")            // trailing links
+    .trim();
+};
 
-export default function MessageItem({ data }: any) {
-  const navigation: any = useNavigation();
+export default function MessageItem({ data, isVisible }: any) {
   const content = data?.content;
+  const navigation: any = useNavigation();
+
+  const captionText = content?.caption?.text || "";
+  const messageText = content?.text?.text || "";
+
+  const cleanedCaption = useMemo(() => cleanText(captionText), [captionText]);
+  const cleanedText = useMemo(() => cleanText(messageText), [messageText]);
 
   return (
-    <View
-      style={{
-        borderBottomColor: "#333",
-        borderBottomWidth: 1,
-        paddingVertical: 15,
-      }}
-    >
+    <View style={{ borderBottomColor: "#333", borderBottomWidth: 1, paddingVertical: 15 }}>
       <MessageHeader chatId={data.chatId} />
 
-      {!!content?.caption?.text && (
-        <Text style={{ color: "white", marginBottom: 5 }}>
-          {content.caption.text}
-        </Text>
+      {!!cleanedCaption && (
+        <Text style={{ color: "white", marginBottom: 11 }}>{cleanedCaption}</Text>
       )}
 
-      {!!content?.text && (
-        <Text style={{ color: "white", marginBottom: 5 }}>
-          {content.text.text}
-        </Text>
+      {!!cleanedText && (
+        <Text style={{ color: "white", marginBottom: 11 }}>{cleanedText}</Text>
       )}
 
       {content?.photo && <PhotoMessage photo={content.photo} />}
-      {content?.video && <VideoMessage video={content.video} />}
+      {content?.video && <VideoMessage video={content.video} isVisible={isVisible} />}
 
       {data.interactionInfo?.reactions?.reactions?.length > 0 && (
         <MessageReactions reactions={data.interactionInfo.reactions.reactions} />

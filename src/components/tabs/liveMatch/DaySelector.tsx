@@ -24,7 +24,7 @@ const DaySelector: React.FC<Props> = ({ days, selectedIndex, onSelect }) => {
         <Pressable
           onPress={() => onSelect(index)}
           style={{
-            marginRight: 14,
+            marginRight: 12,
             paddingVertical: 8,
             paddingHorizontal: 32,
             height: 42,

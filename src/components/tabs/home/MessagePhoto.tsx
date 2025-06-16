@@ -1,7 +1,14 @@
-import { Image, View, ActivityIndicator } from "react-native";
+import {
+  Image,
+  View,
+  ActivityIndicator,
+  TouchableOpacity,
+  Dimensions,
+} from "react-native";
 import { useEffect, useMemo, useState } from "react";
 import TdLib from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
+import { useNavigation } from "@react-navigation/native";
 
 interface Props {
   photo: any; // content.photo
@@ -10,17 +17,24 @@ interface Props {
 export default function PhotoMessage({ photo }: Props) {
   const [photoPath, setPhotoPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const navigation: any = useNavigation();
 
   const sizes = photo?.sizes || [];
-  const biggest = sizes[sizes.length - 1]; // آخرین سایز معمولاً بزرگترین است
+  const biggest = sizes[sizes.length - 1];
   const fileId = biggest?.photo?.id;
-  const width = biggest?.width || 320;
-  const height = biggest?.height || 240;
+  const originalWidth = biggest?.width || 320;
+  const originalHeight = biggest?.height || 240;
 
-  const maxWidth = 320;
-  const scaleFactor = width > 0 ? maxWidth / width : 1;
-  const displayWidth = width * scaleFactor;
-  const displayHeight = height * scaleFactor;
+  const screenWidth = Dimensions.get("window").width;
+  const maxWidth = screenWidth * 0.8;
+  const maxDisplayHeight = 300;
+
+  const scaleFactor = originalWidth > 0 ? maxWidth / originalWidth : 1;
+  const scaledHeight = originalHeight * scaleFactor;
+
+  const displayWidth = maxWidth;
+  const displayHeight =
+    scaledHeight > maxDisplayHeight ? maxDisplayHeight : scaledHeight;
 
   const thumbnailBase64 = useMemo(() => {
     const mini = photo?.minithumbnail?.data;
@@ -53,34 +67,30 @@ export default function PhotoMessage({ photo }: Props) {
     };
   }, [fileId]);
 
+  const handleOpenFull = () => {
+    if (photoPath) {
+      navigation.navigate("FullPhoto", { photoPath });
+    }
+  };
+
   return (
     <View>
-      {loading && (
+      <TouchableOpacity onPress={handleOpenFull} disabled={loading}>
         <Image
           source={{
-            uri: thumbnailBase64
+            uri: loading && thumbnailBase64
               ? `data:image/jpeg;base64,${thumbnailBase64}`
-              : undefined,
+              : photoPath || undefined,
           }}
           style={{
             width: displayWidth,
             height: displayHeight,
             borderRadius: 8,
             backgroundColor: "#111",
+            resizeMode: "cover", // مهم: برش از وسط
           }}
         />
-      )}
-      {!loading && photoPath && (
-        <Image
-          source={{ uri: photoPath }}
-          style={{
-            width: displayWidth-50,
-            height: displayHeight-70,
-            borderRadius: 8,
-            backgroundColor: "#000",
-          }}
-        />
-      )}
+      </TouchableOpacity>
       {loading && (
         <ActivityIndicator color="white" style={{ marginTop: 10 }} />
       )}
