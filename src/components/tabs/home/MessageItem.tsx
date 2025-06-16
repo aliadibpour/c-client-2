@@ -31,11 +31,11 @@ export default function MessageItem({ data, isVisible }: any) {
       <MessageHeader chatId={data.chatId} />
 
       {!!cleanedCaption && (
-        <Text style={{ color: "white", marginBottom: 11 }}>{cleanedCaption}</Text>
+        <Text style={{ color: "white", marginBottom: 11, fontFamily: "Vazir.ttf" }}>{cleanedCaption}</Text>
       )}
 
       {!!cleanedText && (
-        <Text style={{ color: "white", marginBottom: 11 }}>{cleanedText}</Text>
+        <Text style={{ color: "white", marginBottom: 11, fontFamily: "Vazir.ttf" }}>{cleanedText}</Text>
       )}
 
       {content?.photo && <PhotoMessage photo={content.photo} />}
