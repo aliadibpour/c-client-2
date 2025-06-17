@@ -5,8 +5,8 @@ import TabNavigator from './TabNavigator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PickTeamsScreen from '../screens/setup/PickTeams';
 import RankTeamsScreen from '../screens/setup/RankTeams';
-import Comments from '../screens/tabs/Comments';
-import FullPhotoScreen from '../components/tabs/home/FullPhotoScreen';
+import Comments from '../screens/tabs/Home/Comments';
+import FullPhotoScreen from '../screens/tabs/Home/FullPhotoScreen';
 
 const Stack = createNativeStackNavigator<any>();
 

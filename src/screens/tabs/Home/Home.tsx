@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { Text, FlatList, View, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import TdLib from "react-native-tdlib";
-import MessageItem from "../../components/tabs/home/MessageItem";
+import MessageItem from "../../../components/tabs/home/MessageItem";
 
 export default function HomeScreen() {
   const [messages, setMessages] = useState<any[]>([]);
@@ -12,7 +12,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const messages: any = await TdLib.getChatHistory(chatId, 0, 14);
+        const messages: any = await TdLib.getChatHistory(chatId, 0, 23);
         const parsed = messages.map((item: any) => JSON.parse(item.raw_json));
         console.log("Fetched messages:", parsed);
         setMessages(parsed);

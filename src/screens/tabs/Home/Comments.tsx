@@ -19,7 +19,6 @@ export default function Comments() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log("al")
     if (!chatId || !messageId) {
       setLoading(false);
       setError("Missing chatId or messageId.");
@@ -28,20 +27,28 @@ export default function Comments() {
 
     const fetchComments = async () => {
       try {
-        // Step 1: Get messageThreadId using getMessageComments
+        // Step 1: Get messageThreadId
         const response: any = await TdLib.getMessageComments(chatId, messageId);
         const parsed = response?.raw ? JSON.parse(response.raw) : null;
         console.log("Response from getMessageComments:", parsed);
 
-        const threadId = parsed?.message?.messageThreadId;
+        const threadId = parsed?.messageThreadId; // خارج از message
         if (!threadId) {
           setError("Could not find message thread ID.");
           setComments([]);
           return;
         }
 
-        // Step 2: Get message thread history using getMessageThreadHistory
-        const historyResponse: any = await TdLib.getMessageThreadHistory(chatId, threadId,0,10);
+        const fromMessageId = 1;
+        const limit = 10;
+
+        // Step 2: Get thread history
+        const historyResponse: any = await TdLib.getMessageThreadHistory(
+          chatId,
+          threadId,
+          fromMessageId,
+          limit
+        );
         const historyParsed = historyResponse?.raw ? JSON.parse(historyResponse.raw) : null;
         console.log("Response from getMessageThreadHistory:", historyParsed);
 
@@ -51,8 +58,6 @@ export default function Comments() {
         } else {
           setComments(historyParsed.messages);
         }
-
-        console.log("Fetched thread comments:", historyParsed);
       } catch (err: any) {
         console.error("Error fetching comments:", err);
         setError(err?.message || "An unexpected error occurred.");

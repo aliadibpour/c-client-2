@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { ActivityIndicator, View, Dimensions } from "react-native";
 import Video from "react-native-video";
 import { startMediaDownload, cancelMediaDownload } from "./mediaDownloadManager";
+import { useFocusEffect } from "@react-navigation/native";
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -67,7 +68,7 @@ export default function MessageVideo({ video, isVisible }: any) {
         overflow: "hidden",
       }}
       resizeMode="contain"
-      controls={isVisible}
+      controls
       paused={!isVisible}
       repeat={isVisible}
     />
