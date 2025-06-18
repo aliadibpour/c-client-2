@@ -1,10 +1,180 @@
-import { Text } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import React, { useEffect, useState, useMemo } from "react";
+import {
+  View,
+  Text,
+  Image,
+  ActivityIndicator,
+  StyleSheet,
+  StatusBar,
+} from "react-native";
+import TdLib from "react-native-tdlib";
+import { fromByteArray } from "base64-js";
+
+type ProfilePhotoType = {
+  big: { id: number; local: { isDownloadingCompleted: boolean; path: string } };
+  small: { id: number; local: { isDownloadingCompleted: boolean; path: string } };
+  minithumbnail?: { data: Uint8Array };
+};
+
+type Profile = {
+  firstName: string;
+  lastName: string;
+  phoneNumber: string;
+  profilePhoto?: ProfilePhotoType;
+};
 
 export default function ProfileScreen() {
-    return (
-        <SafeAreaView>
-            <Text style={{color: "white"}}>Profile</Text>
-        </SafeAreaView>
-    )
-} 
+  const [profile, setProfile] = useState<Profile | any>(null);
+  const [photoPath, setPhotoPath] = useState<string | null>(null);
+  const [loadingPhoto, setLoadingPhoto] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+
+  const thumbnailBase64 = useMemo(() => {
+    if (!profile?.profilePhoto?.minithumbnail?.data) return null;
+    return fromByteArray(profile.profilePhoto.minithumbnail.data);
+  }, [profile]);
+
+  // گرفتن پروفایل
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoadingProfile(true);
+        const profileJson = await TdLib.getProfile();
+        const profileData = JSON.parse(profileJson);
+        console.log("Profile data:", profileData);
+        setProfile(profileData);
+      } catch (err) {
+        console.error("Failed to load profile:", err);
+        setProfile(null);
+      } finally {
+        setLoadingProfile(false);
+      }
+    })();
+  }, []);
+
+  // دانلود عکس پروفایل
+  useEffect(() => {
+    let isMounted = true;
+    if (!profile?.profilePhoto?.small?.id) return;
+
+    (async () => {
+      setLoadingPhoto(true);
+      try {
+        const result: any = await TdLib.downloadFile(profile.profilePhoto.small.id);
+        const file = JSON.parse(result.raw);
+        if (
+          isMounted &&
+          file.local?.isDownloadingCompleted &&
+          file.local.path
+        ) {
+          setPhotoPath(`file://${file.local.path}`);
+        }
+      } catch (err) {
+        console.error("Failed to download profile photo:", err);
+      } finally {
+        if (isMounted) setLoadingPhoto(false);
+      }
+    })();
+
+    return () => { isMounted = false };
+  }, [profile]);
+
+  const renderProfileImage = () => {
+    if (photoPath) {
+      return <Image source={{ uri: photoPath }} style={styles.profileImage} />;
+    } else if (thumbnailBase64) {
+      return (
+        <Image
+          source={{ uri: `data:image/jpeg;base64,${thumbnailBase64}` }}
+          style={styles.profileImage}
+        />
+      );
+    } else {
+      return (
+        <View style={styles.profilePlaceholder}>
+          <Text style={styles.profileInitial}>
+            {profile?.firstName?.[0]?.toUpperCase() || "?"}
+          </Text>
+        </View>
+      );
+    }
+  };
+
+  return (
+    <>
+      <StatusBar backgroundColor="#000" barStyle="light-content" />
+      <View style={styles.container}>
+        {loadingProfile ? (
+          <View style={styles.centered}>
+            <ActivityIndicator size="large" color="#0088cc" />
+            <Text style={styles.loadingText}>در حال بارگذاری...</Text>
+          </View>
+        ) : (
+          <>
+            {renderProfileImage()}
+            {loadingPhoto && (
+              <ActivityIndicator
+                style={{ marginTop: 8 }}
+                size="small"
+                color="#0088cc"
+              />
+            )}
+
+            <Text style={styles.nameText}>
+              {profile?.firstName} {profile?.lastName}
+            </Text>
+            <Text style={styles.phoneText}>{profile?.phoneNumber}</Text>
+          </>
+        )}
+      </View>
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#000",
+    alignItems: "center",
+    justifyContent: "flex-start",
+  },
+  profileImage: {
+    width: "100%",
+    height: 380,
+    backgroundColor: "#111",
+  },
+  profilePlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "#444",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 24,
+  },
+  profileInitial: {
+    fontSize: 40,
+    color: "white",
+  },
+  nameText: {
+    color: "white",
+    fontSize: 22,
+    fontWeight: "bold",
+    marginTop: 12,
+  },
+  phoneText: {
+    color: "#bbb",
+    fontSize: 16,
+    marginTop: 4,
+  },
+  centered: {
+    flex: 1,
+    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    color: "white",
+    marginTop: 12,
+  },
+});
