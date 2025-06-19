@@ -4,11 +4,30 @@ import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
 export const HouseIcon = ({ color = "white", size = 24, outline = false }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Path
-      d="M3 10L12 3L21 10V20C21 20.55 20.55 21 20 21H15C14.45 21 14 20.55 14 20V16C14 15.45 13.55 15 13 15H11C10.45 15 10 15.45 10 16V20C10 20.55 9.55 21 9 21H4C3.45 21 3 20.55 3 20V10Z"
+      d="
+        M4 10.5
+        L12 4
+        L20 10.5
+        V20
+        C20 20.55 19.55 21 19 21
+        H15
+        C14.45 21 14 20.55 14 20
+        V16
+        C14 15.45 13.55 15 13 15
+        H11
+        C10.45 15 10 15.45 10 16
+        V20
+        C10 20.55 9.55 21 9 21
+        H5
+        C4.45 21 4 20.55 4 20
+        V10.5
+        Z
+      "
       stroke={color}
-      strokeWidth={outline ? 1.5 : 0}
+      strokeWidth={outline ? 1.7 : 0}
       fill={outline ? "none" : color}
       strokeLinejoin="round"
+      strokeLinecap="round"
     />
   </Svg>
 );
@@ -28,18 +47,37 @@ export const TelegramIcon = ({ color = "white", size = 24, outline = false }) =>
 
 export const ProfileIcon = ({ color = "white", size = 24, outline = false }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path
-      d="M12 12C14.7614 12 17 9.76142 17 7C17 4.23858 14.7614 2 12 2C9.23858 2 7 4.23858 7 7C7 9.76142 9.23858 12 12 12Z"
-      stroke={color}
-      strokeWidth={outline ? 1.5 : 0}
-      fill={outline ? "none" : color}
-    />
-    <Path
-      d="M4 20C4 16.6863 7.13401 14 11 14H13C16.866 14 20 16.6863 20 20"
-      stroke={color}
-      strokeWidth={outline ? 1.5 : 0}
-      fill="none"
-    />
+    {outline ? (
+      <>
+        {/* Head - outline */}
+        <Path
+          d="M12 12C14.761 12 17 9.761 17 7C17 4.239 14.761 2 12 2C9.239 2 7 4.239 7 7C7 9.761 9.239 12 12 12Z"
+          stroke={color}
+          strokeWidth={1.5}
+          fill="none"
+        />
+        {/* Body - outline */}
+        <Path
+          d="M4 20C4 16.686 7.134 14 13 14H13C16.866 14 20 16.686 20 20"
+          stroke={color}
+          strokeWidth={1.5}
+          fill="none"
+        />
+      </>
+    ) : (
+      <>
+        {/* Head - filled */}
+        <Path
+          d="M12 12C14.761 12 17 9.761 17 7C17 4.239 14.761 2 12 2C9.239 2 7 4.239 7 7C7 9.761 9.239 12 12 12Z"
+          fill={color}
+        />
+        {/* Body - filled (solid shape) */}
+        <Path
+          d="M2 21C2 16.582 6.03 13 12 13C17.97 13 22 16.582 22 21C22 21.553 21.553 22 21 22H3C2.447 22 2 21.553 2 21Z"
+          fill={color}
+        />
+      </>
+    )}
   </Svg>
 );
 

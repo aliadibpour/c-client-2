@@ -99,15 +99,11 @@ export default function TabNavigator() {
 const styles = StyleSheet.create({
   tabBar: {
     backgroundColor: "#0d0d0d",
-    paddingTop: Platform.select({ web: 4, default: 12 }),
-    paddingBottom: Platform.select({ web: 4, default: 8 }),
-    height: Platform.select({ web: 60, default: 60 }),
-    borderTopWidth: 0,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 8,
+    paddingTop: 12,
+    paddingBottom: 8,
+    height: 60,
+    borderTopWidth: 0.4,
+    borderColor: "#222"
   },
   iconContainer: {
     alignItems: "center",

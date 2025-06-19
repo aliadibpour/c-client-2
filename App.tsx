@@ -6,6 +6,7 @@ import RootNavigator from './src/navigation/RootNavigatore';
 import TdLib, { TdLibParameters } from 'react-native-tdlib';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TelegramService } from './src/services/TelegramService';
+import { StatusBar } from "react-native";
 
 function App(): React.JSX.Element {
 
@@ -37,6 +38,10 @@ function App(): React.JSX.Element {
   return (
     <NavigationContainer>
       <ThemeProvider value={MyDarkTheme}>
+        <StatusBar
+          backgroundColor="#000"
+          barStyle="light-content"
+        />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.container}>
             <View style={styles.contentWrapper}>

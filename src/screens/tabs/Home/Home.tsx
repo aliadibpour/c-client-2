@@ -11,20 +11,17 @@ export default function HomeScreen() {
   useEffect(() => {
     const fetchBestMessages = async () => {
       try {
-        // مرحله 1: گرفتن لیست پیام‌ها از سرور
-        const res = await fetch("http://192.168.1.103:3000/best");
+        const res = await fetch("http://192.168.1.102:3000/best");
         const data: { chatId: string; messageId: string }[] = await res.json();
         console.log("📥 Server returned:", data.length, "items");
 
         const allMessages: any[] = [];
 
-        // مرحله 2: گرفتن پیام کامل از TdLib
         for (const { chatId, messageId } of data) {
           try {
             const raw = await TdLib.getMessage(+chatId, +messageId);
-            console.log("📥 Fetched message:", raw.raw);
             const parsed = JSON.parse(raw.raw);
-            console.log("📥 Fetched message:", parsed.id, "from chat:", parsed.chatId);
+            console.log("📥 Fetched message:", parsed);
             allMessages.push(parsed);
           } catch (err) {
             console.log("❌ Error getting message:", err);
@@ -50,7 +47,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.header}>Top Telegram Posts</Text>
+      <Text style={styles.header}>Corner</Text>
       <FlatList
         data={messages}
         keyExtractor={(item) => item.id.toString()}
@@ -75,5 +72,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "bold",
     marginVertical: 16,
+    textAlign: "right",
+    paddingHorizontal: 10
   },
 });

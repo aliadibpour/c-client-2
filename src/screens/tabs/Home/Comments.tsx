@@ -27,20 +27,22 @@ export default function Comments() {
 
     const fetchComments = async () => {
       try {
-        // Step 1: Get messageThreadId
+        console.log("🔍 Step 1: Fetching message thread ID...");
         const response: any = await TdLib.getMessageComments(chatId, messageId);
         const parsed = response?.raw ? JSON.parse(response.raw) : null;
-        console.log("Response from getMessageComments:", parsed);
 
-        const threadId = parsed?.messageThreadId; // خارج از message
-        if (!threadId) {
-          setError("Could not find message thread ID.");
-          setComments([]);
-          return;
-        }
+        console.log("✅ Raw response from getMessageComments:", parsed);
 
-        const fromMessageId = 1;
-        const limit = 10;
+        //const threadId = parsed?.messageThreadId;
+        // if (!threadId || typeof threadId !== "number" || threadId === 0) {
+        //   setError("Could not find valid message thread ID.");
+        //   console.warn("🚨 Invalid threadId:", threadId);
+        //   return;
+        // }
+
+        const threadId = parsed?.messageThreadId;
+        const fromMessageId = parsed?.replyInfo?.lastMessageId ?? 0;
+        const limit = 20;
 
         // Step 2: Get thread history
         const historyResponse: any = await TdLib.getMessageThreadHistory(
@@ -49,8 +51,10 @@ export default function Comments() {
           fromMessageId,
           limit
         );
+
+
         const historyParsed = historyResponse?.raw ? JSON.parse(historyResponse.raw) : null;
-        console.log("Response from getMessageThreadHistory:", historyParsed);
+        console.log("🗃 Response from getMessageThreadHistory:", historyParsed);
 
         if (!Array.isArray(historyParsed?.messages)) {
           setError("No comments found in thread history.");
@@ -59,7 +63,7 @@ export default function Comments() {
           setComments(historyParsed.messages);
         }
       } catch (err: any) {
-        console.error("Error fetching comments:", err);
+        console.error("🔥 Error fetching comments:", err);
         setError(err?.message || "An unexpected error occurred.");
       } finally {
         setLoading(false);

@@ -24,49 +24,38 @@ type Profile = {
 };
 
 export default function ProfileScreen() {
-  const [profile, setProfile] = useState<Profile | any>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [photoPath, setPhotoPath] = useState<string | null>(null);
   const [loadingPhoto, setLoadingPhoto] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
-  const thumbnailBase64 = useMemo(() => {
-    if (!profile?.profilePhoto?.minithumbnail?.data) return null;
-    return fromByteArray(profile.profilePhoto.minithumbnail.data);
-  }, [profile]);
-
-  // گرفتن پروفایل
+  // Load user profile
   useEffect(() => {
     (async () => {
       try {
         setLoadingProfile(true);
         const profileJson = await TdLib.getProfile();
         const profileData = JSON.parse(profileJson);
-        console.log("Profile data:", profileData);
+        console.log("Loaded profile:", profileData);
         setProfile(profileData);
       } catch (err) {
         console.error("Failed to load profile:", err);
-        setProfile(null);
       } finally {
         setLoadingProfile(false);
       }
     })();
   }, []);
 
-  // دانلود عکس پروفایل
+  // Download full profile photo
   useEffect(() => {
     let isMounted = true;
-    if (!profile?.profilePhoto?.small?.id) return;
-
-    (async () => {
-      setLoadingPhoto(true);
+    const downloadImage = async () => {
+      if (!profile?.profilePhoto?.big?.id) return;
       try {
-        const result: any = await TdLib.downloadFile(profile.profilePhoto.small.id);
+        setLoadingPhoto(true);
+        const result: any = await TdLib.downloadFile(profile.profilePhoto.big.id);
         const file = JSON.parse(result.raw);
-        if (
-          isMounted &&
-          file.local?.isDownloadingCompleted &&
-          file.local.path
-        ) {
+        if (isMounted && file.local?.isDownloadingCompleted && file.local.path) {
           setPhotoPath(`file://${file.local.path}`);
         }
       } catch (err) {
@@ -74,17 +63,34 @@ export default function ProfileScreen() {
       } finally {
         if (isMounted) setLoadingPhoto(false);
       }
-    })();
+    };
 
-    return () => { isMounted = false };
+    downloadImage();
+    return () => {
+      isMounted = false;
+    };
+  }, [profile?.profilePhoto?.small?.id]);
+
+  // Base64 mini-thumbnail
+  const thumbnailBase64 = useMemo(() => {
+    if (!profile?.profilePhoto?.minithumbnail?.data) return null;
+    return fromByteArray(profile.profilePhoto.minithumbnail.data);
   }, [profile]);
 
+  // Render image/thumbnail/initial
   const renderProfileImage = () => {
     if (photoPath) {
-      return <Image source={{ uri: photoPath }} style={styles.profileImage} />;
+      return (
+        <Image
+          key="full"
+          source={{ uri: photoPath }}
+          style={styles.profileImage}
+        />
+      );
     } else if (thumbnailBase64) {
       return (
         <Image
+          key="thumbnail"
           source={{ uri: `data:image/jpeg;base64,${thumbnailBase64}` }}
           style={styles.profileImage}
         />
@@ -107,23 +113,19 @@ export default function ProfileScreen() {
         {loadingProfile ? (
           <View style={styles.centered}>
             <ActivityIndicator size="large" color="#0088cc" />
-            <Text style={styles.loadingText}>در حال بارگذاری...</Text>
+            <Text style={styles.loadingText}>در حال بارگذاری پروفایل...</Text>
+          </View>
+        ) : !profile ? (
+          <View style={styles.centered}>
+            <Text style={{ color: "white" }}>پروفایل یافت نشد.</Text>
           </View>
         ) : (
           <>
             {renderProfileImage()}
-            {loadingPhoto && (
-              <ActivityIndicator
-                style={{ marginTop: 8 }}
-                size="small"
-                color="#0088cc"
-              />
-            )}
-
             <Text style={styles.nameText}>
-              {profile?.firstName} {profile?.lastName}
+              {profile.firstName} {profile.lastName}
             </Text>
-            <Text style={styles.phoneText}>{profile?.phoneNumber}</Text>
+            <Text style={styles.phoneText}>{profile.phoneNumber}</Text>
           </>
         )}
       </View>
@@ -135,22 +137,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#000",
-    alignItems: "center",
-    justifyContent: "flex-start",
   },
   profileImage: {
     width: "100%",
-    height: 380,
+    height: 370,
     backgroundColor: "#111",
   },
   profilePlaceholder: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: "100%",
+    height: 370,
     backgroundColor: "#444",
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 24,
   },
   profileInitial: {
     fontSize: 40,
