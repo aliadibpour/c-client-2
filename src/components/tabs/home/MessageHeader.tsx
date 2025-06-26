@@ -72,7 +72,7 @@ export default function MessageHeader({ chatId }: any) {
         source={{ uri: photoUri || minithumbnailUri }}
         style={{ width: 35, height: 35, borderRadius: 25, backgroundColor: "#eee" }}
       />
-      <Text style={{ fontSize: 16, marginLeft: 10, fontWeight: "bold", color:"white" }}>{title}</Text>
+      <Text style={{ fontSize: 16, marginLeft: 10, fontFamily: "SFArabic-Heavy", color:"white" }}>{title}</Text>
     </View>
   );
 }

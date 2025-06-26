@@ -1,103 +1,133 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Text, View, ScrollView, PanResponder } from "react-native";
+import {
+  Text,
+  Animated,
+  Dimensions,
+  View,
+  I18nManager
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import io from "socket.io-client";
 import DaySelector from "../../components/tabs/liveMatch/DaySelector";
 import MatchList from "../../components/tabs/liveMatch/MatchList";
 
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
 const dayList = [
-  { title: "پریروز", id: 1 },
-  { title: "دیروز", id: 2 },
-  { title: "امروز", id: 3 },
-  { title: "فردا", id: 4 },
-  { title: "پس‌فردا", id: 5 },
+  { title: "پریروز", id: 0 },
+  { title: "دیروز", id: 1 },
+  { title: "امروز", id: 2 },
+  { title: "فردا", id: 3 },
+  { title: "پس‌فردا", id: 4 },
 ];
 
 export default function LiveMatchScreen() {
   const socketRef = useRef<any>(null);
-  const [selectedDayIndex, setSelectedDayIndex] = useState(1);
+  const [selectedDayIndex, setSelectedDayIndex] = useState(2);
   const [liveMatches, setLiveMatches] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [errorText, setErrorText] = useState("");
+  const [loadingDays, setLoadingDays] = useState<{ [id: number]: boolean }>({});
+  const [matchCache, setMatchCache] = useState<{ [id: number]: any[] }>({});
+
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const scrollViewRef = useRef<Animated.FlatList>(null);
 
   useEffect(() => {
-    socketRef.current = io("http://192.168.1.102:3000", {
+    socketRef.current = io("http://192.168.1.102:3100", {
       transports: ["websocket"],
     });
 
     socketRef.current.on("connect", () => {
-      console.log("✅ Connected to Socket.IO server");
-      fetchMatches(dayList[selectedDayIndex].id);
+      fetchMatchesOnce(dayList[selectedDayIndex].id);
     });
 
     return () => {
       socketRef.current?.disconnect();
-      socketRef.current = null;
     };
   }, []);
 
-  useEffect(() => {
-    if (socketRef.current?.connected) {
-      fetchMatches(dayList[selectedDayIndex].id);
-    }
-  }, [selectedDayIndex]);
-
-  const fetchMatches = (dayId: number) => {
-    setLoading(true);
-    setErrorText("");
-    socketRef.current.emit("matchesResult", dayId, (response: any) => {
-      setLoading(false);
-      if (response.matchResultExist) {
-        setLiveMatches(response.matchesResult);
-      } else if (response.message === "no match") {
-        setLiveMatches([]);
-        setErrorText("هیچ بازی‌ای برای این روز یافت نشد");
+  const fetchMatchesOnce = (dayId: number) => {
+    if (matchCache[dayId]) return;
+    setLoadingDays((prev) => ({ ...prev, [dayId]: true }));
+    socketRef.current.emit("matchesResult", dayId, (res: any) => {
+      setLoadingDays((prev) => ({ ...prev, [dayId]: false }));
+      if (res.matchResultExist) {
+        setMatchCache((prev) => ({ ...prev, [dayId]: res.matchesResult }));
       } else {
-        setLiveMatches([]);
-        setErrorText("خطا در دریافت داده‌ها");
+        setMatchCache((prev) => ({ ...prev, [dayId]: [] }));
       }
     });
   };
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gesture) =>
-        Math.abs(gesture.dx) > Math.abs(gesture.dy) && Math.abs(gesture.dx) > 20,
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dx > 50 && selectedDayIndex > 0) {
-          setSelectedDayIndex((prev) => prev - 1);
-        } else if (gesture.dx < -50 && selectedDayIndex < dayList.length - 1) {
-          setSelectedDayIndex((prev) => prev + 1);
-        }
-      },
-    })
-  ).current;
+  const onScrollEnd = (event: any) => {
+    const rawX = event.nativeEvent.contentOffset.x;
+    const ltrIndex = Math.round(rawX / SCREEN_WIDTH);
+    const rtlIndex = dayList.length - 1 - ltrIndex;
+    if (rtlIndex >= 0 && rtlIndex < dayList.length) {
+      setSelectedDayIndex(rtlIndex);
+      fetchMatchesOnce(dayList[rtlIndex].id);
+    }
+  };
+
+  const onDaySelect = (index: number) => {
+    setSelectedDayIndex(index);
+    fetchMatchesOnce(dayList[index].id);
+    const ltrIndex = dayList.length - 1 - index;
+    scrollViewRef.current?.scrollToOffset({
+      offset: ltrIndex * SCREEN_WIDTH,
+      animated: true,
+    });
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0c0c0c" }}>
       <DaySelector
         days={dayList}
         selectedIndex={selectedDayIndex}
-        onSelect={setSelectedDayIndex}
+        onSelect={onDaySelect}
+        scrollX={scrollX}
       />
 
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 0, paddingBottom: 40 }} {...panResponder.panHandlers}>
-        {loading ? (
-          <Text style={{ color: "#aaa", fontSize: 16, marginTop: 30, textAlign: "center" }}>
-            در حال بارگذاری...
-          </Text>
-        ) : errorText ? (
-          <Text style={{ color: "#aaa", fontSize: 16, marginTop: 30, textAlign: "center" }}>
-            {errorText}
-          </Text>
-        ) : liveMatches.length === 0 ? (
-          <Text style={{ color: "#aaa", fontSize: 16, marginTop: 30, textAlign: "center" }}>
-            بازی زنده‌ای یافت نشد
-          </Text>
-        ) : (
-          <MatchList data={liveMatches} />
+      <Animated.FlatList
+        ref={scrollViewRef}
+        data={dayList}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(item) => item.id.toString()}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+          { useNativeDriver: false }
         )}
-      </ScrollView>
+        onMomentumScrollEnd={onScrollEnd}
+        renderItem={({ item, index }) => {
+          const matches = matchCache[item.id];
+          const isLoading = loadingDays[item.id];
+          return (
+            <View style={{ width: SCREEN_WIDTH }}>
+              {isLoading ? (
+                <Text style={styles.text}>در حال بارگذاری...</Text>
+              ) : !matches ? (
+                <Text style={styles.text}>داده‌ای وجود ندارد</Text>
+              ) : matches.length === 0 ? (
+                <Text style={styles.text}>هیچ بازی‌ای یافت نشد</Text>
+              ) : (
+                <MatchList data={matches} />
+              )}
+            </View>
+          );
+        }}
+      />
     </SafeAreaView>
   );
 }
+
+const styles = {
+  text: {
+    color: "#aaa",
+    fontSize: 16,
+    marginTop: 30,
+    textAlign: "center",
+    width: SCREEN_WIDTH,
+    fontFamily: "SFArabic-Regular",
+  },
+};

@@ -1,5 +1,12 @@
-import React from "react";
-import { FlatList, Pressable, Text } from "react-native";
+import React, { useEffect, useRef } from "react";
+import {
+  Animated,
+  FlatList,
+  Pressable,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 
 interface Day {
   id: number;
@@ -10,35 +17,86 @@ interface Props {
   days: Day[];
   selectedIndex: number;
   onSelect: (index: number) => void;
+  scrollX: Animated.Value; // برای انیمیشن underline
 }
 
-const DaySelector: React.FC<Props> = ({ days, selectedIndex, onSelect }) => {
+const ITEM_WIDTH = 100;
+
+const DaySelector: React.FC<Props> = ({ days, selectedIndex, onSelect, scrollX }) => {
+  const flatListRef = useRef<FlatList>(null);
+  const screenWidth = useWindowDimensions().width;
+  const sideMargin = (screenWidth - ITEM_WIDTH) / 2;
+
+  // وقتی selectedIndex تغییر کرد، FlatList رو اسکرول می‌کنیم تا روز وسط صفحه بیاد
+  useEffect(() => {
+    flatListRef.current?.scrollToIndex({
+      index: selectedIndex,
+      animated: true,
+      viewPosition: 0.5,
+    });
+  }, [selectedIndex]);
+
+  const renderItem = ({ item, index }: { item: Day; index: number }) => (
+    <Pressable
+      onPress={() => onSelect(index)}
+      style={{
+        width: ITEM_WIDTH,
+        alignItems: "center",
+        justifyContent: "center",
+        height: 50,
+        marginBottom:18,
+        borderBottomColor: "#222",
+        borderBottomWidth:1
+      }}
+    >
+      <Text
+        style={{
+          color: index === selectedIndex ? "#fff" : "#888",
+          fontSize: 14,
+          fontFamily: "SFArabic-Heavy",
+        }}
+      >
+        {item.title}
+      </Text>
+    </Pressable>
+  );
+
+  // انیمیشن زیر خط (underline) که با اسکرول همگام است
+  const underlineTranslateX = scrollX.interpolate({
+    inputRange: [0, ITEM_WIDTH * (days.length - 1)],
+    outputRange: [ITEM_WIDTH * (days.length - 1), 0],
+    extrapolate: "clamp",
+  });
+
   return (
-    <FlatList
-      horizontal
-      data={days}
-      keyExtractor={(item) => item.id.toString()}
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ paddingHorizontal: 10, paddingVertical: 10, borderWidth:1, borderBottomColor: "#222", marginBottom: 20 }}
-      renderItem={({ item, index }) => (
-        <Pressable
-          onPress={() => onSelect(index)}
-          style={{
-            marginRight: 12,
-            paddingVertical: 8,
-            paddingHorizontal: 32,
-            height: 42,
-            justifyContent: "center",
-            // borderWidth: 1,
-            // borderBottomColor: selectedIndex == 2 ? "#555" : "#222"
-          }}
-        >
-          <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600" }}>
-            {item.title}
-          </Text>
-        </Pressable>
-      )}
-    />
+    <View>
+      <FlatList
+        ref={flatListRef}
+        horizontal
+        data={days}
+        keyExtractor={(item) => item.id.toString()}
+        showsHorizontalScrollIndicator={false}
+        renderItem={renderItem}
+        getItemLayout={(_, index) => ({
+          length: ITEM_WIDTH,
+          offset: ITEM_WIDTH * index,
+          index,
+        })}
+        
+      />
+
+      {/* <Animated.View
+        style={{
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          height: 2,
+          width: ITEM_WIDTH,
+          backgroundColor: "#fff",
+          transform: [{ translateX: underlineTranslateX }],
+        }}
+      /> */}
+    </View>
   );
 };
 

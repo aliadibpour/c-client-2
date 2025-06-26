@@ -17,6 +17,7 @@ import {
 } from "../assets/icons/index";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import PickTeams from "../screens/setup/PickTeams";
+import AppText from "../components/App/AppText";
 
 const Tab = createBottomTabNavigator();
 
@@ -51,7 +52,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
               <HouseIcon size={iconSize} outline={!focused} />
-              <Text style={[styles.iconText, focused && styles.activeText]}>خانه</Text>
+              <AppText style={[styles.iconText, focused && styles.activeText]}>خانه</AppText>
             </View>
           ),
         }}
@@ -63,7 +64,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
               <TelegramIcon size={iconSize} outline={!focused} />
-              <Text style={[styles.iconText, focused && styles.activeText]}>تلگرام</Text>
+              <AppText style={[styles.iconText, focused && styles.activeText]}>تلگرام</AppText>
             </View>
           ),
         }}
@@ -75,7 +76,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
               <FootballPitchIcon size={iconSize} outline={focused} />
-              <Text style={[styles.iconText, focused && styles.activeText]}>بازی‌ها</Text>
+              <AppText style={[styles.iconText, focused && styles.activeText]}>بازی‌ها</AppText>
             </View>
           ),
         }}
@@ -87,7 +88,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
               <ProfileIcon size={iconSize} outline={!focused} />
-              <Text style={[styles.iconText, focused && styles.activeText]}>پروفایل</Text>
+              <AppText style={[styles.iconText, focused && styles.activeText]}>پروفایل</AppText>
             </View>
           ),
         }}
@@ -114,7 +115,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 6,
     color: "rgba(255, 255, 255, 0.4)",
-    fontFamily: "vazir",
   },
   activeText: {
     color: "#ffffff",

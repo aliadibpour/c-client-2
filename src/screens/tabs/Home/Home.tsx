@@ -11,7 +11,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const fetchBestMessages = async () => {
       try {
-        const res = await fetch("http://192.168.1.102:3000/best");
+        const res = await fetch("http://192.168.1.102:3000/messages/best");
         const data: { chatId: string; messageId: string }[] = await res.json();
         console.log("📥 Server returned:", data.length, "items");
 

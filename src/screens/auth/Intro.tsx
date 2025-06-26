@@ -165,23 +165,23 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
     textAlign: 'center',
     color: 'white',
-    fontFamily: 'vazir',
+    fontFamily: 'SFArabic-Heavy',
     textShadowColor: 'rgba(0, 0, 0, 0.7)',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 3,
   },
   text: {
-    fontSize: 17,
+    fontSize: 16,
     textAlign: 'center',
     color: 'rgba(250, 250, 250, 0.8)',
-    fontFamily: 'vazir',
-    marginTop: 15,
+    fontFamily: 'SFArabic-Regular',
+    marginTop: 10,
     textShadowColor: 'rgba(0, 0, 0, 0.6)',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 2,
+    lineHeight:27
   },
   button: {
     backgroundColor: '#e8e8e8',

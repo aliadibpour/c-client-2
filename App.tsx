@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TelegramService } from './src/services/TelegramService';
 import { StatusBar } from "react-native";
 
+
 function App(): React.JSX.Element {
 
   const MyDarkTheme = {
