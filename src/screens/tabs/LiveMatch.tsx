@@ -4,12 +4,14 @@ import {
   Animated,
   Dimensions,
   View,
-  I18nManager
+  I18nManager,
+  StyleSheet
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import io from "socket.io-client";
 import DaySelector from "../../components/tabs/liveMatch/DaySelector";
 import MatchList from "../../components/tabs/liveMatch/MatchList";
+import { text } from "node:stream/consumers";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -121,7 +123,7 @@ export default function LiveMatchScreen() {
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   text: {
     color: "#aaa",
     fontSize: 16,
@@ -130,4 +132,4 @@ const styles = {
     width: SCREEN_WIDTH,
     fontFamily: "SFArabic-Regular",
   },
-};
+});

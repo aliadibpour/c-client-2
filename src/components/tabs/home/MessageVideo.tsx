@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { ActivityIndicator, View, Dimensions } from "react-native";
 import Video from "react-native-video";
-import { startMediaDownload, cancelMediaDownload } from "./mediaDownloadManager";
+import { startMediaDownload, cancelMediaDownload } from "../../../hooks/useMediaDownloadManager";
 import { useFocusEffect } from "@react-navigation/native";
 
 const screenWidth = Dimensions.get("window").width;
@@ -23,17 +23,14 @@ export default function MessageVideo({ video, isVisible }: any) {
     return () => cancelMediaDownload(fileId);
   }, [fileId]);
 
-  // ✅ نسبت تصویر (aspect ratio)
   let width = video?.width || 320;
   let height = video?.height || 240;
   const aspectRatio = width / height;
 
-  // ✅ مقیاس‌دهی مناسب برای جلوگیری از بلند شدن بیش از حد
   const maxDisplayWidth = screenWidth * 0.9;
   let displayWidth = maxDisplayWidth;
   let displayHeight = displayWidth / aspectRatio;
 
-  // ✅ محدود کردن ارتفاع نهایی برای جلوگیری از UI غیرعادی
   const maxHeight = 360;
   if (displayHeight > maxHeight) {
     displayHeight = maxHeight;
