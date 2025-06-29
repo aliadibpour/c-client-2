@@ -18,7 +18,7 @@ interface Props {
   onReact?: (emoji: string) => void; // callback to send reaction
 }
 
-export default function InteractiveReactions({ reactions, onReact }: Props) {
+export default function MessageReactions({ reactions, onReact }: Props) {
   const [selected, setSelected] = useState<string | null>(
     reactions.find(r => r.isChosen)?.type.emoji || null
   );

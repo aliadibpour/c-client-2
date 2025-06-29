@@ -12,36 +12,52 @@ import { fromByteArray } from "base64-js";
 import { useNavigation } from "@react-navigation/native";
 
 interface Props {
-  photo: any; // content.photo
+  photo: any;
+  context?: "channel" | "explore";
 }
 
-export default function PhotoMessage({ photo }: Props) {
+export default function MessagePhoto({ photo, context = "channel" }: Props) {
   const [photoPath, setPhotoPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const navigation: any = useNavigation();
 
+  const screenWidth = Dimensions.get("window").width;
+
+  // سایز اصلی
   const sizes = photo?.sizes || [];
   const biggest = sizes[sizes.length - 1];
   const fileId = biggest?.photo?.id;
   const originalWidth = biggest?.width || 320;
   const originalHeight = biggest?.height || 240;
 
-  const screenWidth = Dimensions.get("window").width;
-  const maxWidth = screenWidth * 0.8;
-  const maxHeight = 300;
-
-  // محاسبه نسبت تصویر
   const aspectRatio = originalWidth / originalHeight;
 
-  // محاسبه عرض و ارتفاع نهایی با حفظ نسبت و محدودیت maxWidth و maxHeight
-  let displayWidth = maxWidth;
-  let displayHeight = displayWidth / aspectRatio;
+  // محدودیت‌ها
+  const maxWidth = screenWidth * 0.85;
+  const minWidth = screenWidth * 0.65;
+  const maxHeight = 300;
 
+  // محاسبه عرض/ارتفاع نمایشی
+  let displayWidth = Math.min(originalWidth, maxWidth);
+  displayWidth = Math.max(displayWidth, minWidth);
+
+  let displayHeight = displayWidth / aspectRatio;
   if (displayHeight > maxHeight) {
     displayHeight = maxHeight;
     displayWidth = displayHeight * aspectRatio;
   }
 
+  // حالت مخصوص explore: عرض مشخص و border متفاوت
+  if (context === "explore") {
+    displayWidth = screenWidth * 0.9;
+    displayHeight = displayWidth / aspectRatio;
+    if (displayHeight > maxHeight) {
+      displayHeight = maxHeight;
+      displayWidth = displayHeight * aspectRatio;
+    }
+  }
+
+  // تصویر کوچک base64
   const thumbnailBase64 = useMemo(() => {
     const mini = photo?.minithumbnail?.data;
     return mini ? fromByteArray(mini) : null;
@@ -80,22 +96,22 @@ export default function PhotoMessage({ photo }: Props) {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, context === "explore" && { alignItems: "center" }]}>
       <TouchableOpacity onPress={handleOpenFull} disabled={loading}>
         <Image
           source={{
-            uri: loading && thumbnailBase64
-              ? `data:image/jpeg;base64,${thumbnailBase64}`
-              : photoPath || undefined,
+            uri:
+              loading && thumbnailBase64
+                ? `data:image/jpeg;base64,${thumbnailBase64}`
+                : photoPath || undefined,
           }}
-          style={[
-            styles.image,
-            {
-              width: displayWidth,
-              height: displayHeight,
-            },
-          ]}
-          resizeMode="contain"
+          style={{
+            width: displayWidth,
+            height: displayHeight,
+            borderRadius: context === "channel" ? 8 : 12,
+            backgroundColor: "#111",
+          }}
+          resizeMode="cover"
         />
       </TouchableOpacity>
       {loading && <ActivityIndicator color="white" style={{ marginTop: 10 }} />}
@@ -106,9 +122,5 @@ export default function PhotoMessage({ photo }: Props) {
 const styles = StyleSheet.create({
   container: {
     marginVertical: 10,
-  },
-  image: {
-    borderRadius: 8,
-    backgroundColor: "#111",
   },
 });

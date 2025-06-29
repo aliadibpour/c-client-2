@@ -7,7 +7,6 @@ import VideoMessage from "./MessageVideo";
 import MessageReactions from "./MessageReaction";
 import { useNavigation } from "@react-navigation/native";
 
-// 🧹 Clean text from trailing emojis + @user + link
 const cleanText = (text: string): string => {
   return text
     .replace(/[\p{Emoji}\s@‌\w]+@[\w_]+$/gu, "") // emoji(s) + @username
@@ -31,13 +30,31 @@ export default function MessageItem({ data, isVisible }: any) {
       <MessageHeader chatId={data.chatId} />
 
       {!!cleanedCaption && (
-        <Text style={{ color: "#f2f2f2", marginBottom: 11, fontSize:14,
-           fontFamily:"SFArabic-Regular", lineHeight:25 }}>{cleanedCaption}</Text>
+        <Text
+          style={{
+            color: "#f2f2f2",
+            marginBottom: 11,
+            fontSize: 14,
+            fontFamily: "SFArabic-Regular",
+            lineHeight: 25,
+          }}
+        >
+          {cleanedCaption}
+        </Text>
       )}
 
       {!!cleanedText && (
-        <Text style={{ color: "#f2f2f2", marginBottom: 11, fontSize:14,
-           fontFamily:"SFArabic-Regular", lineHeight:25 }}>{cleanedText}</Text>
+        <Text
+          style={{
+            color: "#f2f2f2",
+            marginBottom: 11,
+            fontSize: 14,
+            fontFamily: "SFArabic-Regular",
+            lineHeight: 25,
+          }}
+        >
+          {cleanedText}
+        </Text>
       )}
 
       {content?.photo && <PhotoMessage photo={content.photo} />}
