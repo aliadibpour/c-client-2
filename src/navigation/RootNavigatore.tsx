@@ -7,6 +7,7 @@ import PickTeamsScreen from '../screens/setup/PickTeams';
 import RankTeamsScreen from '../screens/setup/RankTeams';
 import Comments from '../screens/tabs/Home/Comments';
 import FullPhotoScreen from '../screens/tabs/Home/FullPhotoScreen';
+import ChannelScreen from '../screens/tabs/Channel';
 
 const Stack = createNativeStackNavigator<any>();
 
@@ -34,6 +35,7 @@ export default function RootNavigator() {
       <Stack.Screen name="Priority" component={RankTeamsScreen} />
       <Stack.Screen name="Comments" component={Comments} />
       <Stack.Screen name="FullPhoto" component={FullPhotoScreen} />
+      <Stack.Screen name="Channel" component={ChannelScreen} />
     </Stack.Navigator>
   );
 }
