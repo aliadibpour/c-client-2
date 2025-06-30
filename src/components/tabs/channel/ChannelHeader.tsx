@@ -22,7 +22,7 @@ export default function ChannelHeader({ chatId }: { chatId: number }) {
   const [minithumbnailUri, setMinithumbnailUri] = useState("");
   const [fileId, setFileId] = useState<number | null>(null);
 
-  const navigation = useNavigation();
+  const navigation:any = useNavigation();
 
   useEffect(() => {
     const fetchChatInfo = async () => {
@@ -77,28 +77,31 @@ export default function ChannelHeader({ chatId }: { chatId: number }) {
 
   return (
     <View style={styles.wrapper}>
-      {/* 📍 آواتار کانال */}
-      <Image
-        source={{ uri: photoUri || minithumbnailUri }}
-        style={styles.avatar}
-      />
+      <TouchableOpacity
+        onPress={() => navigation.navigate("ChannelDetail", { chatId })}
+        style={styles.infoContainer}
+      >
+        {/* 📍 آواتار کانال */}
+        <Image source={{ uri: photoUri || minithumbnailUri }} style={styles.avatar} />
 
-      {/* 📝 عنوان و اعضا */}
-      <View style={styles.textContainer}>
-        <Text style={styles.title}>{title}</Text>
-        {memberCount !== null && (
-          <Text style={styles.members}>
-            {memberCount.toLocaleString("fa-IR")} عضو
-          </Text>
-        )}
-      </View>
+        {/* 📝 عنوان و اعضا */}
+        <View style={styles.textContainer}>
+          <Text style={styles.title}>{title}</Text>
+          {memberCount !== null && (
+            <Text style={styles.members}>
+              {memberCount.toLocaleString("fa-IR")} عضو
+            </Text>
+          )}
+        </View>
+      </TouchableOpacity>
+
 
       {/* 🔙 آیکون برگشت سمت چپ */}
       <TouchableOpacity
         onPress={() => navigation.goBack()}
         style={styles.backButton}
       >
-  <ArrowLeft style={{ color: "#fff" }} />
+        <ArrowLeft style={{ color: "#fff" }} width={19} />
       </TouchableOpacity>
     </View>
   );
@@ -110,7 +113,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     paddingHorizontal: 12,
-    backgroundColor: "#1b1b1b",
+    backgroundColor: "#111",
     width: "100%",
     justifyContent: "space-between",
   },
@@ -145,4 +148,10 @@ const styles = StyleSheet.create({
     color: "#fff",
     transform: [{ rotate: I18nManager.isRTL ? "0deg" : "180deg" }],
   },
+  infoContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+
 });

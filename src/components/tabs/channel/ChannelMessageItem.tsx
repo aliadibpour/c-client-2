@@ -84,7 +84,17 @@ export default function ChannelMessageItem({ data, isVisible }: any) {
 
         {/* واکنش‌ها */}
         {data.interactionInfo?.reactions?.reactions?.length > 0 && (
-          <MessageReactions reactions={data.interactionInfo.reactions.reactions} />
+          <MessageReactions 
+            reactions={data.interactionInfo.reactions.reactions} 
+            onReact={(emoji) => console.log("🧡", emoji)}
+            customStyles={{
+              container: { justifyContent: "flex-start", marginTop: 8, paddingHorizontal: 10, marginBottom: 10 },
+              reactionBox: { backgroundColor: "#444", paddingHorizontal: 3 },
+              selectedBox: { backgroundColor: "#0088cc" },
+              emoji: { fontSize: 14 },
+              count: { color: "#ccc", fontWeight: "bold" },
+            }}
+          />
         )}
 
         {/* کامنت */}
