@@ -9,6 +9,7 @@ import {
   Text,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  StatusBar,
 } from "react-native";
 import { useEffect, useState, useRef } from "react";
 import TdLib from "react-native-tdlib";
@@ -110,6 +111,10 @@ export default function ChannelScreen({ route }: any) {
       resizeMode="cover"
       style={styles.background}
     >
+      <StatusBar
+        backgroundColor="#111"
+        barStyle="light-content"
+      />
       <View style={styles.container}>
         <ChannelHeader chatId={chatId} />
 
@@ -199,7 +204,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   joinText: {
-    color: "#cfcfd1",
+    color: "#54afff",
     fontSize: 13,
     fontFamily: "SFArabic-Heavy",
   },

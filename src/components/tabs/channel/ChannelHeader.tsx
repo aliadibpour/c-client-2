@@ -11,7 +11,7 @@ import {
 import TdLib from "react-native-tdlib";
 import { Buffer } from "buffer";
 import { useNavigation } from "@react-navigation/native";
-import { ArrowLeft } from "../../../assets/icons";
+import { ArrowLeft } from "lucide-react-native";
 
 const { width } = Dimensions.get("window");
 
@@ -101,7 +101,7 @@ export default function ChannelHeader({ chatId }: { chatId: number }) {
         onPress={() => navigation.goBack()}
         style={styles.backButton}
       >
-        <ArrowLeft style={{ color: "#fff" }} width={19} />
+        <ArrowLeft color="#fff"/>
       </TouchableOpacity>
     </View>
   );
