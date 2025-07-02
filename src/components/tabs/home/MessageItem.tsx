@@ -6,13 +6,30 @@ import PhotoMessage from "./MessagePhoto";
 import VideoMessage from "./MessageVideo";
 import MessageReactions from "./MessageReaction";
 import { useNavigation } from "@react-navigation/native";
+import { ArrowLeftIcon, Eye } from "lucide-react-native";
+import { ArrowLeft } from "../../../assets/icons";
 
+// پاک‌سازی متن کپشن یا پیام
 const cleanText = (text: string): string => {
   return text
-    .replace(/[\p{Emoji}\s@‌\w]+@[\w_]+$/gu, "") // emoji(s) + @username
-    .replace(/@\w+$/gm, "")                      // any standalone @user
-    .replace(/https?:\/\/\S+$/gm, "")            // trailing links
+    .replace(/[\p{Emoji}\s@‌\w]+@[\w_]+$/gu, "")
+    .replace(/@\w+$/gm, "")
+    .replace(/https?:\/\/\S+$/gm, "")
     .trim();
+};
+
+// محاسبه زمان نسبی مثل 40s، 2m، 3h، 1d
+const getRelativeTime = (unixTimestamp: number): string => {
+  const now = Date.now();
+  const secondsDiff = Math.floor(now / 1000 - unixTimestamp);
+
+  if (secondsDiff < 60) return `${secondsDiff}s`;
+  const minutes = Math.floor(secondsDiff / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
 };
 
 export default function MessageItem({ data, isVisible }: any) {
@@ -25,8 +42,31 @@ export default function MessageItem({ data, isVisible }: any) {
   const cleanedCaption = useMemo(() => cleanText(captionText), [captionText]);
   const cleanedText = useMemo(() => cleanText(messageText), [messageText]);
 
+  const handlePress = () => {
+    navigation.navigate("Channel", {
+      chatId: data.chatId,
+      focusMessageId: data.id,
+    })
+  };
+
+  const formatNumber = (num: number): string => {
+    if (num < 1000) return num.toString();
+    if (num < 1_000_000) return (num / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+    return (num / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  };
+  const viewCount = formatNumber(data.interactionInfo.viewCount)
+
   return (
-    <View style={{ borderBottomColor: "#333", borderBottomWidth: 1, paddingVertical: 15 }}>
+    <TouchableOpacity
+      onPress={handlePress}
+      activeOpacity={0.9}
+      style={{
+        borderBottomColor: "#333",
+        borderBottomWidth: 1,
+        paddingVertical: 15,
+      }}
+    >
+
       <MessageHeader chatId={data.chatId} />
 
       {!!cleanedCaption && (
@@ -73,11 +113,25 @@ export default function MessageItem({ data, isVisible }: any) {
             })
           }
         >
-          <Text style={{ color: "white", marginTop: 12 }}>
-            {data.interactionInfo.replyInfo.replyCount} کامنت
-          </Text>
+          <View style={{
+            flexDirection: "row", alignItems:"center",marginTop: 15.4, marginLeft:4.5, marginBottom:5, gap: 2}}>
+            <Text style={{ color: "#54afff", fontSize:15, fontFamily: "SFArabic-Regular" }}>
+              {data.interactionInfo.replyInfo.replyCount} کامنت
+            </Text>
+            <ArrowLeft style={{color: "#54afff"}} width={15} height={15}/>
+          </View>
         </TouchableOpacity>
       )}
-    </View>
+
+      <View style={{flexDirection: "row", justifyContent: "flex-start", alignItems: "center", gap:15}}>
+        <Text style={{ color: "#999", fontSize: 12.4, fontFamily: "SFArabic-Regular" }}>
+          {getRelativeTime(data.date)}
+        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Eye size={13} color="#888" style={{ marginRight: 1 }} />
+          <Text style={{color: "#999" ,fontSize: 12.4}}>{viewCount}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
   );
 }
