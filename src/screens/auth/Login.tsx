@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
     fontSize: 23,
     color: 'white',
     textAlign: 'center',
-    fontWeight: 'bold',
+    fontFamily: "SFArabic-Regular",
     marginBottom: 10,
   },
   subtitle: {
@@ -134,7 +134,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#999',
     marginTop:3,
-    marginBottom:22
+    marginBottom:22,
+    fontFamily: "SFArabic-Regular",
   },
   inputWrapper: {
     width: '100%',

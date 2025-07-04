@@ -115,3 +115,23 @@ export const FootballPitchIcon = ({ color = "white", size = 24, outline = false 
         )}
     </Svg>
 );
+
+export const ArrowLeft = ({ style, height= 23, width=23 }: any) => {
+  return (
+    <Svg
+      width={width}
+      height={height}
+      fill="none"
+      viewBox="0 0 24 24"
+      style={style}
+    >
+      <Path
+        d="M15 19L8 12l7-7"
+        stroke="currentColor"
+        strokeWidth={3}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+};

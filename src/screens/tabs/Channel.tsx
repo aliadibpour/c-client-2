@@ -10,6 +10,7 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
   StatusBar,
+  DeviceEventEmitter,
 } from "react-native";
 import { useEffect, useState, useRef } from "react";
 import TdLib from "react-native-tdlib";
@@ -69,6 +70,49 @@ export default function ChannelScreen({ route }: any) {
       console.error("❌ Error fetching messages:", err);
     }
   };
+
+
+
+
+
+
+  useEffect(() => {
+  const subscription = DeviceEventEmitter.addListener('tdlib-update', async (event) => {
+    const update = JSON.parse(event.raw);
+
+    // تشخیص نوع آپدیت
+    if (update.chatId && update.messageId && update.interactionInfo) {
+      // این یعنی interactionInfo جدید رسیده
+
+      // پیدا کردن پیام
+      const idx = messages.findIndex(m => m.chatId === update.chatId && m.id === update.messageId);
+      if (idx !== -1) {
+        try {
+          const raw = await TdLib.getMessage(update.chatId, update.messageId);
+          const fullMsg = JSON.parse(raw.raw);
+
+          setMessages(prev => {
+            const newMessages = [...prev];
+            newMessages[idx] = fullMsg;
+            return newMessages;
+          });
+        } catch (err) {
+          console.log("❌ Error updating message interaction:", err);
+        }
+      }
+    }
+  });
+
+  return () => subscription.remove();
+}, [messages]);
+
+
+
+
+
+
+
+
 
   // 🟢 اولین بار فقط ۱۵ پیام آخر
   useEffect(() => {

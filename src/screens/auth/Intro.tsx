@@ -161,7 +161,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     padding: 10,
     alignItems: 'center',
-    fontFamily: "IranianSans"
   },
   title: {
     fontSize: 28,

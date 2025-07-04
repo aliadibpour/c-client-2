@@ -54,7 +54,7 @@ export default function MessageItem({ data, isVisible }: any) {
     if (num < 1_000_000) return (num / 1000).toFixed(1).replace(/\.0$/, "") + "k";
     return (num / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
   };
-  const viewCount = formatNumber(data.interactionInfo.viewCount)
+  const viewCount = formatNumber(data?.interactionInfo?.viewCount || 0)
 
   return (
     <TouchableOpacity
@@ -67,7 +67,12 @@ export default function MessageItem({ data, isVisible }: any) {
       }}
     >
 
-      <MessageHeader chatId={data.chatId} />
+      <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10, gap:7 }}>
+        <MessageHeader chatId={data.chatId} />
+        <Text style={{ color: "#999", fontSize: 12.4, fontFamily: "SFArabic-Regular", marginBottom:6 }}>
+            {getRelativeTime(data.date)}
+        </Text>
+      </View>
 
       {!!cleanedCaption && (
         <Text
@@ -101,7 +106,7 @@ export default function MessageItem({ data, isVisible }: any) {
       {content?.video && <VideoMessage video={content.video} isVisible={isVisible} />}
 
       {data.interactionInfo?.reactions?.reactions?.length > 0 && (
-        <MessageReactions reactions={data.interactionInfo.reactions.reactions} />
+        <MessageReactions reactions={data.interactionInfo.reactions.reactions} customStyles={{container: {paddingBottom: 6}}} />
       )}
 
       {data.interactionInfo?.replyInfo?.replyCount > 0 && (
@@ -122,16 +127,6 @@ export default function MessageItem({ data, isVisible }: any) {
           </View>
         </TouchableOpacity>
       )}
-
-      <View style={{flexDirection: "row", justifyContent: "flex-start", alignItems: "center", gap:15}}>
-        <Text style={{ color: "#999", fontSize: 12.4, fontFamily: "SFArabic-Regular" }}>
-          {getRelativeTime(data.date)}
-        </Text>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <Eye size={13} color="#888" style={{ marginRight: 1 }} />
-          <Text style={{color: "#999" ,fontSize: 12.4}}>{viewCount}</Text>
-        </View>
-      </View>
     </TouchableOpacity>
   );
 }

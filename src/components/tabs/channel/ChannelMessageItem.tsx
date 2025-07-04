@@ -114,7 +114,7 @@ export default function ChannelMessageItem({ data, isVisible }: any) {
           />
         )}
 
-              {/* نویسنده و زمان */}
+        {/* نویسنده و زمان */}
         <View style={styles.footer}>
           {authorName ? <Text style={styles.author}>{authorName}</Text> : <View />}
             <View style={styles.rightFooter}>

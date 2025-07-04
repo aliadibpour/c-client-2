@@ -114,7 +114,6 @@ export default function MessagePhoto({ photo, context = "channel" }: Props) {
           resizeMode="cover"
         />
       </TouchableOpacity>
-      {loading && <ActivityIndicator color="white" style={{ marginTop: 10 }} />}
     </View>
   );
 }
