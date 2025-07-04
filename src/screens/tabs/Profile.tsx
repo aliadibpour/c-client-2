@@ -1,135 +1,178 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
   Image,
-  ActivityIndicator,
   StyleSheet,
+  Dimensions,
+  FlatList,
+  TouchableWithoutFeedback,
+  ActivityIndicator,
   StatusBar,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
 import TdLib from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
 
-type ProfilePhotoType = {
-  big: { id: number; local: { isDownloadingCompleted: boolean; path: string } };
-  small: { id: number; local: { isDownloadingCompleted: boolean; path: string } };
-  minithumbnail?: { data: Uint8Array };
-};
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 type Profile = {
+  id: number;
   firstName: string;
   lastName: string;
   phoneNumber: string;
-  profilePhoto?: ProfilePhotoType;
+  profilePhoto?: {
+    minithumbnail?: { data: number[] };
+  };
 };
 
 export default function ProfileScreen() {
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [photoPath, setPhotoPath] = useState<string | null>(null);
-  const [loadingPhoto, setLoadingPhoto] = useState(false);
-  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
-  // Load user profile
+  const flatListRef = useRef<FlatList<string>>(null);
+
   useEffect(() => {
     (async () => {
       try {
-        setLoadingProfile(true);
-        const profileJson = await TdLib.getProfile();
-        const profileData = JSON.parse(profileJson);
-        console.log("Loaded profile:", profileData);
-        setProfile(profileData);
-      } catch (err) {
-        console.error("Failed to load profile:", err);
-      } finally {
-        setLoadingProfile(false);
+        const profileRaw = await TdLib.getProfile();
+        const parsed = JSON.parse(profileRaw);
+        setProfile(parsed);
+
+        const userId = parsed.id;
+        setLoadingPhotos(true);
+
+        const photoListRaw = await TdLib.getUserProfilePhotos(userId, 0, 10);
+        const parsedPhotos = JSON.parse(photoListRaw);
+
+        const uris: string[] = [];
+
+        for (let photo of parsedPhotos.photos || []) {
+          const biggest = photo.sizes[photo.sizes.length - 1];
+          const result: any = await TdLib.downloadFile(biggest.photo.id);
+          const file = JSON.parse(result.raw);
+
+          if (file.local?.isDownloadingCompleted && file.local.path) {
+            uris.push(`file://${file.local.path}`);
+          }
+        }
+
+        setPhotos(uris.reverse()); // معکوس دستی برای RTL بدون inverted
+        setLoadingPhotos(false);
+      } catch (e) {
+        console.error("❌ Error loading profile or photos", e);
+        setLoadingPhotos(false);
       }
     })();
   }, []);
 
-  // Download full profile photo
-  useEffect(() => {
-    let isMounted = true;
-    const downloadImage = async () => {
-      if (!profile?.profilePhoto?.big?.id) return;
-      try {
-        setLoadingPhoto(true);
-        const result: any = await TdLib.downloadFile(profile.profilePhoto.big.id);
-        const file = JSON.parse(result.raw);
-        if (isMounted && file.local?.isDownloadingCompleted && file.local.path) {
-          setPhotoPath(`file://${file.local.path}`);
-        }
-      } catch (err) {
-        console.error("Failed to download profile photo:", err);
-      } finally {
-        if (isMounted) setLoadingPhoto(false);
-      }
-    };
+  const onMomentumScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const index = Math.round(offsetX / SCREEN_WIDTH);
+    setCurrentIndex(index);
+  };
 
-    downloadImage();
-    return () => {
-      isMounted = false;
-    };
-  }, [profile?.profilePhoto?.small?.id]);
-
-  // Base64 mini-thumbnail
-  const thumbnailBase64 = useMemo(() => {
-    if (!profile?.profilePhoto?.minithumbnail?.data) return null;
-    return fromByteArray(profile.profilePhoto.minithumbnail.data);
-  }, [profile]);
-
-  // Render image/thumbnail/initial
-  const renderProfileImage = () => {
-    if (photoPath) {
+  const renderFallback = () => {
+    if (profile?.profilePhoto?.minithumbnail?.data) {
+      const base64 = fromByteArray(profile.profilePhoto.minithumbnail.data as any);
       return (
         <Image
-          key="full"
-          source={{ uri: photoPath }}
-          style={styles.profileImage}
+          source={{ uri: `data:image/jpeg;base64,${base64}` }}
+          style={styles.image}
         />
       );
-    } else if (thumbnailBase64) {
-      return (
-        <Image
-          key="thumbnail"
-          source={{ uri: `data:image/jpeg;base64,${thumbnailBase64}` }}
-          style={styles.profileImage}
-        />
-      );
-    } else {
-      return (
-        <View style={styles.profilePlaceholder}>
-          <Text style={styles.profileInitial}>
-            {profile?.firstName?.[0]?.toUpperCase() || "?"}
-          </Text>
-        </View>
-      );
+    }
+
+    return (
+      <View style={styles.placeholder}>
+        <Text style={styles.initial}>
+          {profile?.firstName?.[0]?.toUpperCase() || "?"}
+        </Text>
+      </View>
+    );
+  };
+
+  const renderLineIndicator = () => {
+    if (photos.length <= 1) return null;
+    const width:number = 100 / photos.length;
+    return (
+      <View style={styles.indicatorContainer}>
+        {photos.map((_, i) => (
+          <View
+            key={i}
+            style={[
+              {width: `${width}%`},
+              styles.indicator,
+              currentIndex === i && styles.indicatorActive,
+            ]}
+          />
+        ))}
+      </View>
+    );
+  };
+
+  const goPrevious = () => {
+    if (currentIndex > 0) {
+      flatListRef.current?.scrollToIndex({ index: currentIndex - 1, animated: false });
+      setCurrentIndex(currentIndex - 1);
+    }
+  };
+
+  const goNext = () => {
+    if (currentIndex < photos.length - 1) {
+      flatListRef.current?.scrollToIndex({ index: currentIndex + 1, animated: false });
+      setCurrentIndex(currentIndex + 1);
     }
   };
 
   return (
-    <>
+    <View style={styles.container}>
       <StatusBar backgroundColor="#000" barStyle="light-content" />
-      <View style={styles.container}>
-        {loadingProfile ? (
-          <View style={styles.centered}>
-            <ActivityIndicator size="large" color="#0088cc" />
-            <Text style={styles.loadingText}>در حال بارگذاری پروفایل...</Text>
-          </View>
-        ) : !profile ? (
-          <View style={styles.centered}>
-            <Text style={{ color: "white" }}>پروفایل یافت نشد.</Text>
-          </View>
-        ) : (
-          <>
-            {renderProfileImage()}
-            <Text style={styles.nameText}>
-              {profile.firstName} {profile.lastName}
-            </Text>
-            <Text style={styles.phoneText}>{profile.phoneNumber}</Text>
-          </>
-        )}
-      </View>
-    </>
+      {loadingPhotos ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color="#0088cc" />
+        </View>
+      ) : photos.length > 0 ? (
+        <>
+          <FlatList
+            ref={flatListRef}
+            data={photos}
+            horizontal
+            pagingEnabled
+            scrollEnabled
+            keyExtractor={(_, index) => index.toString()}
+            renderItem={({ item }) => (
+              <View style={{ width: SCREEN_WIDTH, height: 370 }}>
+                <Image source={{ uri: item }} style={styles.image} />
+
+                {/* نیمه راست → عکس بعدی */}
+                <TouchableWithoutFeedback onPress={goNext}>
+                  <View style={styles.touchRight} />
+                </TouchableWithoutFeedback>
+
+                {/* نیمه چپ ← عکس قبلی */}
+                <TouchableWithoutFeedback onPress={goPrevious}>
+                  <View style={styles.touchLeft} />
+                </TouchableWithoutFeedback>
+
+
+                  <Text style={styles.nameText}>
+                    {profile?.firstName} {profile?.lastName}
+                  </Text>
+              </View>
+            )}
+            onMomentumScrollEnd={onMomentumScrollEnd}
+            showsHorizontalScrollIndicator={false}
+          />
+          {renderLineIndicator()}
+        </>
+      ) : (
+        renderFallback()
+      )}
+    </View>
   );
 }
 
@@ -138,39 +181,65 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#000",
   },
-  profileImage: {
-    width: "100%",
+  image: {
+    width: SCREEN_WIDTH,
     height: 370,
+    resizeMode: "cover",
     backgroundColor: "#111",
   },
-  profilePlaceholder: {
-    width: "100%",
+  placeholder: {
+    width: SCREEN_WIDTH,
     height: 370,
     backgroundColor: "#444",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  profileInitial: {
-    fontSize: 40,
+  initial: {
+    fontSize: 50,
     color: "white",
   },
   nameText: {
     color: "white",
-    fontSize: 22,
-    fontWeight: "bold",
-    marginTop: 12,
-  },
-  phoneText: {
-    color: "#bbb",
-    fontSize: 16,
-    marginTop: 4,
+    fontSize: 25,
+    fontFamily: "SFArabic-Heavy",
+    position: "absolute",
+    bottom: 10,
+    right: 20,
   },
   centered: {
-    flex: 1,
-    backgroundColor: "#000",
+    height: 370,
     justifyContent: "center",
     alignItems: "center",
   },
-  loadingText: {
-    color: "white",
-    marginTop: 12,
+  indicatorContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 7,
+    position: "absolute",
+    top:5,
+    paddingHorizontal:20
+  },
+  indicator: {
+    height: 2.3,
+    backgroundColor: "#999",
+    borderRadius: 2,
+  },
+  indicatorActive: {
+    backgroundColor: "#fff",
+  },
+  touchRight: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: SCREEN_WIDTH / 3,
+    height: "100%",
+  },
+  touchLeft: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: SCREEN_WIDTH / 3,
+    height: "100%",
   },
 });
