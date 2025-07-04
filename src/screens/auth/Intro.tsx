@@ -33,7 +33,7 @@ const slides = [
     text: 'نتایج به‌یادماندنی و جذاب تاریخ فوتبال',
     image: require('../../assets/images/i.jpg'),
   },
-    {
+  {
     key: 'slide4',
     title: "اتمسفر هواداران فوتبال",
     text: "اکوسیستم هواداریه تیم های پر طرفدار ایران و اروپا همراه با پوشش نتایج , اخبار و حاشیه ها",
@@ -53,7 +53,7 @@ const slides = [
   },
 ];
 
-export default function IntroScreen({ navigation }:any) {
+export default function IntroScreen({ navigation }: any) {
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [isAnimating, setIsAnimating] = useState(false);
   const blackOverlay = useRef(new Animated.Value(0)).current;
@@ -68,7 +68,7 @@ export default function IntroScreen({ navigation }:any) {
         'auth-status',
         JSON.stringify({ register: false, route: 'login' })
       );
-      navigation.navigate("Login")
+      navigation.navigate("Login");
     } else {
       Animated.timing(blackOverlay, {
         toValue: 1,
@@ -92,7 +92,7 @@ export default function IntroScreen({ navigation }:any) {
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.slide}>
-        <StepProgressBar currentStep={currentIndex+1} totalSteps={6} />
+        <StepProgressBar currentStep={currentIndex + 1} totalSteps={6} />
         <View style={styles.imageContainer}>
           <LinearGradient
             colors={['black', 'rgba(0,0,0,0.01)', 'transparent']}
@@ -104,6 +104,15 @@ export default function IntroScreen({ navigation }:any) {
             style={styles.gradientOverlayBottom}
           />
         </View>
+
+        {/* نمایش لوگو فقط در اسلاید اول */}
+        {slide.key === 'slide1' && (
+          <Image
+            source={require('../../assets/images/logo.jpg')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        )}
 
         <View style={styles.titleContainer}>
           <Text style={styles.title}>{slide.title}</Text>
@@ -153,11 +162,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     width: '100%',
-    height:100,
-    zIndex:2,
+    height: 100,
+    zIndex: 2,
   },
   titleContainer: {
-    marginTop: -50,
+    marginTop: -47,
     backgroundColor: 'transparent',
     padding: 10,
     alignItems: 'center',
@@ -180,7 +189,7 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.6)',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 2,
-    lineHeight:27
+    lineHeight: 27,
   },
   button: {
     backgroundColor: '#e8e8e8',
@@ -188,17 +197,25 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     width: '85%',
     alignSelf: 'center',
-    marginBottom: 15
+    marginBottom: 15,
   },
   buttonText: {
     color: 'black',
-    fontSize: 19,
-    fontWeight: "bold",
+    fontSize: 18,
     textAlign: 'center',
-    fontFamily: 'IranianSans',
+    fontFamily: 'SFArabic-Regular',
   },
   buttonContainer: {
     width: '100%',
     marginVertical: 7,
+  },
+  logo: {
+    width: 70,
+    height: 70,
+    borderRadius: 45,
+    position: 'absolute',
+    bottom: 135,
+    borderColor: "#777",
+    borderWidth:2
   },
 });
