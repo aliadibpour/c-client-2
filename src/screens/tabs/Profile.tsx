@@ -35,19 +35,28 @@ export default function ProfileScreen() {
 
   const flatListRef = useRef<FlatList<string>>(null);
 
+  // Get Profile once (no loading needed)
   useEffect(() => {
     (async () => {
       try {
         const profileRaw = await TdLib.getProfile();
         const parsed = JSON.parse(profileRaw);
         setProfile(parsed);
+      } catch (e) {
+        console.error("❌ Error loading profile", e);
+      }
+    })();
+  }, []);
 
-        const userId = parsed.id;
+  // Get Profile Photos (with loading only for photos)
+  useEffect(() => {
+    if (!profile?.id) return;
+
+    (async () => {
+      try {
         setLoadingPhotos(true);
-
-        const photoListRaw = await TdLib.getUserProfilePhotos(userId, 0, 10);
+        const photoListRaw = await TdLib.getUserProfilePhotos(profile.id, 0, 10);
         const parsedPhotos = JSON.parse(photoListRaw);
-
         const uris: string[] = [];
 
         for (let photo of parsedPhotos.photos || []) {
@@ -60,58 +69,28 @@ export default function ProfileScreen() {
           }
         }
 
-        setPhotos(uris.reverse()); // معکوس دستی برای RTL بدون inverted
-        setLoadingPhotos(false);
+        const reversed = uris.reverse();
+        setPhotos(reversed);
+        setCurrentIndex(reversed.length - 1);
+
+        setTimeout(() => {
+          flatListRef.current?.scrollToIndex({
+            index: reversed.length - 1,
+            animated: false,
+          });
+        }, 100);
       } catch (e) {
-        console.error("❌ Error loading profile or photos", e);
+        console.error("❌ Error loading profile photos", e);
+      } finally {
         setLoadingPhotos(false);
       }
     })();
-  }, []);
+  }, [profile?.id]);
 
   const onMomentumScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(offsetX / SCREEN_WIDTH);
     setCurrentIndex(index);
-  };
-
-  const renderFallback = () => {
-    if (profile?.profilePhoto?.minithumbnail?.data) {
-      const base64 = fromByteArray(profile.profilePhoto.minithumbnail.data as any);
-      return (
-        <Image
-          source={{ uri: `data:image/jpeg;base64,${base64}` }}
-          style={styles.image}
-        />
-      );
-    }
-
-    return (
-      <View style={styles.placeholder}>
-        <Text style={styles.initial}>
-          {profile?.firstName?.[0]?.toUpperCase() || "?"}
-        </Text>
-      </View>
-    );
-  };
-
-  const renderLineIndicator = () => {
-    if (photos.length <= 1) return null;
-    const width:number = 100 / photos.length;
-    return (
-      <View style={styles.indicatorContainer}>
-        {photos.map((_, i) => (
-          <View
-            key={i}
-            style={[
-              {width: `${width}%`},
-              styles.indicator,
-              currentIndex === i && styles.indicatorActive,
-            ]}
-          />
-        ))}
-      </View>
-    );
   };
 
   const goPrevious = () => {
@@ -126,6 +105,60 @@ export default function ProfileScreen() {
       flatListRef.current?.scrollToIndex({ index: currentIndex + 1, animated: false });
       setCurrentIndex(currentIndex + 1);
     }
+  };
+
+  const renderFallback = () => {
+    if (profile?.profilePhoto?.minithumbnail?.data) {
+      const base64 = fromByteArray(profile.profilePhoto.minithumbnail.data as any);
+      return (
+        <View>
+          <Image
+            source={{ uri: `data:image/jpeg;base64,${base64}` }}
+            style={styles.image}
+          />
+          {renderNameAndPhone()}
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.placeholder}>
+        <Text style={styles.initial}>
+          {profile?.firstName?.[0]?.toUpperCase() || "?"}
+        </Text>
+      </View>
+    );
+  };
+
+  const renderNameAndPhone = () => (
+    <View style={styles.infoBox}>
+      <Text style={styles.nameText}>
+        {profile?.firstName} {profile?.lastName}
+      </Text>
+      <Text style={styles.phoneText}>{profile?.phoneNumber}</Text>
+    </View>
+  );
+
+  const renderLineIndicator = () => {
+    if (photos.length <= 1) return null;
+    const width = 100 / photos.length;
+    return (
+      <View style={styles.indicatorContainer}>
+        {[...photos].reverse().map((_, i) => {
+          const realIndex = photos.length - 1 - i;
+          return (
+            <View
+              key={i}
+              style={[
+                { width: `${width}%` },
+                styles.indicator,
+                currentIndex === realIndex && styles.indicatorActive,
+              ]}
+            />
+          );
+        })}
+      </View>
+    );
   };
 
   return (
@@ -147,25 +180,29 @@ export default function ProfileScreen() {
             renderItem={({ item }) => (
               <View style={{ width: SCREEN_WIDTH, height: 370 }}>
                 <Image source={{ uri: item }} style={styles.image} />
-
-                {/* نیمه راست → عکس بعدی */}
+                {/* Go next */}
                 <TouchableWithoutFeedback onPress={goNext}>
                   <View style={styles.touchRight} />
                 </TouchableWithoutFeedback>
-
-                {/* نیمه چپ ← عکس قبلی */}
+                {/* Go previous */}
                 <TouchableWithoutFeedback onPress={goPrevious}>
                   <View style={styles.touchLeft} />
                 </TouchableWithoutFeedback>
-
-
-                  <Text style={styles.nameText}>
-                    {profile?.firstName} {profile?.lastName}
-                  </Text>
+                {renderNameAndPhone()}
               </View>
             )}
             onMomentumScrollEnd={onMomentumScrollEnd}
             showsHorizontalScrollIndicator={false}
+            getItemLayout={(_, index) => ({
+              length: SCREEN_WIDTH,
+              offset: SCREEN_WIDTH * index,
+              index,
+            })}
+            onScrollToIndexFailed={(info) => {
+              setTimeout(() => {
+                flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
+              }, 100);
+            }}
           />
           {renderLineIndicator()}
         </>
@@ -200,11 +237,21 @@ const styles = StyleSheet.create({
   },
   nameText: {
     color: "white",
-    fontSize: 25,
+    fontSize: 20,
+    fontWeight: "bold",
     fontFamily: "SFArabic-Heavy",
+  },
+  phoneText: {
+    color: "#ccc",
+    fontSize: 14,
+    marginTop: 2,
+    fontFamily: "SFArabic-Regular",
+  },
+  infoBox: {
     position: "absolute",
     bottom: 10,
     right: 20,
+    alignItems: "flex-end",
   },
   centered: {
     height: 370,
@@ -212,17 +259,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   indicatorContainer: {
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     justifyContent: "center",
     alignItems: "center",
-    gap: 7,
+    gap: 6,
     position: "absolute",
-    top:5,
-    paddingHorizontal:20
+    top: 6,
+    width: SCREEN_WIDTH,
+    paddingHorizontal: 20,
   },
   indicator: {
     height: 2.3,
-    backgroundColor: "#999",
+    backgroundColor: "#666",
     borderRadius: 2,
   },
   indicatorActive: {
