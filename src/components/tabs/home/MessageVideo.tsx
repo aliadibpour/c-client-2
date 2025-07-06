@@ -70,21 +70,28 @@ export default function MessageVideo({ video, isVisible, context = "channel" }: 
 
   // ⬇️ پخش ویدیو
   return (
-    <Video
-      ref={videoRef}
-      source={{ uri: videoPath }}
+    <View
       style={{
-        width: displayWidth,
-        height: displayHeight,
+        width: displayWidth < screenWidth * 0.72 ? screenWidth * 0.72 : displayWidth,
+        height: displayHeight < 160 ? 160 : displayHeight, // حداقل ارتفاع
         borderRadius: context === "channel" ? 8 : 12,
         overflow: "hidden",
         backgroundColor: "#000",
       }}
-      resizeMode="contain"
-      controls
-      paused={!isVisible}
-      repeat={isVisible}
-    />
+    >
+      <Video
+        ref={videoRef}
+        source={{ uri: videoPath }}
+        style={{
+          width: "100%",
+          height: "100%",
+        }}
+        resizeMode="cover"
+        controls
+        paused={!isVisible}
+        repeat={isVisible}
+      />
+    </View>
   );
 }
 

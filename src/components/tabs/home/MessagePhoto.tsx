@@ -96,8 +96,22 @@ export default function MessagePhoto({ photo, context = "channel" }: Props) {
   };
 
   return (
-    <View style={[styles.container, context === "explore" && { alignItems: "center" }]}>
+    <View
+      style={[
+        styles.container,
+        context === "explore" && { alignItems: "center" },
+      ]}
+    >
       <TouchableOpacity onPress={handleOpenFull} disabled={loading}>
+      <View
+        style={{
+          width: displayWidth < screenWidth * 0.72 ? screenWidth * 0.72 : displayWidth,
+          height: displayHeight < 160 ? 160 : displayHeight, // حداقل ارتفاع
+          borderRadius: context === "channel" ? 8 : 12,
+          backgroundColor: "#111",
+          overflow: "hidden",
+        }}
+      >
         <Image
           source={{
             uri:
@@ -106,20 +120,20 @@ export default function MessagePhoto({ photo, context = "channel" }: Props) {
                 : photoPath || undefined,
           }}
           style={{
-            width: displayWidth,
-            height: displayHeight,
-            borderRadius: context === "channel" ? 8 : 12,
-            backgroundColor: "#111",
+            width: "100%",
+            height: "100%",
           }}
           resizeMode="cover"
         />
+      </View>
       </TouchableOpacity>
     </View>
+
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    marginVertical: 10,
+    marginBottom: 6,
   },
 });

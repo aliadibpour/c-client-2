@@ -58,8 +58,9 @@ export default function ChannelMessageItem({ data, isVisible }: any) {
     mediaWidth = w;
   }
 
+  const MIN_WIDTH = screenWidth * 0.72;
   const hasMedia = !!photo || !!video;
-  const messageWidth = hasMedia ? mediaWidth : screenWidth * 0.72;
+  const messageWidth = hasMedia ? Math.max(mediaWidth, MIN_WIDTH) : MIN_WIDTH;
 
   // زمان ارسال پیام
   const date = new Date(data.date * 1000);
