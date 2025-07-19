@@ -32,7 +32,7 @@ const getRelativeTime = (unixTimestamp: number): string => {
   return `${days}d`;
 };
 
-export default function MessageItem({ data, isVisible }: any) {
+export default function MessageItem({ data, isVisible, activeDownload }: any) {
   const content = data?.content;
   const navigation: any = useNavigation();
 
@@ -102,8 +102,8 @@ export default function MessageItem({ data, isVisible }: any) {
         </Text>
       )}
 
-      {content?.photo && <PhotoMessage photo={content.photo} />}
-      {content?.video && <VideoMessage video={content.video} isVisible={isVisible} />}
+      {content?.photo && <PhotoMessage photo={content.photo} activeDownload={activeDownload} />}
+      {content?.video && <VideoMessage video={content.video} isVisible={isVisible} activeDownload={activeDownload} />}
 
       {data.interactionInfo?.reactions?.reactions?.length > 0 && (
         <MessageReactions reactions={data.interactionInfo.reactions.reactions} customStyles={{container: {paddingBottom: 6}}} />

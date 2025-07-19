@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import {
   Text,
   FlatList,
@@ -134,6 +134,27 @@ export default function HomeScreen() {
     }
   }, []);
 
+  const activeDownloads = useMemo(() => {
+    if (!visibleIds.length) return [];
+
+    const selected: number[] = [];
+
+    const currentMessageId = visibleIds[0];
+    const currentIndex = messages.findIndex((msg) => msg.id === currentMessageId);
+
+    if (currentIndex === -1) return [];
+
+    // حدود پنج‌تایی: دو تا بالا، خود پیام، دو تا پایین‌تر
+    if (currentIndex - 2 >= 0) selected.push(messages[currentIndex - 2].id);
+    if (currentIndex - 1 >= 0) selected.push(messages[currentIndex - 1].id);
+    selected.push(messages[currentIndex].id);
+    if (currentIndex + 1 < messages.length) selected.push(messages[currentIndex + 1].id);
+    if (currentIndex + 2 < messages.length) selected.push(messages[currentIndex + 2].id);
+
+    return selected;
+  }, [visibleIds, messages]);
+  console.log(activeDownloads)
+
   const viewConfigRef = useRef({ itemVisiblePercentThreshold: 60 });
 
   return (
@@ -146,7 +167,11 @@ export default function HomeScreen() {
         data={messages}
         keyExtractor={(item) => item?.id?.toString()}
         renderItem={({ item }: any) => (
-          <MessageItem data={item} isVisible={visibleIds.includes(item.id)} />
+          <MessageItem
+            data={item}
+            isVisible={visibleIds.includes(item.id)}
+            activeDownload={activeDownloads.includes(item.id)} 
+          />
         )}
         onViewableItemsChanged={onViewRef}
         viewabilityConfig={viewConfigRef.current}
