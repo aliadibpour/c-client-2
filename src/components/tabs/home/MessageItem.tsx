@@ -61,7 +61,7 @@ export default function MessageItem({ data, isVisible }: any) {
       onPress={handlePress}
       activeOpacity={0.9}
       style={{
-        borderBottomColor: "#333",
+        borderBottomColor: "#222",
         borderBottomWidth: 1,
         paddingVertical: 15,
       }}

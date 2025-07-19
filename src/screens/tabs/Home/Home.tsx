@@ -1,5 +1,3 @@
-// ✅ Update to HomeScreen: Add polling for visible messages
-
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   Text,
@@ -94,7 +92,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const fetchBestMessages = async () => {
       try {
-        const res = await fetch("http://192.168.1.102:3000/messages/best");
+        const res = await fetch("http://192.168.117.115:3000/messages/best");
         const data: { chatId: string; messageId: string }[] = await res.json();
 
         const allMessages: any[] = [];
@@ -141,7 +139,6 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.headerContainer}>
-        <Text style={styles.header}>Corner</Text>
         <Image source={require("../../../assets/images/logo.jpg")} style={styles.logo} />
       </View>
 
@@ -169,19 +166,21 @@ const styles = StyleSheet.create({
   },
   headerContainer: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-end",
     paddingVertical: 8,
     justifyContent: "flex-end",
   },
   logo: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 30,
+    height: 30,
+    borderRadius: 5,
     marginLeft: 5,
   },
   header: {
     color: "white",
-    fontSize: 20,
+    fontSize: 13,
     fontWeight: "bold",
+    position: "relative",
+    bottom: 3
   },
 });

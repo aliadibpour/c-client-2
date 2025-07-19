@@ -14,9 +14,10 @@ import { useNavigation } from "@react-navigation/native";
 interface Props {
   photo: any;
   context?: "channel" | "explore";
+  activeDownload?:any
 }
 
-export default function MessagePhoto({ photo, context = "channel" }: Props) {
+export default function MessagePhoto({ photo, context = "channel", activeDownload }: Props) {
   const [photoPath, setPhotoPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const navigation: any = useNavigation();
@@ -64,7 +65,6 @@ export default function MessagePhoto({ photo, context = "channel" }: Props) {
   }, [photo]);
 
   useEffect(() => {
-    let isMounted = true;
     if (!fileId) return;
 
     const downloadPhoto = async () => {
@@ -73,21 +73,30 @@ export default function MessagePhoto({ photo, context = "channel" }: Props) {
         const file = JSON.parse(result.raw);
 
         if (file.local?.isDownloadingCompleted && file.local.path) {
-          if (isMounted) {
-            setPhotoPath(`file://${file.local.path}`);
-            setLoading(false);
-          }
+          setPhotoPath(`file://${file.local.path}`);
+          setLoading(false);
         }
       } catch (err) {
         console.error("Photo download error:", err);
       }
     };
 
-    downloadPhoto();
-    return () => {
-      isMounted = false;
+    const cancelPhoto = async () => {
+      try {
+        await TdLib.cancelDownloadFile(fileId);
+        console.log("⛔️ Download canceled:", fileId);
+      } catch (err) {
+        console.error("Cancel download error:", err);
+      }
     };
-  }, [fileId]);
+
+    if (activeDownload) {
+      downloadPhoto();
+    } else {
+      cancelPhoto();
+    }
+  }, [fileId, activeDownload]);
+
 
   const handleOpenFull = () => {
     if (photoPath) {

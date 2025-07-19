@@ -6,14 +6,19 @@ import {
   StyleSheet,
   Text,
   Image,
+  StatusBar,
+  TouchableOpacity,
+  ImageBackground,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ArrowLeft } from "lucide-react-native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import TdLib from "react-native-tdlib";
-import { useRoute } from "@react-navigation/native";
-import { fromByteArray } from "base64-js"; // ← برای Base64
+import { fromByteArray } from "base64-js";
 
 export default function Comments() {
   const route = useRoute();
+  const navigation = useNavigation();
   const { chatId, messageId }: any = route.params || {};
 
   const [mainMessage, setMainMessage] = useState<any>(null);
@@ -47,7 +52,7 @@ export default function Comments() {
           threadChatId,
           threadMsg.id,
           0,
-          20
+          50
         );
 
         const historyParsed = historyResponse?.raw ? JSON.parse(historyResponse.raw) : null;
@@ -65,7 +70,6 @@ export default function Comments() {
                 const rawUser = await TdLib.getUserProfile(userId);
                 const user = JSON.parse(rawUser);
 
-                // تلاش برای دانلود نسخه کوچک تصویر پروفایل
                 let smallUri = null;
                 const smallId = user?.profilePhoto?.small?.id;
                 if (smallId) {
@@ -84,16 +88,28 @@ export default function Comments() {
                   },
                 };
               } catch (e) {
-                console.warn("User info failed:", userId);
                 return { ...msg, user: null };
               }
             })
           );
 
+          // ساخت map برای دسترسی سریع به پیام‌های reply-to
+          const msgMap = new Map();
+          merged.forEach((m) => msgMap.set(m.id, m));
+
+          merged.forEach((m) => {
+            const replyId = m?.replyTo?.messageId;
+            if (replyId) {
+              const repliedMsg = msgMap.get(replyId);
+              if (repliedMsg?.content?.text?.text) {
+                m.replyToText = repliedMsg.content.text.text;
+              }
+            }
+          });
+
           setComments(merged);
         }
       } catch (err: any) {
-        console.error("🔥 Error:", err);
         setError(err?.message || "Unexpected error occurred.");
       } finally {
         setLoading(false);
@@ -103,24 +119,7 @@ export default function Comments() {
     fetchComments();
   }, [chatId, messageId]);
 
-  const getColorForUser = (key: string | number) => {
-    const colors = [
-      "#FFA726",
-      "#66BB6A",
-      "#42A5F5",
-      "#AB47BC",
-      "#FF7043",
-      "#26C6DA",
-      "#D4E157",
-    ];
-    const index =
-      typeof key === "string"
-        ? key.charCodeAt(0) % colors.length
-        : Number(key) % colors.length;
-    return colors[index];
-  };
-
-  const renderComment = ({ item }: any) => {
+  const renderComment = ({ item, index }: any) => {
     const user = item?.user;
     const name = `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim();
 
@@ -131,103 +130,160 @@ export default function Comments() {
     const avatarUri = user?.avatarSmall || base64Thumb;
     const firstLetter = user?.firstName?.[0]?.toUpperCase() || "?";
 
+    const previousMessage = comments[index - 1];
+    const showAvatar =
+      !previousMessage || previousMessage?.senderId?.userId !== item?.senderId?.userId;
+
     return (
-      <View style={styles.commentCard}>
-        {avatarUri ? (
-          <View style={{flexDirection: "row", alignItems: "center"}}>
+      <View style={styles.commentItem}>
+        {showAvatar ? (
+          avatarUri ? (
             <Image source={{ uri: avatarUri }} style={styles.avatar} />
-            {name ? <Text style={styles.usernameText}>{name}</Text> : null}
-          </View>
-        ) : (
-          <View style={{flexDirection: "row", alignItems: "center"}}>
-              <View
-              style={[
-                styles.avatar,
-                {
-                  backgroundColor: getColorForUser(user?.id || 0),
-                  justifyContent: "center",
-                  alignItems: "center",
-                },
-              ]}
-            >
-              <Text style={{ color: "white", fontSize: 16 }}>{firstLetter}</Text>
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <Text style={{ color: "#fff" }}>{firstLetter}</Text>
             </View>
-            {name ? <Text style={styles.usernameText}>{name}</Text> : null}
-          </View>
+          )
+        ) : (
+          <View style={{ width: 36, marginHorizontal: 8 }} />
         )}
-        <View style={{ flex: 1 }}>
-          <Text style={styles.commentText}>
-            {item?.content?.text?.text || "بدون متن"}
-          </Text>
+
+        <View style={styles.bubbleContainer}>
+          <View style={styles.bubble}>
+            {item.replyToText && (
+              <View style={styles.replyBox}>
+                <Text numberOfLines={1} style={styles.replyText}>
+                  🔁 {item.replyToText.slice(0, 30)}
+                </Text>
+              </View>
+            )}
+            {showAvatar && name ? <Text style={styles.username}>{name}</Text> : null}
+            <Text style={styles.commentText}>
+              {item?.content?.text?.text || "بدون متن"}
+            </Text>
+          </View>
         </View>
       </View>
     );
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {loading ? (
-        <ActivityIndicator color="#fff" size="large" />
-      ) : error ? (
-        <Text style={styles.errorText}>{error}</Text>
-      ) : (
-        <>
-          {mainMessage && (
-            <View style={styles.commentCard}>
-              <Text style={styles.commentText}>{mainMessage?.content?.text?.text}</Text>
-            </View>
-          )}
+    <ImageBackground
+      source={require("../../../assets/images/telBG.jpg")}
+      resizeMode="cover"
+      style={styles.background}
+    >
+      <SafeAreaView style={styles.safe}>
+        <StatusBar backgroundColor="transparent" barStyle="light-content" translucent />
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <ArrowLeft color="#fff" size={22} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{comments.length} نظر</Text>
+          <View style={{ width: 22 }} />
+        </View>
+
+        {loading ? (
+          <ActivityIndicator color="#fff" size="large" />
+        ) : error ? (
+          <Text style={styles.errorText}>{error}</Text>
+        ) : (
           <FlatList
             data={comments}
             keyExtractor={(item: any) => item.id?.toString() ?? Math.random().toString()}
-            renderItem={renderComment}
-            ListEmptyComponent={
-              <Text style={styles.noComments}>کامنتی وجود ندارد.</Text>
-            }
+            renderItem={({ item, index }) => renderComment({ item, index })}
+            inverted
+            contentContainerStyle={{ paddingBottom: 20 }}
+            ListEmptyComponent={<Text style={styles.noComments}>کامنتی وجود ندارد.</Text>}
           />
-        </>
-      )}
-    </SafeAreaView>
+        )}
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
+    flex: 1,
+  },
+  background: {
     flex: 1,
     backgroundColor: "#000",
-    padding: 10,
   },
-  commentCard: {
-    borderBottomWidth: 1,
-    borderBottomColor: "#1a1a1a",
+  header: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingVertical: 14,
-    paddingHorizontal: 4,
+    paddingHorizontal: 15,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    borderBottomWidth: 1,
+    borderBottomColor: "#222",
+  },
+  headerTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontFamily: "SFArabic-Regular",
+  },
+  commentItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginVertical: 6,
+    paddingHorizontal: 6,
+  },
+  bubbleContainer: {
+    flexShrink: 1,
+    alignItems: "flex-start",
+  },
+  bubble: {
+    backgroundColor: "#222",
+    borderRadius: 12,
+    paddingBottom: 12,
+    paddingHorizontal: 12,
+    maxWidth: "85%",
+    minWidth: "40%",
   },
   commentText: {
     color: "#fff",
-    fontSize: 14.3,
-    lineHeight: 24,
+    fontSize: 14,
+    lineHeight: 22,
     fontFamily: "SFArabic-Regular",
-    flex: 1,
   },
   avatar: {
-    width: 36,
-    height: 36,
+    width: 34.5,
+    height: 34.5,
     borderRadius: 18,
-    marginRight: 10,
-    backgroundColor: "#222",
+    marginHorizontal: 8,
+    backgroundColor: "#444",
   },
   avatarPlaceholder: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#444",
-    marginRight: 10,
+    backgroundColor: "#555",
+    justifyContent: "center",
+    alignItems: "center",
+    marginHorizontal: 8,
   },
-  usernameText: {
-    color: "#ccc",
+  username: {
+    color: "#aaa",
     fontSize: 12,
+    marginTop: 4,
     fontFamily: "SFArabic-Regular",
+    textAlign: "left",
+  },
+  replyBox: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  replyText: {
+    color: "#ccc",
+    fontSize: 13,
+    fontFamily: "SFArabic-Regular",
+    textAlign: "right",
   },
   noComments: {
     color: "#aaa",

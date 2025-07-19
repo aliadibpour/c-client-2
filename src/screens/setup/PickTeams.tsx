@@ -5,28 +5,25 @@ import {
 } from 'react-native';
 
 const teamsData = [
-  { name: 'Persepolis', league: 'Iran', image: 'https://media.api-sports.io/football/teams/42.png' },
-  { name: 'Esteghlal', league: 'Iran', image: 'https://media.api-sports.io/football/teams/42.png' },
-  { name: 'Sepahan', league: 'Iran', image: 'https://media.api-sports.io/football/teams/42.png' },
-  { name: 'Tractor', league: 'Iran', image: 'https://media.api-sports.io/football/teams/42.png' },
+  { name: 'Persepolis', league: 'Iran', image: require('../../assets/teams/perspolis.png') },
+  { name: 'Esteghlal', league: 'Iran', image: require('../../assets/teams/esteghlal.png') },
+  { name: 'Sepahan', league: 'Iran', image: require('../../assets/teams/sepahan.png') },
+  { name: 'Tractor', league: 'Iran', image: require('../../assets/teams/Tractor.png') },
 
-  { name: 'Barcelona', league: 'LaLiga', image: 'https://media.api-sports.io/football/teams/42.png' },
-  { name: 'Real Madrid', league: 'LaLiga', image: 'https://media.api-sports.io/football/teams/42.png' },
+  { name: 'Barcelona', league: 'LaLiga', image: require('../../assets/teams/barcelona.webp') },
+  { name: 'Real Madrid', league: 'LaLiga', image: require('../../assets/teams/realmadrid.png') },
 
-  { name: 'Arsenal', league: 'England', image: 'https://media.api-sports.io/football/teams/42.png' },
-  { name: 'Manchester City', league: 'England', image: 'https://i.imgur.com/UHTmGeD.png' },
-  { name: 'Manchester United', league: 'England', image: 'https://i.imgur.com/AJQd7uC.png' },
-  { name: 'Liverpool', league: 'England', image: 'https://i.imgur.com/zKjbhP7.png' },
-  { name: 'Chelsea', league: 'England', image: 'https://i.imgur.com/nBlGkXb.png' },
+  { name: 'Arsenal', league: 'England', image: require('../../assets/teams/arsenal.webp') },
+  { name: 'Manchester City', league: 'England', image: require('../../assets/teams/city.png') },
+  { name: 'Manchester United', league: 'England', image: require('../../assets/teams/united.png') },
+  { name: 'Liverpool', league: 'England', image: require('../../assets/teams/liverpool.webp') },
+  { name: 'Chelsea', league: 'England', image: require('../../assets/teams/chealse.png') },
 
-  { name: 'PSG', league: 'France', image: 'https://i.imgur.com/VY94tTw.png' },
+  { name: 'Bayern', league: 'Bundesliga', image: require('../../assets/teams/bayern.png') },
+  { name: 'Dortmund', league: 'Bundesliga', image: require('../../assets/teams/dortmund.png') },
 
-  { name: 'Bayern', league: 'Bundesliga', image: 'https://i.imgur.com/G2j8clH.png' },
-  { name: 'Dortmund', league: 'Bundesliga', image: 'https://i.imgur.com/0OyE58G.png' },
-
-  { name: 'Inter', league: 'Italy', image: 'https://i.imgur.com/zzcCIKk.png' },
-  { name: 'Milan', league: 'Italy', image: 'https://i.imgur.com/IklATeF.png' },
-  { name: 'Juventus', league: 'Italy', image: 'https://i.imgur.com/YrKdLkY.png' },
+  { name: 'Inter', league: 'Italy', image: require('../../assets/teams/inter.png') },
+  { name: 'Milan', league: 'Italy', image: require('../../assets/teams/milan.png') },
 ];
 
 export default function PickTeamsScreen({ navigation }: any) {
@@ -120,7 +117,7 @@ export default function PickTeamsScreen({ navigation }: any) {
                 disabled && styles.disabled,
               ]}
             >
-              <Image source={{ uri: item.image }} style={styles.teamLogo} />
+              <Image source={item.image} style={styles.teamLogo} />
               <Text style={styles.teamName}>{item.name}</Text>
             </TouchableOpacity>
           );
@@ -162,7 +159,7 @@ const styles = StyleSheet.create({
     opacity: 0.3,
   },
   favoriteItem: {
-    backgroundColor: '#444',
+    backgroundColor: '#333',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
@@ -171,10 +168,9 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   favoriteLogo: {
-    width: 20,
-    height: 20,
+    width: 40,
+    height: 40,
     marginRight: 6,
-    borderRadius: 10,
   },
   favoriteText: { color: '#fff', fontSize: 13, marginRight: 5 },
   removeBtn: { color: '#fff', fontSize: 16 },

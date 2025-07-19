@@ -2,8 +2,8 @@ import { useEffect, useState, useRef } from "react";
 import { ActivityIndicator, View, Dimensions, StyleSheet } from "react-native";
 import Video from "react-native-video";
 import {
-  startMediaDownload,
-  cancelMediaDownload,
+  startDownload,
+  cancelDownload,
 } from "../../../hooks/useMediaDownloadManager";
 
 const screenWidth = Dimensions.get("window").width;
@@ -11,10 +11,11 @@ const screenWidth = Dimensions.get("window").width;
 interface Props {
   video: any;
   isVisible: boolean;
+  activeDownload?: any;
   context?: "channel" | "explore";
 }
 
-export default function MessageVideo({ video, isVisible, context = "channel" }: Props) {
+export default function MessageVideo({ video, isVisible, context = "channel", activeDownload }: Props) {
   const [videoPath, setVideoPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const videoRef = useRef(null);
@@ -40,14 +41,15 @@ export default function MessageVideo({ video, isVisible, context = "channel" }: 
 
   // ⬇️ دانلود ویدیو
   useEffect(() => {
+    if (activeDownload) return
     if (!fileId) return;
 
-    startMediaDownload(fileId, (path: string) => {
+    startDownload(fileId, (path: string) => {
       setVideoPath(path);
       setLoading(false);
     });
 
-    return () => cancelMediaDownload(fileId);
+    return () => {cancelDownload(fileId)}
   }, [fileId]);
 
   // ⬇️ در حال لود

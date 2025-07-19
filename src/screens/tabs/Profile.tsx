@@ -25,6 +25,9 @@ type Profile = {
   profilePhoto?: {
     minithumbnail?: { data: number[] };
   };
+  usernames: {
+    activeUsernames: string[];
+  };
 };
 
 export default function ProfileScreen() {
@@ -41,6 +44,7 @@ export default function ProfileScreen() {
       try {
         const profileRaw = await TdLib.getProfile();
         const parsed = JSON.parse(profileRaw);
+        console.log("📥 Profile loaded:", parsed);
         setProfile(parsed);
       } catch (e) {
         console.error("❌ Error loading profile", e);
@@ -116,7 +120,8 @@ export default function ProfileScreen() {
             source={{ uri: `data:image/jpeg;base64,${base64}` }}
             style={styles.image}
           />
-          {renderNameAndPhone()}
+          {renderName()}
+          {renderInformation()}
         </View>
       );
     }
@@ -130,14 +135,38 @@ export default function ProfileScreen() {
     );
   };
 
-  const renderNameAndPhone = () => (
-    <View style={styles.infoBox}>
-      <Text style={styles.nameText}>
-        {profile?.firstName} {profile?.lastName}
-      </Text>
-      <Text style={styles.phoneText}>{profile?.phoneNumber}</Text>
+  const renderName = () => (
+    <Text style={styles.nameText}>
+      {profile?.firstName} {profile?.lastName}
+    </Text>
+  );
+
+  const renderInformation = () => (
+    <View style={styles.informationBox}>
+      {
+        profile?.phoneNumber && (
+          <View style={styles.infoRow}>
+            <Text style={styles.infoValue}>
+              {profile.phoneNumber.startsWith("+") ? profile.phoneNumber : `${profile.phoneNumber}+`}
+            </Text>
+            <Text style={styles.infoLabel}>شماره تماس</Text>
+          </View>
+        )
+      }
+
+      {
+        profile?.usernames.activeUsernames[0] && (
+          <View style={styles.infoRow}>
+            <Text style={styles.infoValue}>
+              @{profile.usernames.activeUsernames[0]}
+            </Text>
+            <Text style={styles.infoLabel}>نام کاربری</Text>
+          </View>
+        )
+      }
     </View>
   );
+
 
   const renderLineIndicator = () => {
     if (photos.length <= 1) return null;
@@ -166,7 +195,7 @@ export default function ProfileScreen() {
       <StatusBar backgroundColor="#000" barStyle="light-content" />
       {loadingPhotos ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#0088cc" />
+          {renderFallback()}
         </View>
       ) : photos.length > 0 ? (
         <>
@@ -188,7 +217,7 @@ export default function ProfileScreen() {
                 <TouchableWithoutFeedback onPress={goPrevious}>
                   <View style={styles.touchLeft} />
                 </TouchableWithoutFeedback>
-                {renderNameAndPhone()}
+                {renderName()}
               </View>
             )}
             onMomentumScrollEnd={onMomentumScrollEnd}
@@ -203,12 +232,14 @@ export default function ProfileScreen() {
                 flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
               }, 100);
             }}
-          />
+            />
           {renderLineIndicator()}
         </>
       ) : (
         renderFallback()
       )}
+      {renderInformation()}
+      
     </View>
   );
 }
@@ -237,8 +268,10 @@ const styles = StyleSheet.create({
   },
   nameText: {
     color: "white",
-    fontSize: 20,
-    fontWeight: "bold",
+    fontSize: 25,
+    position: "absolute",
+    left: 20,
+    bottom: 10,
     fontFamily: "SFArabic-Heavy",
   },
   phoneText: {
@@ -246,12 +279,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 2,
     fontFamily: "SFArabic-Regular",
-  },
-  infoBox: {
-    position: "absolute",
-    bottom: 10,
-    right: 20,
-    alignItems: "flex-end",
   },
   centered: {
     height: 370,
@@ -270,7 +297,7 @@ const styles = StyleSheet.create({
   },
   indicator: {
     height: 2.3,
-    backgroundColor: "#666",
+    backgroundColor: "#999",
     borderRadius: 2,
   },
   indicatorActive: {
@@ -290,4 +317,27 @@ const styles = StyleSheet.create({
     width: SCREEN_WIDTH / 3,
     height: "100%",
   },
+  informationBox: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    alignItems: "flex-start",
+    gap:20
+  },
+  infoRow: {
+  
+  },
+  infoValue: {
+    color: "#ccc",
+    fontSize: 16,
+    textAlign: "right",
+    fontFamily: "SFArabic-Regular",
+  },
+  infoLabel: {
+    color: "#999",
+    fontSize: 12,
+    textAlign: "left",
+    fontFamily: "SFArabic-Light",
+    marginTop: 1,
+  },
+
 });

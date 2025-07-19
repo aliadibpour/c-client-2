@@ -12,12 +12,13 @@ import {
   StatusBar,
   DeviceEventEmitter,
 } from "react-native";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import TdLib from "react-native-tdlib";
 import ChannelMessageItem from "../../components/tabs/channel/ChannelMessageItem";
 import { ViewToken } from "react-native";
 import ChannelHeader from "../../components/tabs/channel/ChannelHeader";
 import { ArrowLeft } from "../../assets/icons";
+import ChannelAlbumItem from "../../components/tabs/channel/ChannelAlbumItem";
 
 const { width, height } = Dimensions.get("window");
 
@@ -33,6 +34,45 @@ export default function ChannelScreen({ route }: any) {
   const [viewableItems, setViewableItems] = useState<ViewToken[]>([]);
   const [listRendered, setListRendered] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const groupedMessages = useMemo(() => groupMessagesByAlbum(messages), [messages]);
+
+  function groupMessagesByAlbum(messages: any[]) {
+    const albumMap = new Map();
+    const normalMessages = [];
+
+    for (const msg of messages) {
+      if (msg.mediaAlbumId && msg.mediaAlbumId !== 0) {
+        if (!albumMap.has(msg.mediaAlbumId)) {
+          albumMap.set(msg.mediaAlbumId, []);
+        }
+        albumMap.get(msg.mediaAlbumId).push(msg);
+      } else {
+        normalMessages.push(msg);
+      }
+    }
+
+    const grouped = [];
+
+    for (const [albumId, albumMsgs] of albumMap) {
+      const sorted = albumMsgs.sort((a:any, b:any) => a.id - b.id);
+      grouped.push({
+        type: "album",
+        mediaAlbumId: albumId,
+        messages: sorted,
+        id: sorted[0].id,
+      });
+    }
+
+    for (const msg of normalMessages) {
+      grouped.push({
+        type: "single",
+        message: msg,
+        id: msg.id,
+      });
+    }
+
+    return grouped.sort((a, b) => b.id - a.id);
+  }
 
   const listRef = useRef<FlatList>(null);
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 70 });
@@ -71,47 +111,35 @@ export default function ChannelScreen({ route }: any) {
     }
   };
 
-
-
-
-
-
   useEffect(() => {
-  const subscription = DeviceEventEmitter.addListener('tdlib-update', async (event) => {
-    const update = JSON.parse(event.raw);
+    const subscription = DeviceEventEmitter.addListener('tdlib-update', async (event) => {
+      const update = JSON.parse(event.raw);
 
-    // تشخیص نوع آپدیت
-    if (update.chatId && update.messageId && update.interactionInfo) {
-      // این یعنی interactionInfo جدید رسیده
+      // تشخیص نوع آپدیت
+      if (update.chatId && update.messageId && update.interactionInfo) {
+        // این یعنی interactionInfo جدید رسیده
 
-      // پیدا کردن پیام
-      const idx = messages.findIndex(m => m.chatId === update.chatId && m.id === update.messageId);
-      if (idx !== -1) {
-        try {
-          const raw = await TdLib.getMessage(update.chatId, update.messageId);
-          const fullMsg = JSON.parse(raw.raw);
+        // پیدا کردن پیام
+        const idx = messages.findIndex(m => m.chatId === update.chatId && m.id === update.messageId);
+        if (idx !== -1) {
+          try {
+            const raw = await TdLib.getMessage(update.chatId, update.messageId);
+            const fullMsg = JSON.parse(raw.raw);
 
-          setMessages(prev => {
-            const newMessages = [...prev];
-            newMessages[idx] = fullMsg;
-            return newMessages;
-          });
-        } catch (err) {
-          console.log("❌ Error updating message interaction:", err);
+            setMessages(prev => {
+              const newMessages = [...prev];
+              newMessages[idx] = fullMsg;
+              return newMessages;
+            });
+          } catch (err) {
+            console.log("❌ Error updating message interaction:", err);
+          }
         }
       }
-    }
-  });
+    });
 
-  return () => subscription.remove();
-}, [messages]);
-
-
-
-
-
-
-
+    return () => subscription.remove();
+  }, [messages]);
 
 
   // 🟢 اولین بار فقط ۱۵ پیام آخر
@@ -133,6 +161,9 @@ export default function ChannelScreen({ route }: any) {
     }
   }, [loading, listRendered, messages]);
 
+  console.log("fffff",viewableItems)
+
+
   // 🟢 کنترل نمایش دکمه اسکرول به پایین
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetY = event.nativeEvent.contentOffset.y;
@@ -148,6 +179,24 @@ export default function ChannelScreen({ route }: any) {
     await fetchMessages(last.id);
     setLoadingMore(false);
   };
+
+  const activeDownloads = useMemo(() => {
+    if (!viewableItems.length) return [];
+
+    const selected = [];
+
+    const currentMessageId = viewableItems[0]?.key;
+    const currentIndex = messages.findIndex((v) => v.id == currentMessageId);
+
+    if (currentIndex - 1 >= 0) selected.push(messages[currentIndex - 1].id); 
+    selected.push(messages[currentIndex].id);
+    if (currentIndex + 1 < messages.length) selected.push(messages[currentIndex + 1].id); 
+    if (currentIndex + 2 < messages.length) selected.push(messages[currentIndex + 2].id); 
+
+    return selected
+  }, [viewableItems]);
+
+
 
   return (
     <ImageBackground
@@ -170,11 +219,22 @@ export default function ChannelScreen({ route }: any) {
 
         <FlatList
           ref={listRef}
-          data={messages}
           keyExtractor={(item) => item.id.toString()}
+          data={groupedMessages}
           renderItem={({ item }) => {
-            const isVisible = viewableItems.some((v) => v.item?.id === item.id);
-            return <ChannelMessageItem data={item} isVisible={isVisible} />;
+            if (item.type === "album") {
+              return <ChannelAlbumItem data={item.messages} />;
+            } else {
+                const isVisible = viewableItems.some((v) => v.item?.id === item.id);
+
+              return (
+                <ChannelMessageItem 
+                  data={item.message}
+                  isVisible={isVisible}
+                  activeDownloads={activeDownloads}
+                />
+              );
+            }
           }}
           inverted
           contentContainerStyle={{

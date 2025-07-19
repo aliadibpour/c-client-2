@@ -7,6 +7,11 @@ import { useNavigation } from "@react-navigation/native";
 import { Eye } from "lucide-react-native";
 import { ArrowLeft } from "../../../assets/icons";
 
+interface ChannelMessageItemProps {
+  data: any;
+  isVisible: boolean;
+  activeDownloads: any;
+}
 const screenWidth = Dimensions.get("window").width;
 
 const cleanText = (text: string): string => {
@@ -17,8 +22,10 @@ const cleanText = (text: string): string => {
     .trim();
 };
 
-export default function ChannelMessageItem({ data, isVisible }: any) {
+export default function ChannelMessageItem({ data, isVisible, activeDownloads }: ChannelMessageItemProps) {
   const content = data?.content;
+  const isActiveDownload = activeDownloads.includes(data.id)
+  console.log(activeDownloads,"f",isActiveDownload)
   const navigation: any = useNavigation();
 
   const captionText = content?.caption?.text || "";
@@ -83,7 +90,10 @@ export default function ChannelMessageItem({ data, isVisible }: any) {
         {/* مدیا داخل ویوی full width */}
         {photo && (
           <View style={{ width: "100%" }}>
-            <MessagePhoto photo={photo} />
+            <MessagePhoto 
+              photo={photo} 
+              activeDownload={isActiveDownload} 
+            />
           </View>
         )}
         {video && (
@@ -92,6 +102,7 @@ export default function ChannelMessageItem({ data, isVisible }: any) {
               video={video}
               isVisible={isVisible}
               context="channel"
+              activeDownload={isActiveDownload}
             />
           </View>
         )}

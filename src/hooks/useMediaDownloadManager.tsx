@@ -2,7 +2,7 @@ import TdLib from "react-native-tdlib";
 
 const activeDownloads: Record<string, boolean> = {};
 
-export const startMediaDownload = async (
+export const startDownload = async (
   fileId: number,
   onComplete: (path: string) => void
 ) => {
@@ -23,6 +23,11 @@ export const startMediaDownload = async (
   }
 };
 
-export const cancelMediaDownload = (fileId: number) => {
-  delete activeDownloads[fileId];
+export const cancelDownload = async (fileId: number) => {
+  try {
+    await TdLib.cancelDownloadFile(fileId);
+    delete activeDownloads[fileId];
+  } catch (error) {
+    console.error("Cancel error:", error);
+  }
 };
