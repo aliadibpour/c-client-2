@@ -28,12 +28,15 @@ export default function ChannelScreen({ route }: any) {
   const { chatId } = route.params;
 
   const [messages, setMessages] = useState<any[]>([]);
+  const messagesRef = useRef<any[]>([]); // track latest messages
+
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [viewableItems, setViewableItems] = useState<ViewToken[]>([]);
   const [listRendered, setListRendered] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+
   const groupedMessages = useMemo(() => groupMessagesByAlbum(messages), [messages]);
 
   function groupMessagesByAlbum(messages: any[]) {
@@ -54,7 +57,7 @@ export default function ChannelScreen({ route }: any) {
     const grouped = [];
 
     for (const [albumId, albumMsgs] of albumMap) {
-      const sorted = albumMsgs.sort((a:any, b:any) => a.id - b.id);
+      const sorted = albumMsgs.sort((a: any, b: any) => a.id - b.id);
       grouped.push({
         type: "album",
         mediaAlbumId: albumId,
@@ -78,82 +81,101 @@ export default function ChannelScreen({ route }: any) {
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 70 });
   const hasScrolledToBottom = useRef(false);
 
-  const onViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      setViewableItems(viewableItems);
-    }
-  );
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    setViewableItems(viewableItems);
+  });
 
-  // 🟢 گرفتن پیام‌ها از سرور با fromId
   const fetchMessages = async (fromMessageId: number = 0) => {
     try {
-      const result: any[] = await TdLib.getChatHistory(
-        chatId,
-        fromMessageId,
-        PAGE_SIZE
-      );
+      const result: any[] = await TdLib.getChatHistory(chatId, fromMessageId, PAGE_SIZE);
       const parsed = result.map((item) => JSON.parse(item.raw_json));
-      console.log(parsed)
+      console.log("📩 parsed:", parsed.length);
 
-      // 🔄 اگر داریم لود بیشتر انجام می‌دیم، به لیست اضافه کن
       if (fromMessageId !== 0) {
         setMessages((prev) => [...prev, ...parsed]);
       } else {
         setMessages(parsed);
       }
 
-      // ❌ اگر تعداد پیام کمتر از PAGE_SIZE بود، یعنی دیگه پیام نیست
       if (parsed.length < PAGE_SIZE) {
         setHasMore(false);
       }
+
+      // 👇 اگر بار اول هست و هنوز پیام‌های بیشتری باید بیاره
+      if (fromMessageId === 0 && parsed.length > 0 && parsed.length < PAGE_SIZE && hasMore) {
+        const last = parsed[parsed.length - 1];
+        fetchMessages(last.id);
+      }
+
     } catch (err) {
       console.error("❌ Error fetching messages:", err);
     }
   };
 
   useEffect(() => {
-    const subscription = DeviceEventEmitter.addListener('tdlib-update', async (event) => {
-      const update = JSON.parse(event.raw);
+    messagesRef.current = messages;
+  }, [messages]);
 
-      // تشخیص نوع آپدیت
-      if (update.chatId && update.messageId && update.interactionInfo) {
-        // این یعنی interactionInfo جدید رسیده
+  useEffect(() => {
+    let isMounted = true;
 
-        // پیدا کردن پیام
-        const idx = messages.findIndex(m => m.chatId === update.chatId && m.id === update.messageId);
-        if (idx !== -1) {
-          try {
-            const raw = await TdLib.getMessage(update.chatId, update.messageId);
-            const fullMsg = JSON.parse(raw.raw);
-
-            setMessages(prev => {
-              const newMessages = [...prev];
-              newMessages[idx] = fullMsg;
-              return newMessages;
-            });
-          } catch (err) {
-            console.log("❌ Error updating message interaction:", err);
-          }
+    const init = async () => {
+      try {
+        await TdLib.openChat(chatId);
+        if (isMounted) {
+          await fetchMessages();
+          setLoading(false);
         }
+      } catch (e) {
+        console.error("❌ Failed to open chat", e);
+      }
+    };
+
+    init();
+
+    const subscription = DeviceEventEmitter.addListener("tdlib-update", async (event) => {
+      const update = JSON.parse(event.raw);
+      if (update.chatId !== chatId) return;
+      console.log(update)
+
+      if (update.messageId && update.interactionInfo) {
+        updateSingleMessage(update.chatId, update.messageId);
       }
     });
 
-    return () => subscription.remove();
-  }, [messages]);
-
-
-  // 🟢 اولین بار فقط ۱۵ پیام آخر
-  useEffect(() => {
-    const loadInitial = async () => {
-      setLoading(true);
-      await fetchMessages();
-      setLoading(false);
+    return () => {
+      isMounted = false;
+      const cleanup = async () => {
+        try {
+          await TdLib.closeChat(chatId);
+        } catch (e) {
+          console.error("❌ Failed to close chat", e);
+        }
+        subscription.remove();
+      };
+      cleanup();
     };
-
-    loadInitial();
   }, [chatId]);
 
-  // 🟢 بعد از رندر کامل اسکرول به آخرین پیام (که بالا هست)
+
+  const updateSingleMessage = async (chatId: number, messageId: number) => {
+    const idx = messagesRef.current.findIndex(m => m.chatId === chatId && m.id === messageId);
+    if (idx === -1) return;
+
+    try {
+      const raw = await TdLib.getMessage(chatId, messageId);
+      const fullMsg = JSON.parse(raw.raw);
+
+      const updated = [...messagesRef.current];
+      updated[idx] = fullMsg;
+      messagesRef.current = updated;
+      setMessages(updated);
+    } catch (err) {
+      console.log("❌ Error updating single message:", err);
+    }
+  };
+
+
   useEffect(() => {
     if (!loading && listRendered && messages.length > 0 && !hasScrolledToBottom.current) {
       listRef.current?.scrollToOffset({ offset: 0, animated: false });
@@ -161,19 +183,13 @@ export default function ChannelScreen({ route }: any) {
     }
   }, [loading, listRendered, messages]);
 
-  console.log("fffff",viewableItems)
-
-
-  // 🟢 کنترل نمایش دکمه اسکرول به پایین
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     setShowScrollToBottom(offsetY > 300);
   };
 
-  // 🟢 تشخیص اسکرول به بالا و گرفتن پیام بیشتر
   const handleEndReached = async () => {
     if (loadingMore || !hasMore || messages.length === 0) return;
-
     setLoadingMore(true);
     const last = messages[messages.length - 1];
     await fetchMessages(last.id);
@@ -182,21 +198,15 @@ export default function ChannelScreen({ route }: any) {
 
   const activeDownloads = useMemo(() => {
     if (!viewableItems.length) return [];
-
     const selected = [];
-
     const currentMessageId = viewableItems[0]?.key;
     const currentIndex = messages.findIndex((v) => v.id == currentMessageId);
-
-    if (currentIndex - 1 >= 0) selected.push(messages[currentIndex - 1].id); 
+    if (currentIndex - 1 >= 0) selected.push(messages[currentIndex - 1].id);
     selected.push(messages[currentIndex].id);
-    if (currentIndex + 1 < messages.length) selected.push(messages[currentIndex + 1].id); 
-    if (currentIndex + 2 < messages.length) selected.push(messages[currentIndex + 2].id); 
-
-    return selected
+    if (currentIndex + 1 < messages.length) selected.push(messages[currentIndex + 1].id);
+    if (currentIndex + 2 < messages.length) selected.push(messages[currentIndex + 2].id);
+    return selected;
   }, [viewableItems]);
-
-
 
   return (
     <ImageBackground
@@ -204,10 +214,7 @@ export default function ChannelScreen({ route }: any) {
       resizeMode="cover"
       style={styles.background}
     >
-      <StatusBar
-        backgroundColor="#111"
-        barStyle="light-content"
-      />
+      <StatusBar backgroundColor="#111" barStyle="light-content" />
       <View style={styles.container}>
         <ChannelHeader chatId={chatId} />
 
@@ -225,10 +232,9 @@ export default function ChannelScreen({ route }: any) {
             if (item.type === "album") {
               return <ChannelAlbumItem data={item.messages} />;
             } else {
-                const isVisible = viewableItems.some((v) => v.item?.id === item.id);
-
+              const isVisible = viewableItems.some((v) => v.item?.id === item.id);
               return (
-                <ChannelMessageItem 
+                <ChannelMessageItem
                   data={item.message}
                   isVisible={isVisible}
                   activeDownloads={activeDownloads}
@@ -263,9 +269,7 @@ export default function ChannelScreen({ route }: any) {
       {showScrollToBottom && (
         <TouchableOpacity
           style={styles.scrollToBottomButton}
-          onPress={() => {
-            listRef.current?.scrollToOffset({ offset: 0, animated: true });
-          }}
+          onPress={() => listRef.current?.scrollToOffset({ offset: 0, animated: true })}
         >
           <ArrowLeft style={styles.arrowLeft} width={17} height={19} />
         </TouchableOpacity>
@@ -288,7 +292,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    marginBottom: 40
+    marginBottom: 40,
   },
   loadingContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -327,6 +331,6 @@ const styles = StyleSheet.create({
   arrowLeft: {
     color: "#fff",
     transform: [{ rotate: "-90deg" }],
-    margin: "auto"
+    margin: "auto",
   },
 });
