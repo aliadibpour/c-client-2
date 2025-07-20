@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import TdLib from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
 import { useNavigation } from "@react-navigation/native";
+import { cancelDownload } from "../../../hooks/useMediaDownloadManager";
 
 interface Props {
   photo: any;
@@ -83,7 +84,7 @@ export default function MessagePhoto({ photo, context = "channel", activeDownloa
 
     const cancelPhoto = async () => {
       try {
-        await TdLib.cancelDownloadFile(fileId);
+        await cancelDownload(fileId);
         console.log("⛔️ Download canceled:", fileId);
       } catch (err) {
         console.error("Cancel download error:", err);
