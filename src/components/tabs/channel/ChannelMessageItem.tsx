@@ -1,17 +1,19 @@
 import { Dimensions, Text, View, TouchableOpacity, StyleSheet } from "react-native";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import MessagePhoto from "../home/MessagePhoto";
 import MessageVideo from "../home/MessageVideo";
 import MessageReactions from "../home/MessageReaction";
 import { useNavigation } from "@react-navigation/native";
 import { Eye } from "lucide-react-native";
 import { ArrowLeft } from "../../../assets/icons";
+import TdLib from "react-native-tdlib";
 
 interface ChannelMessageItemProps {
   data: any;
   isVisible: boolean;
   activeDownloads: any;
 }
+
 const screenWidth = Dimensions.get("window").width;
 
 const cleanText = (text: string): string => {
@@ -23,11 +25,26 @@ const cleanText = (text: string): string => {
 };
 
 export default function ChannelMessageItem({ data, isVisible, activeDownloads }: ChannelMessageItemProps) {
-  const content = data?.content;
-  const isActiveDownload = activeDownloads.includes(data.id)
-  console.log(activeDownloads,"f",isActiveDownload)
   const navigation: any = useNavigation();
+  const [messageData, setMessageData] = useState<any>(data);
+  const isActiveDownload = activeDownloads.includes(data.id);
 
+  const chatId = data.chatId;
+  const messageId = data.id;
+
+  useEffect(() => {
+    setMessageData(data);
+    // console.log(data,"i")
+  }, [data]);
+
+  useEffect(() =>{
+    setInterval(() => {
+      TdLib.viewMessages(chatId, [messageId], false)
+    //   TdLib.getAddedReactions(chatId,messageId)
+    }, 3000);
+  } ,[])
+
+  const content = messageData?.content;
   const captionText = content?.caption?.text || "";
   const messageText = content?.text?.text || "";
 
@@ -69,31 +86,24 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads }:
   const hasMedia = !!photo || !!video;
   const messageWidth = hasMedia ? Math.max(mediaWidth, MIN_WIDTH) : MIN_WIDTH;
 
-  // زمان ارسال پیام
-  const date = new Date(data.date * 1000);
+  const date = new Date(messageData.date * 1000);
   const timeString = `${date.getHours()}:${date.getMinutes().toString().padStart(2, "0")}`;
-
-  // نام نویسنده
-  const authorName = data.authorSignature?.trim();
+  const authorName = messageData.authorSignature?.trim();
 
   const formatNumber = (num: number): string => {
     if (num < 1000) return num.toString();
     if (num < 1_000_000) return (num / 1000).toFixed(1).replace(/\.0$/, "") + "k";
     return (num / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
   };
-  const viewCount = formatNumber(data.interactionInfo.viewCount)
 
+  const viewCount = formatNumber(messageData?.interactionInfo?.viewCount || 0);
 
   return (
     <View style={styles.wrapper}>
       <View style={[styles.card, { width: messageWidth }]}>
-        {/* مدیا داخل ویوی full width */}
         {photo && (
           <View style={{ width: "100%" }}>
-            <MessagePhoto 
-              photo={photo} 
-              activeDownload={isActiveDownload} 
-            />
+            <MessagePhoto photo={photo} activeDownload={isActiveDownload} />
           </View>
         )}
         {video && (
@@ -107,54 +117,53 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads }:
           </View>
         )}
 
-        {/* متن زیر مدیا */}
-        {!!cleanedCaption && <Text style={styles.text}>{content?.caption?.text}</Text>}
-        {!!cleanedText && <Text style={styles.text}>{content?.text?.text}</Text>}
+        {!!cleanedCaption && <Text style={styles.text}>{captionText}</Text>}
+        {!!cleanedText && <Text style={styles.text}>{messageText}</Text>}
 
-        {/* واکنش‌ها */}
-        {data.interactionInfo?.reactions?.reactions?.length > 0 && (
-          <MessageReactions 
-            reactions={data.interactionInfo.reactions.reactions} 
+        {messageData.interactionInfo?.reactions?.reactions?.length > 0 && (
+          <MessageReactions
+            reactions={messageData.interactionInfo.reactions.reactions}
             onReact={(emoji) => console.log("🧡", emoji)}
             customStyles={{
-              container: { justifyContent: "flex-start", marginTop: 8, paddingHorizontal: 10, marginBottom: 8 },
+              container: {
+                justifyContent: "flex-start",
+                marginTop: 8,
+                paddingHorizontal: 10,
+                marginBottom: 8,
+              },
               reactionBox: { backgroundColor: "#444", paddingHorizontal: 3 },
               selectedBox: { backgroundColor: "#0088cc" },
               emoji: { fontSize: 12 },
-              count: { color: "#ccc", fontWeight: "bold", fontSize:11 },
+              count: { color: "#ccc", fontWeight: "bold", fontSize: 11 },
             }}
           />
         )}
 
-        {/* نویسنده و زمان */}
         <View style={styles.footer}>
           {authorName ? <Text style={styles.author}>{authorName}</Text> : <View />}
-            <View style={styles.rightFooter}>
-              {/* 👁️ Eye icon */}
-              <Eye size={14} color="#888" style={{ marginRight: 4 }} />
-              <Text style={styles.views}>{viewCount}</Text>
-              <Text style={styles.time}> · {timeString}</Text>
-            </View>
+          <View style={styles.rightFooter}>
+            <Eye size={14} color="#888" style={{ marginRight: 4 }} />
+            <Text style={styles.views}>{viewCount}</Text>
+            <Text style={styles.time}> · {timeString}</Text>
+          </View>
         </View>
 
-        {/* کامنت */}
-        {data.interactionInfo?.replyInfo?.replyCount > 0 && (
+        {messageData.interactionInfo?.replyInfo?.replyCount > 0 && (
           <TouchableOpacity
             onPress={() =>
               navigation.navigate("Comments", {
-                chatId: data.chatId,
-                messageId: data.id,
+                chatId: messageData.chatId,
+                messageId: messageData.id,
               })
             }
             style={styles.commentBox}
           >
             <Text style={styles.commentText}>
-              {data.interactionInfo.replyInfo.replyCount} کامنت
+              {messageData.interactionInfo.replyInfo.replyCount} کامنت
             </Text>
-            <ArrowLeft style={{color: "#54afff"}} width={15}/>
+            <ArrowLeft style={{ color: "#54afff" }} width={15} />
           </TouchableOpacity>
         )}
-
       </View>
     </View>
   );
@@ -188,10 +197,10 @@ const styles = StyleSheet.create({
   commentBox: {
     borderTopColor: "#2a2b2b",
     borderTopWidth: 1,
-    paddingTop:7,
+    paddingTop: 7,
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingRight: 9
+    paddingRight: 9,
   },
   footer: {
     flexDirection: "row",
@@ -220,5 +229,4 @@ const styles = StyleSheet.create({
     fontFamily: "SFArabic-Regular",
     marginRight: 4,
   },
-
 });

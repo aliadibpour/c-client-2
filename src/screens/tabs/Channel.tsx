@@ -90,6 +90,7 @@ export default function ChannelScreen({ route }: any) {
       const result: any[] = await TdLib.getChatHistory(chatId, fromMessageId, PAGE_SIZE);
       const parsed = result.map((item) => JSON.parse(item.raw_json));
       console.log("📩 parsed:", parsed.length);
+      console.log(messages)
 
       if (fromMessageId !== 0) {
         setMessages((prev) => [...prev, ...parsed]);
@@ -133,16 +134,6 @@ export default function ChannelScreen({ route }: any) {
 
     init();
 
-    const subscription = DeviceEventEmitter.addListener("tdlib-update", async (event) => {
-      const update = JSON.parse(event.raw);
-      if (update.chatId !== chatId) return;
-      console.log(update)
-
-      if (update.messageId && update.interactionInfo) {
-        updateSingleMessage(update.chatId, update.messageId);
-      }
-    });
-
     return () => {
       isMounted = false;
       const cleanup = async () => {
@@ -151,28 +142,77 @@ export default function ChannelScreen({ route }: any) {
         } catch (e) {
           console.error("❌ Failed to close chat", e);
         }
-        subscription.remove();
       };
       cleanup();
     };
   }, [chatId]);
 
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener("tdlib-update", async (event) => {
+      try {
+        const update = JSON.parse(event.raw);
+        const { type, data } = update;
+        
+        if (!data || data.chatId !== chatId) return;
+        console.log(update)
 
-  const updateSingleMessage = async (chatId: number, messageId: number) => {
-    const idx = messagesRef.current.findIndex(m => m.chatId === chatId && m.id === messageId);
-    if (idx === -1) return;
+        switch (type) {
+          case "UpdateNewMessage":
+            handleNewMessage(data);
+            break;
+          case "UpdateChatLastMessage":
+            handleNewMessage(data.lastMessage);
+          break;
+          case "UpdateDeleteMessages":
+            handleDeleteMessages(data);
+            break;
+          case "UpdateMessageInteractionInfo":
+            handleInteractionInfo(data);
+            break;
+          default:
+            // آپدیت‌های غیرمفید رد می‌شن
+            return;
+        }
 
-    try {
-      const raw = await TdLib.getMessage(chatId, messageId);
-      const fullMsg = JSON.parse(raw.raw);
+      } catch (err) {
+        console.warn("Invalid tdlib update:", event);
+      }
+    });
 
-      const updated = [...messagesRef.current];
-      updated[idx] = fullMsg;
-      messagesRef.current = updated;
-      setMessages(updated);
-    } catch (err) {
-      console.log("❌ Error updating single message:", err);
-    }
+    return () => subscription.remove();
+  }, [chatId]);
+
+  const handleNewMessage = (message: any) => {
+    setMessages((prev) => {
+      const exists = prev.some((msg) => msg.id === message.id);
+      if (exists) return prev;
+      return [...prev, message];
+    });
+  };
+
+  const handleDeleteMessages = (data:any) => {
+    const { messageIds } = data;
+    setMessages(prev =>
+      prev.filter(msg => !messageIds.includes(msg.id))
+    );
+  };
+
+  const handleInteractionInfo = (data:any) => {
+    const { messageId, interactionInfo } = data;
+    setMessages(prev =>
+      prev.map(msg => {
+        if (msg.id === messageId) {
+          return {
+            ...msg,
+            interactionInfo: {
+              ...msg.interactionInfo,
+              ...interactionInfo,
+            },
+          };
+        }
+        return msg;
+      })
+    );
   };
 
 
