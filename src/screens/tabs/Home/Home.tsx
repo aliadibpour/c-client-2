@@ -92,21 +92,23 @@ export default function HomeScreen() {
   useEffect(() => {
     const fetchBestMessages = async () => {
       try {
-        const res = await fetch("http://192.168.117.115:3000/messages/best");
+        const res = await fetch("http://10.224.44.115:3000/messages/best");
         const data: { chatId: string; messageId: string }[] = await res.json();
 
-        const allMessages: any[] = [];
-        for (const { chatId, messageId } of data) {
-          try {
-            const raw = await TdLib.getMessage(+chatId, +messageId);
-            const parsed = JSON.parse(raw.raw);
-            allMessages.push(parsed);
-          } catch (err) {
-            console.log("❌ Error getting message:", err);
-          }
-        }
+        const allMessages = await Promise.all(
+          data.map(async ({ chatId, messageId }) => {
+            try {
+              const raw = await TdLib.getMessage(+chatId, +messageId);
+              return JSON.parse(raw.raw);
+            } catch (err) {
+              console.log("❌ Error getting message:", err);
+              return null; // در صورت ارور، حذفش می‌کنیم
+            }
+          })
+        );
 
-        setMessages(allMessages);
+        const validMessages = allMessages.filter(Boolean); // حذف nullها
+        setMessages(validMessages);
       } catch (error) {
         console.error("❌ Failed to fetch messages:", error);
       }
@@ -114,6 +116,7 @@ export default function HomeScreen() {
 
     fetchBestMessages();
   }, []);
+
 
   const onViewRef = useCallback(({ viewableItems }: any) => {
     const ids = viewableItems.map((vi: any) => vi.item.id);
@@ -134,26 +137,99 @@ export default function HomeScreen() {
     }
   }, []);
 
-  const activeDownloads = useMemo(() => {
-    if (!visibleIds.length) return [];
+const activeDownloads = useMemo(() => {
+  if (!visibleIds.length) return [];
 
-    const selected: number[] = [];
+  const selected: number[] = [];
 
-    const currentMessageId = visibleIds[0];
-    const currentIndex = messages.findIndex((msg) => msg.id === currentMessageId);
+  const currentMessageId = visibleIds[0];
+  const currentIndex = messages.findIndex((msg) => msg.id === currentMessageId);
+  if (currentIndex === -1) return [];
 
-    if (currentIndex === -1) return [];
+  // انتخاب ۵ پیام (۲ بالا، خودش، ۲ پایین)
+  if (currentIndex - 2 >= 0) selected.push(messages[currentIndex - 2].id);
+  if (currentIndex - 1 >= 0) selected.push(messages[currentIndex - 1].id);
+  selected.push(messages[currentIndex].id);
+  if (currentIndex + 1 < messages.length) selected.push(messages[currentIndex + 1].id);
+  if (currentIndex + 2 < messages.length) selected.push(messages[currentIndex + 2].id);
 
-    // حدود پنج‌تایی: دو تا بالا، خود پیام، دو تا پایین‌تر
-    if (currentIndex - 2 >= 0) selected.push(messages[currentIndex - 2].id);
-    if (currentIndex - 1 >= 0) selected.push(messages[currentIndex - 1].id);
-    selected.push(messages[currentIndex].id);
-    if (currentIndex + 1 < messages.length) selected.push(messages[currentIndex + 1].id);
-    if (currentIndex + 2 < messages.length) selected.push(messages[currentIndex + 2].id);
+  return selected;
+}, [visibleIds, messages]);
 
-    return selected;
-  }, [visibleIds, messages]);
-  console.log(activeDownloads)
+const openedChats = useRef<Set<number>>(new Set());
+
+useEffect(() => {
+  const currentChatIds = new Set<number>();
+
+  for (let id of activeDownloads) {
+    const msg = messages.find((m) => m.id === id);
+    if (!msg || !msg.chatId) continue;
+
+    const chatId = msg.chatId;
+    currentChatIds.add(chatId);
+
+    if (!openedChats.current.has(chatId)) {
+      TdLib.openChat(chatId)
+        .then(() => {
+          console.log("📂 Opened chat:", chatId);
+          openedChats.current.add(chatId);
+        })
+        .catch((err:any) => console.log("❌ openChat error:", err));
+    }
+
+    TdLib.viewMessages(chatId, [msg.id], false)
+      .catch((err:any) => console.log("❌ viewMessages error:", err));
+  }
+
+  // closeChat برای چت‌هایی که دیگه اکتیو نیستن
+  openedChats.current.forEach((chatId) => {
+    if (!currentChatIds.has(chatId)) {
+      TdLib.closeChat(chatId)
+        .then(() => {
+          console.log("📪 Closed chat:", chatId);
+          openedChats.current.delete(chatId);
+        })
+        .catch((err:any) => console.log("❌ closeChat error:", err));
+    }
+  });
+}, [activeDownloads, messages]);
+
+useEffect(() => {
+  const subscription = DeviceEventEmitter.addListener("tdlib-update", (event) => {
+    try {
+      const update = JSON.parse(event.raw);
+      const { type, data } = update;
+
+      if (type !== "UpdateMessageInteractionInfo") return;
+
+      const { messageId, interactionInfo, chatId } = data;
+console.log(update)
+      // بررسی فقط اگر در activeDownloads باشه
+      if (!activeDownloads.includes(messageId)) return;
+console.log(update,"dddddddddddd")
+
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id === messageId) {
+            return {
+              ...msg,
+              interactionInfo: {
+                ...msg.interactionInfo,
+                ...interactionInfo,
+              },
+            };
+          }
+          return msg;
+        })
+      );
+    } catch (err) {
+      console.warn("❌ Invalid tdlib update:", event);
+    }
+  });
+
+  return () => subscription.remove();
+}, [activeDownloads]);
+
 
   const viewConfigRef = useRef({ itemVisiblePercentThreshold: 60 });
 
