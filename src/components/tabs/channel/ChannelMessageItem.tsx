@@ -14,15 +14,8 @@ interface ChannelMessageItemProps {
   activeDownloads: any;
 }
 
-const screenWidth = Dimensions.get("window").width;
+const screenWidth = Dimensions.get("window").width
 
-const cleanText = (text: string): string => {
-  return text
-    .replace(/[\p{Emoji}\s@‌\w]+@[\w_]+$/gu, "")
-    .replace(/@\w+$/gm, "")
-    .replace(/https?:\/\/\S+$/gm, "")
-    .trim();
-};
 
 export default function ChannelMessageItem({ data, isVisible, activeDownloads }: ChannelMessageItemProps) {
   const navigation: any = useNavigation();
@@ -38,18 +31,17 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads }:
   }, [data]);
 
   useEffect(() =>{
-    setInterval(() => {
-      TdLib.viewMessages(chatId, [messageId], false)
-    //   TdLib.getAddedReactions(chatId,messageId)
-    }, 3000);
+    // if (activeDownloads.includes(messageId)) {
+    //   setInterval(() => {
+        TdLib.viewMessages(chatId, [messageId], false)
+        // TdLib.getMessage(chatId,messageId)
+    //   }, 3000);
+    // }
   } ,[])
 
   const content = messageData?.content;
   const captionText = content?.caption?.text || "";
   const messageText = content?.text?.text || "";
-
-  const cleanedCaption = useMemo(() => cleanText(captionText), [captionText]);
-  const cleanedText = useMemo(() => cleanText(messageText), [messageText]);
 
   const photo = content?.photo;
   const video = content?.video;
@@ -117,8 +109,17 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads }:
           </View>
         )}
 
-        {!!cleanedCaption && <Text style={styles.text}>{captionText}</Text>}
-        {!!cleanedText && <Text style={styles.text}>{messageText}</Text>}
+        {!!captionText && (
+          <Text style={styles.text}>
+            {captionText}
+          </Text>
+        )}
+        {!!messageText && (
+          <Text style={styles.text}>
+            {messageText}
+          </Text>
+        )}
+
 
         {messageData.interactionInfo?.reactions?.reactions?.length > 0 && (
           <MessageReactions
@@ -131,7 +132,7 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads }:
                 paddingHorizontal: 10,
                 marginBottom: 8,
               },
-              reactionBox: { backgroundColor: "#444", paddingHorizontal: 3 },
+              reactionBox: { backgroundColor: "#333", paddingHorizontal: 3 },
               selectedBox: { backgroundColor: "#0088cc" },
               emoji: { fontSize: 12 },
               count: { color: "#ccc", fontWeight: "bold", fontSize: 11 },
