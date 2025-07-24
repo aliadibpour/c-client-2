@@ -101,7 +101,7 @@ export default function ChannelHeader({ chatId }: { chatId: number }) {
         onPress={() => navigation.goBack()}
         style={styles.backButton}
       >
-        <ArrowLeft color="#fff"/>
+        <ArrowLeft color="#ddd" />
       </TouchableOpacity>
     </View>
   );
