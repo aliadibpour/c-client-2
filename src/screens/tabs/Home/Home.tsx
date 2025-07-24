@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import TdLib from "react-native-tdlib";
 import MessageItem from "../../../components/tabs/home/MessageItem";
+import { useFocusEffect } from "@react-navigation/native";
 
 export default function HomeScreen() {
   const [messages, setMessages] = useState<any[]>([]);
@@ -92,7 +93,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const fetchBestMessages = async () => {
       try {
-        const res = await fetch("http://10.224.44.115:3000/messages/best");
+        const res = await fetch("http://192.168.1.101:3000/messages/best");
         const data: { chatId: string; messageId: string }[] = await res.json();
 
         const allMessages = await Promise.all(
@@ -203,10 +204,8 @@ useEffect(() => {
       if (type !== "UpdateMessageInteractionInfo") return;
 
       const { messageId, interactionInfo, chatId } = data;
-console.log(update)
       // بررسی فقط اگر در activeDownloads باشه
       if (!activeDownloads.includes(messageId)) return;
-console.log(update,"dddddddddddd")
 
       setMessages((prev) =>
         prev.map((msg) => {
@@ -230,14 +229,34 @@ console.log(update,"dddddddddddd")
   return () => subscription.remove();
 }, [activeDownloads]);
 
+useFocusEffect(
+  useCallback(() => {
+    // روی صفحه آمدیم
+
+    return () => {
+      // از صفحه خارج شدیم (فوکوس از دست رفت)
+      const promises = Array.from(openedChats.current).map((chatId) => {
+        return TdLib.closeChat(chatId)
+          .then(() => console.log("📪 Closed chat on focus lost:", chatId))
+          .catch((err: any) => console.log("❌ closeChat on focus lost error:", err));
+      });
+
+      Promise.all(promises).then(() => {
+        openedChats.current.clear();
+      });
+    };
+  }, [])
+);
+
+
 
   const viewConfigRef = useRef({ itemVisiblePercentThreshold: 60 });
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.headerContainer}>
+      {/* <View style={styles.headerContainer}>
         <Image source={require("../../../assets/images/logo.jpg")} style={styles.logo} />
-      </View>
+      </View> */}
 
       <FlatList
         data={messages}

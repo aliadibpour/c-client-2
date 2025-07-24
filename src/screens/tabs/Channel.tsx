@@ -12,13 +12,14 @@ import {
   StatusBar,
   DeviceEventEmitter,
 } from "react-native";
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import TdLib from "react-native-tdlib";
 import ChannelMessageItem from "../../components/tabs/channel/ChannelMessageItem";
 import { ViewToken } from "react-native";
 import ChannelHeader from "../../components/tabs/channel/ChannelHeader";
 import { ArrowLeft } from "../../assets/icons";
 import ChannelAlbumItem from "../../components/tabs/channel/ChannelAlbumItem";
+import { useFocusEffect } from "@react-navigation/native";
 
 const { width, height } = Dimensions.get("window");
 
@@ -90,22 +91,22 @@ export default function ChannelScreen({ route }: any) {
       const result: any[] = await TdLib.getChatHistory(chatId, fromMessageId, PAGE_SIZE);
       const parsed = result.map((item) => JSON.parse(item.raw_json));
       console.log("📩 parsed:", parsed.length);
-      console.log(messages)
-
+      console.log(messages, "kkkkkk")
       if (fromMessageId !== 0) {
         setMessages((prev) => [...prev, ...parsed]);
       } else {
         setMessages(parsed);
       }
-
+      
       if (parsed.length < PAGE_SIZE) {
         setHasMore(false);
       }
-
+      
       // 👇 اگر بار اول هست و هنوز پیام‌های بیشتری باید بیاره
       if (fromMessageId === 0 && parsed.length > 0 && parsed.length < PAGE_SIZE && hasMore) {
         const last = parsed[parsed.length - 1];
         fetchMessages(last.id);
+        console.log(messages, "kkkkkk")
       }
 
     } catch (err) {
@@ -122,13 +123,10 @@ export default function ChannelScreen({ route }: any) {
 
     const init = async () => {
       try {
-        await TdLib.openChat(chatId);
-        if (isMounted) {
-          await fetchMessages();
-          setLoading(false);
-        }
+        await fetchMessages(); // فقط پیام‌ها را لود کن
+        if (isMounted) setLoading(false);
       } catch (e) {
-        console.error("❌ Failed to open chat", e);
+        console.error("❌ Failed to fetch messages", e);
       }
     };
 
@@ -136,16 +134,27 @@ export default function ChannelScreen({ route }: any) {
 
     return () => {
       isMounted = false;
-      const cleanup = async () => {
-        try {
-          await TdLib.closeChat(chatId);
-        } catch (e) {
-          console.error("❌ Failed to close chat", e);
-        }
-      };
-      cleanup();
+      // دیگه اینجا نیازی به closeChat نیست ✅
     };
   }, [chatId]);
+
+
+  useFocusEffect(
+  useCallback(() => {
+    // وقتی صفحه فوکوس شد (نمایش داده شد)
+    TdLib.openChat(chatId)
+      .then(() => console.log("📂 Opened chat:", chatId))
+      .catch((err:any) => console.log("❌ openChat error:", err));
+
+    return () => {
+      // وقتی از صفحه خارج شدیم (فوکوس از دست رفت)
+      TdLib.closeChat(chatId)
+        .then(() => console.log("📪 Closed chat:", chatId))
+        .catch((err:any) => console.log("❌ closeChat error:", err));
+    };
+  }, [chatId])
+);
+
 
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener("tdlib-update", async (event) => {
@@ -303,6 +312,7 @@ export default function ChannelScreen({ route }: any) {
               </View>
             ) : null
           }
+
         />
       </View>
 
