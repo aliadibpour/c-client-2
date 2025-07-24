@@ -25,7 +25,7 @@ export const startDownload = async (
 
 export const cancelDownload = async (fileId: number) => {
   try {
-    await TdLib.cancelDownloadFile(fileId);
+    await TdLib.cancelDownloadFile(fileId, true);
     delete activeDownloads[fileId];
   } catch (error) {
     console.error("Cancel error:", error);
