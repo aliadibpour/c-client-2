@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#777",
   },
   emoji: {
-    fontSize: 15,
+    fontSize: 10,
     marginRight: 5,
   },
   count: {

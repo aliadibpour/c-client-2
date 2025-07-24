@@ -99,7 +99,13 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
       {content?.video && <VideoMessage video={content.video} isVisible={isVisible} activeDownload={activeDownload} />}
 
       {message.interactionInfo?.reactions?.reactions?.length > 0 && (
-        <MessageReactions reactions={message.interactionInfo.reactions.reactions} customStyles={{ container: { paddingBottom: 6 } }} />
+        <MessageReactions reactions={message.interactionInfo.reactions.reactions} 
+        customStyles={
+          { container: { paddingBottom: 6 },
+          emoji:{ fontSize: 13 },
+          count: { fontSize: 12 },
+          reactionBox: { paddingHorizontal: 6 }
+       }} />
       )}
 
       {message.interactionInfo?.replyInfo?.replyCount > 0 && (
