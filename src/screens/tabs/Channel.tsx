@@ -26,7 +26,7 @@ const { width, height } = Dimensions.get("window");
 const PAGE_SIZE = 15;
 
 export default function ChannelScreen({ route }: any) {
-  const { chatId } = route.params;
+  const { chatId, targetMessageId } = route.params;
 
   const [messages, setMessages] = useState<any[]>([]);
   const messagesRef = useRef<any[]>([]); // track latest messages
@@ -88,10 +88,10 @@ export default function ChannelScreen({ route }: any) {
 
   const fetchMessages = async (fromMessageId: number = 0) => {
     try {
-      const result: any[] = await TdLib.getChatHistory(chatId, fromMessageId, PAGE_SIZE);
+      const result: any[] = await TdLib.getChatHistory(chatId, fromMessageId, PAGE_SIZE, 0);
       const parsed = result.map((item) => JSON.parse(item.raw_json));
       console.log("📩 parsed:", parsed.length);
-      console.log(messages, "kkkkkk")
+
       if (fromMessageId !== 0) {
         setMessages((prev) => [...prev, ...parsed]);
       } else {
@@ -106,7 +106,6 @@ export default function ChannelScreen({ route }: any) {
       if (fromMessageId === 0 && parsed.length > 0 && parsed.length < PAGE_SIZE && hasMore) {
         const last = parsed[parsed.length - 1];
         fetchMessages(last.id);
-        console.log(messages, "kkkkkk")
       }
 
     } catch (err) {
