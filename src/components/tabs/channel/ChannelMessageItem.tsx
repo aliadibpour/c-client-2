@@ -182,11 +182,11 @@ const styles = StyleSheet.create({
   },
   text: {
     color: "#f2f2f2",
-    fontSize: 14.6,
+    fontSize: 14,
     fontFamily: "SFArabic-Regular",
     lineHeight: 24,
     padding: 10,
-    paddingTop: 10,
+    paddingTop: 2,
   },
   commentText: {
     color: "#54afff",
