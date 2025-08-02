@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   titleContainer: {
-    marginTop: -47,
+    marginTop: -20,
     backgroundColor: 'transparent',
     padding: 10,
     alignItems: 'center',
