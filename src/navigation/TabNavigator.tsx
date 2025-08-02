@@ -52,7 +52,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
               <HouseIcon size={iconSize} outline={!focused} />
-              <AppText style={[styles.iconText, focused && styles.activeText]}>خانه</AppText>
+              {/* <AppText style={[styles.iconText, focused && styles.activeText]}>خانه</AppText> */}
             </View>
           ),
         }}
@@ -64,7 +64,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
               <TelegramIcon size={iconSize} outline={!focused} />
-              <AppText style={[styles.iconText, focused && styles.activeText]}>تلگرام</AppText>
+              {/* <AppText style={[styles.iconText, focused && styles.activeText]}>تلگرام</AppText> */}
             </View>
           ),
         }}
@@ -76,7 +76,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
               <FootballPitchIcon size={iconSize} outline={focused} />
-              <AppText style={[styles.iconText, focused && styles.activeText]}>بازی‌ها</AppText>
+              {/* <AppText style={[styles.iconText, focused && styles.activeText]}>بازی‌ها</AppText> */}
             </View>
           ),
         }}
@@ -88,7 +88,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
               <ProfileIcon size={iconSize} outline={!focused} />
-              <AppText style={[styles.iconText, focused && styles.activeText]}>پروفایل</AppText>
+              {/* <AppText style={[styles.iconText, focused && styles.activeText]}>پروفایل</AppText> */}
             </View>
           ),
         }}
@@ -99,21 +99,21 @@ export default function TabNavigator() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: "#0d0d0d",
-    paddingTop: 12,
-    paddingBottom: 8,
-    height: 60,
+    backgroundColor: "#000",
+    paddingTop: 1,
+    paddingBottom: 1,
+    height: 50,
     borderTopWidth: 0.4,
     borderColor: "#222"
   },
   iconContainer: {
     alignItems: "center",
     justifyContent: "center",
-    width: 64,
+    width: 60,
   },
   iconText: {
     fontSize: 10,
-    marginTop: 6,
+    marginTop: 0,
     color: "rgba(255, 255, 255, 0.4)",
   },
   activeText: {
