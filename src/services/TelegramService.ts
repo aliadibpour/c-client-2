@@ -22,12 +22,7 @@ export class TelegramService {
 
     try {
       const start = await TdLib.startTdLib(this.parameters);
-      console.log('✅ StartTdLib:', start);
-
       this.isStarted = true;
-
-      const authState = await TdLib.getAuthorizationState();
-      console.log('✅ InitialAuthState:', authState);
 
       return { success: true };
     } catch (err) {
@@ -193,12 +188,35 @@ export class TelegramService {
       return null;
     }
   }
-
-
-
-
 }
 
+export async function getChatHistory(
+  chatId: number,
+  fromMessageId: number = 0,
+  PAGE_SIZE: number = 20,
+  offset: number = 0
+): Promise<any[]> {
+  try {
+    const result: any[] = await TdLib.getChatHistory(chatId, fromMessageId, PAGE_SIZE, offset);
+    const parsed: any[] = result.map((item) => JSON.parse(item.raw_json));
+
+    return parsed
+  } catch (err) {
+    console.error("❌ getChatFromLast error:", err);
+    return []
+  }
+}
+
+export async function getChat(chatId: number) {
+  try {
+    const result: any = await TdLib.getChat(chatId);
+    const chat = JSON.parse(result.raw);
+
+    return chat;
+  } catch (error) {
+    console.error("error on getChat:",error)
+  }
+}
 
 function translateError(error: any): string {
   const message = typeof error === 'string' ? error : error?.message || '';
