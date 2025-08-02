@@ -1,7 +1,7 @@
 import React from "react";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import ImageViewer from "react-native-image-zoom-viewer";
-import { Modal } from "react-native";
+import { Modal, StatusBar } from "react-native";
 
 export default function FullPhotoScreen() {
   const route = useRoute();
@@ -14,6 +14,10 @@ export default function FullPhotoScreen() {
       transparent={true}
       onRequestClose={() => navigation.goBack()}
     >
+      <StatusBar
+        backgroundColor="#000"
+        barStyle="light-content"
+      />
       <ImageViewer
         imageUrls={[{ url: photoPath }]}
         onCancel={() => navigation.goBack()}
