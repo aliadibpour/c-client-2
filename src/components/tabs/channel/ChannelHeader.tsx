@@ -15,7 +15,7 @@ import { ArrowLeft } from "lucide-react-native";
 
 const { width } = Dimensions.get("window");
 
-export default function ChannelHeader({ chatId }: { chatId: number }) {
+export default function ChannelHeader({ chatId, chatInfo }: { chatId: number, chatInfo: any }) {
   const [title, setTitle] = useState("");
   const [memberCount, setMemberCount] = useState<number | null>(null);
   const [photoUri, setPhotoUri] = useState("");
@@ -25,33 +25,25 @@ export default function ChannelHeader({ chatId }: { chatId: number }) {
   const navigation:any = useNavigation();
 
   useEffect(() => {
-    const fetchChatInfo = async () => {
-      try {
-        const result: any = await TdLib.getChat(chatId);
-        const chat = JSON.parse(result.raw);
+    if (chatInfo) {
+        setTitle(chatInfo?.title);
+        setMemberCount(chatInfo?.positions?.[0]?.total_count ?? null);
 
-        setTitle(chat.title);
-        setMemberCount(chat?.positions?.[0]?.total_count ?? null);
-
-        if (chat.photo?.minithumbnail?.data) {
-          const buffer = Buffer.from(chat.photo.minithumbnail.data);
+        if (chatInfo?.photo?.minithumbnail?.data) {
+          const buffer = Buffer.from(chatInfo.photo.minithumbnail.data);
           const base64 = buffer.toString("base64");
           setMinithumbnailUri(`data:image/jpeg;base64,${base64}`);
         }
 
-        const photo = chat.photo?.small;
+        const photo = chatInfo.photo?.small;
         if (photo?.id) {
           setFileId(photo.id);
         } else if (photo?.local?.isDownloadingCompleted && photo?.local?.path) {
           setPhotoUri(`file://${photo.local.path}`);
         }
-      } catch (err) {
-        console.error("Error loading channel info:", err);
-      }
-    };
 
-    fetchChatInfo();
-  }, [chatId]);
+    }
+  }, [chatInfo]);
 
   useEffect(() => {
     let isMounted = true;
