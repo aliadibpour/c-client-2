@@ -117,10 +117,10 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
             flexDirection: "row", alignItems: "center",
             marginTop: 15.4, marginLeft: 4.5, marginBottom: 5, gap: 2
           }}>
-            <Text style={{ color: "#54afff", fontSize: 15, fontFamily: "SFArabic-Regular" }}>
+            <Text style={{ color: "#adadad", fontSize: 13.6, fontFamily: "SFArabic-Regular" }}>
               {message.interactionInfo.replyInfo.replyCount} کامنت
             </Text>
-            <ArrowLeft style={{ color: "#54afff" }} width={15} height={15} />
+            <ArrowLeft style={{ color: "#adadad" }} width={13.5} height={13.5} />
           </View>
         </TouchableOpacity>
       )}
