@@ -20,15 +20,17 @@ import ChannelHeader from "../../components/tabs/channel/ChannelHeader";
 import { ArrowLeft } from "../../assets/icons";
 import ChannelAlbumItem from "../../components/tabs/channel/ChannelAlbumItem";
 import { useFocusEffect } from "@react-navigation/native";
+import { getChat, getChatHistory } from "../../services/TelegramService";
+import { lstat } from "fs";
 
 const { width, height } = Dimensions.get("window");
 
-const PAGE_SIZE = 15;
-
 export default function ChannelScreen({ route }: any) {
-  const { chatId, targetMessageId } = route.params;
+  const { chatId, focusMessageId } = route.params;
 
   const [messages, setMessages] = useState<any[]>([]);
+  const [lastMessage, setLastMessage] = useState<any>([])
+  const [chatInfo, setChatInfo] = useState<any>()
   const messagesRef = useRef<any[]>([]); // track latest messages
 
   const [loading, setLoading] = useState(true);
@@ -36,7 +38,7 @@ export default function ChannelScreen({ route }: any) {
   const [hasMore, setHasMore] = useState(true);
   const [viewableItems, setViewableItems] = useState<ViewToken[]>([]);
   const [listRendered, setListRendered] = useState(false);
-  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState<boolean | "loading">(false);
 
   const groupedMessages = useMemo(() => groupMessagesByAlbum(messages), [messages]);
 
@@ -86,44 +88,33 @@ export default function ChannelScreen({ route }: any) {
     setViewableItems(viewableItems);
   });
 
-  const fetchMessages = async (fromMessageId: number = 0) => {
-    try {
-      const result: any[] = await TdLib.getChatHistory(chatId, fromMessageId, PAGE_SIZE, 0);
-      const parsed = result.map((item) => JSON.parse(item.raw_json));
-      console.log("📩 parsed:", parsed.length);
-
-      if (fromMessageId !== 0) {
-        setMessages((prev) => [...prev, ...parsed]);
-      } else {
-        setMessages(parsed);
-      }
-      
-      if (parsed.length < PAGE_SIZE) {
-        setHasMore(false);
-      }
-      
-      // 👇 اگر بار اول هست و هنوز پیام‌های بیشتری باید بیاره
-      if (fromMessageId === 0 && parsed.length > 0 && parsed.length < PAGE_SIZE && hasMore) {
-        const last = parsed[parsed.length - 1];
-        fetchMessages(last.id);
-      }
-
-    } catch (err) {
-      console.error("❌ Error fetching messages:", err);
-    }
-  };
+  const fetcher = () => {
+    
+  }
 
   useEffect(() => {
     messagesRef.current = messages;
-  }, [messages]);
+    }, [messages]);
 
-  useEffect(() => {
+    useEffect(() => {
     let isMounted = true;
 
     const init = async () => {
       try {
-        await fetchMessages(); // فقط پیام‌ها را لود کن
-        if (isMounted) setLoading(false);
+        const chat = await getChat(chatId)
+        console.log(chat,"sss")
+        setChatInfo(chat)
+
+        if (chat.lastMessage) {
+          setLastMessage(chat.lastMessage); // ذخیره در state
+          console.log(lastMessage)
+          const messages = focusMessageId ? await getChatHistory(chatId, focusMessageId, 20, -10) :
+          await getChatHistory(chatId, lastMessage.id, 50, 0)
+          if (isMounted) {
+            setMessages(messages);
+            setLoading(false);
+          }
+        }
       } catch (e) {
         console.error("❌ Failed to fetch messages", e);
       }
@@ -133,26 +124,24 @@ export default function ChannelScreen({ route }: any) {
 
     return () => {
       isMounted = false;
-      // دیگه اینجا نیازی به closeChat نیست ✅
     };
   }, [chatId]);
 
-
   useFocusEffect(
-  useCallback(() => {
-    // وقتی صفحه فوکوس شد (نمایش داده شد)
-    TdLib.openChat(chatId)
-      .then(() => console.log("📂 Opened chat:", chatId))
-      .catch((err:any) => console.log("❌ openChat error:", err));
+    useCallback(() => {
+      // وقتی صفحه فوکوس شد (نمایش داده شد)
+      TdLib.openChat(chatId)
+        .then(() => console.log("📂 Opened chat:", chatId))
+        .catch((err:any) => console.log("❌ openChat error:", err));
 
-    return () => {
-      // وقتی از صفحه خارج شدیم (فوکوس از دست رفت)
-      TdLib.closeChat(chatId)
-        .then(() => console.log("📪 Closed chat:", chatId))
-        .catch((err:any) => console.log("❌ closeChat error:", err));
-    };
-  }, [chatId])
-);
+      return () => {
+        // وقتی از صفحه خارج شدیم (فوکوس از دست رفت)
+        TdLib.closeChat(chatId)
+          .then(() => console.log("📪 Closed chat:", chatId))
+          .catch((err:any) => console.log("❌ closeChat error:", err));
+      };
+    }, [chatId])
+  );
 
 
   useEffect(() => {
@@ -223,6 +212,38 @@ export default function ChannelScreen({ route }: any) {
     );
   };
 
+  useEffect(() => {
+    const fetchMessages = async () => {
+      if (!viewableItems.length) return;
+
+      const newMessages = messages.slice(0, 4).map(i => i.id)
+      const oldMessages = messages.slice(-4).map(i => i.id)
+      const currentId = viewableItems[0].item.id
+
+      if (oldMessages.includes(currentId)) {
+        const anchorId = oldMessages[oldMessages.length - 1]
+        const data = await getChatHistory(chatId, anchorId, 15, 0)
+        setMessages(prev => {
+          const ids = new Set(prev.map(m => m.id))
+          const filtered = data.filter(m => !ids.has(m.id))
+          return [...prev, ...filtered]
+        })
+      }
+
+      if (newMessages.includes(currentId)) {
+        console.log("alll")
+        const anchorId = newMessages[0]
+        const data = await getChatHistory(chatId, anchorId, 15, -15)
+        console.log(data)
+        setMessages(prev => {
+          const ids = new Set(prev.map(m => m.id))
+          const filtered = data.filter(m => !ids.has(m.id))
+          return [...filtered, ...prev]
+        })
+      }
+    }
+    fetchMessages()
+  }, [viewableItems])
 
   useEffect(() => {
     if (!loading && listRendered && messages.length > 0 && !hasScrolledToBottom.current) {
@@ -240,7 +261,7 @@ export default function ChannelScreen({ route }: any) {
     if (loadingMore || !hasMore || messages.length === 0) return;
     setLoadingMore(true);
     const last = messages[messages.length - 1];
-    await fetchMessages(last.id);
+    await getChatHistory(chatId, last.id);
     setLoadingMore(false);
   };
 
@@ -256,6 +277,56 @@ export default function ChannelScreen({ route }: any) {
     return selected;
   }, [viewableItems]);
 
+
+  const hasScrolledToFocus = useRef(false);
+
+
+  // for scroll in focus message
+  const scrollToFocusMessage = useCallback(() => {
+    if (hasScrolledToFocus.current || !focusMessageId || groupedMessages.length === 0) return;
+
+    const focusIndex = groupedMessages.findIndex((item) => {
+      if (item.type === "single") return item.message?.id === focusMessageId;
+      if (item.type === "album") return item.messages.some((msg: any) => msg.id === focusMessageId);
+      return false;
+    });
+
+    if (focusIndex !== -1) {
+      listRef.current?.scrollToIndex({
+        index: focusIndex,
+        animated: false,
+        viewPosition: 0.5, // وسط صفحه
+      });
+      hasScrolledToFocus.current = true;
+    }
+  }, [focusMessageId, groupedMessages]);
+
+  useEffect(() => {
+    if (!loading && listRendered && groupedMessages.length > 0) {
+      scrollToFocusMessage();
+    }
+  }, [loading, listRendered, groupedMessages, scrollToFocusMessage]);
+
+  const scrollBottomHandler = async () => {
+    console.log(messages.map(i => i.id))
+    if (messages.map(i => i.id).includes(lastMessage.id)) {
+      listRef.current?.scrollToOffset({ offset: 0, animated: true })
+    }
+    else {
+      setShowScrollToBottom("loading")
+      const data = await getChatHistory(chatId, lastMessage.id, 50, -2)
+      setMessages(prev => {
+      const ids = new Set(prev.map(m => m.id))
+      const filtered = data.filter(m => !ids.has(m.id))
+        return [...filtered, ...prev]
+      })
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToOffset({ offset: 0, animated: true })
+      })
+    }
+    setShowScrollToBottom(false)
+  }
+
   return (
     <ImageBackground
       source={require("../../assets/images/telBG.jpg")}
@@ -264,7 +335,7 @@ export default function ChannelScreen({ route }: any) {
     >
       <StatusBar backgroundColor="#111" barStyle="light-content" />
       <View style={styles.container}>
-        <ChannelHeader chatId={chatId} />
+        <ChannelHeader chatId={chatId} chatInfo={chatInfo} />
 
         {loading || !listRendered ? (
           <View style={styles.loadingContainer}>
@@ -291,6 +362,9 @@ export default function ChannelScreen({ route }: any) {
             }
           }}
           inverted
+          maintainVisibleContentPosition={{
+            minIndexForVisible: 1,
+          }}
           contentContainerStyle={{
             paddingBottom: 24,
             paddingTop: 4,
@@ -318,9 +392,13 @@ export default function ChannelScreen({ route }: any) {
       {showScrollToBottom && (
         <TouchableOpacity
           style={styles.scrollToBottomButton}
-          onPress={() => listRef.current?.scrollToOffset({ offset: 0, animated: true })}
+          onPress={() => scrollBottomHandler()}
         >
+          {
+          showScrollToBottom === "loading" ? 
+          <ActivityIndicator color="#888" /> : 
           <ArrowLeft style={styles.arrowLeft} width={17} height={19} />
+          }
         </TouchableOpacity>
       )}
 
