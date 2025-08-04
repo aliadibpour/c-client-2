@@ -124,6 +124,8 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads }:
         {messageData.interactionInfo?.reactions?.reactions?.length > 0 && (
           <MessageReactions
             reactions={messageData.interactionInfo.reactions.reactions}
+            chatId={messageData.chatId}
+            messageId={messageData.id}
             onReact={(emoji) => console.log("🧡", emoji)}
             customStyles={{
               container: {

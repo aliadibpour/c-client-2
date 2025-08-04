@@ -6,7 +6,10 @@ import {
   StyleSheet,
   ViewStyle,
   TextStyle,
+  NativeModules,
 } from "react-native";
+
+const { TdLibModule } = NativeModules;
 
 interface Reaction {
   type: { emoji: string };
@@ -24,11 +27,13 @@ interface CustomStyles {
 
 interface Props {
   reactions: Reaction[];
-  onReact?: (emoji: string) => void;
+  chatId: number;
+  messageId: number;
+  onReact?: (emoji: string | null) => void;
   customStyles?: CustomStyles;
 }
 
-export default function MessageReactions({ reactions, onReact, customStyles }: Props) {
+export default function MessageReactions({ reactions, chatId, messageId, customStyles }: Props) {
   const [selected, setSelected] = useState<string | null>(
     reactions.find((r) => r.isChosen)?.type.emoji || null
   );
@@ -40,9 +45,24 @@ export default function MessageReactions({ reactions, onReact, customStyles }: P
     return count.toString();
   };
 
-  const handleReact = (emoji: string) => {
-    setSelected(emoji);
-    onReact?.(emoji);
+  const handleReact = async (emoji: string) => {
+    try {
+      if (selected === emoji) {
+        // Remove reaction
+        await TdLibModule.removeMessageReaction(chatId, messageId, emoji);
+        setSelected(null);
+      } else {
+        if (selected) {
+          // Remove previous reaction
+          await TdLibModule.removeMessageReaction(chatId, messageId, selected);
+        }
+        // Add new reaction
+        await TdLibModule.addMessageReaction(chatId, messageId, emoji);
+        setSelected(emoji);
+      }
+    } catch (err) {
+      console.error("Reaction failed:", err);
+    }
   };
 
   return (
@@ -72,6 +92,7 @@ export default function MessageReactions({ reactions, onReact, customStyles }: P
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {

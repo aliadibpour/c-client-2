@@ -99,7 +99,11 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
       {content?.video && <VideoMessage video={content.video} isVisible={isVisible} activeDownload={activeDownload} />}
 
       {message.interactionInfo?.reactions?.reactions?.length > 0 && (
-        <MessageReactions reactions={message.interactionInfo.reactions.reactions} 
+        <MessageReactions 
+        reactions={message.interactionInfo.reactions.reactions} 
+        chatId={message.chatId}
+        messageId={message.id}
+        onReact={(emoji:any) => console.log("🧡", emoji)}
         customStyles={
           { container: { paddingBottom: 6 },
           emoji:{ fontSize: 13 },
