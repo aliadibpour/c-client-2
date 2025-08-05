@@ -45,25 +45,30 @@ export default function MessageReactions({ reactions, chatId, messageId, customS
     return count.toString();
   };
 
-  const handleReact = async (emoji: string) => {
-    try {
-      if (selected === emoji) {
-        // Remove reaction
-        await TdLibModule.removeMessageReaction(chatId, messageId, emoji);
-        setSelected(null);
-      } else {
-        if (selected) {
-          // Remove previous reaction
-          await TdLibModule.removeMessageReaction(chatId, messageId, selected);
-        }
-        // Add new reaction
-        await TdLibModule.addMessageReaction(chatId, messageId, emoji);
-        setSelected(emoji);
+const handleReact = async (emoji: string) => {
+  const isRemoving = selected === emoji;
+  const prevSelected = selected;
+
+  // ✅ بلافاصله UI رو تغییر بده (بدون معطلی)
+  setSelected(isRemoving ? null : emoji);
+
+  try {
+    if (isRemoving) {
+      await TdLibModule.removeMessageReaction(chatId, messageId, emoji);
+    } else {
+      if (prevSelected) {
+        await TdLibModule.removeMessageReaction(chatId, messageId, prevSelected);
       }
-    } catch (err) {
-      console.error("Reaction failed:", err);
+      await TdLibModule.addMessageReaction(chatId, messageId, emoji);
     }
-  };
+  } catch (err) {
+    console.error("Reaction failed:", err);
+
+    // ❌ اگر خطا داد، برگرد به حالت قبلی (Rollback)
+    setSelected(prevSelected);
+  }
+};
+
 
   return (
     <View style={[styles.container, customStyles?.container]}>
@@ -112,7 +117,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   selectedBox: {
-    backgroundColor: "#777",
+    backgroundColor: "#444",
   },
   emoji: {
     fontSize: 10,
