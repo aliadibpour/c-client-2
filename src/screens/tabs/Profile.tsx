@@ -11,9 +11,12 @@ import {
   StatusBar,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  TouchableOpacity,
 } from "react-native";
 import TdLib from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { teamImages } from "../setup/PickTeams";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -30,7 +33,7 @@ type Profile = {
   };
 };
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ navigation }: any) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [photos, setPhotos] = useState<string[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
@@ -120,8 +123,6 @@ export default function ProfileScreen() {
             source={{ uri: `data:image/jpeg;base64,${base64}` }}
             style={styles.image}
           />
-          {renderName()}
-          {renderInformation()}
         </View>
       );
     }
@@ -190,58 +191,107 @@ export default function ProfileScreen() {
     );
   };
 
+  
+  const [favoriteTeams, setFavoriteTeams] = useState<{team1?: string, team2?: string, team3?: string}>({});
+  useEffect(() => {
+    const loadFavorites = async () => {
+      const teams = await AsyncStorage.getItem("teams");
+      if (teams) {
+        setFavoriteTeams(JSON.parse(teams));
+      }
+    };
+    loadFavorites();
+  }, []);
+
+  const renderFavoriteTeams = () => {
+    const teamsArray = [favoriteTeams.team1, favoriteTeams.team2, favoriteTeams.team3].filter(Boolean);
+
+    // "ویرایش" رو به اول لیست اضافه کن
+    const items = ["edit", ...teamsArray];
+
+    return (
+      <View style={styles.favoritesBox}>
+        <Text style={styles.favoritesTitle}>تیم‌های مورد علاقه</Text>
+        <View style={styles.favoritesList}>
+          {items.map((teamName, index) => {
+            if (teamName === "edit") {
+              return (
+                <TouchableOpacity key="edit" style={styles.teamItem} onPress={() => navigation.navigate("PickTeams")}>
+                  {/* <Image source={require('../assets/edit-icon.png')} style={styles.teamLogo} /> */}
+                  <Text style={styles.teamName}>ویرایش</Text>
+                </TouchableOpacity>
+              );
+            }
+
+            return (
+              <View key={index} style={styles.teamItem}>
+                <Image source={teamImages[teamName!]} style={styles.teamLogo} />
+                <Text style={styles.teamName}>{teamName}</Text>
+              </View>
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
+
+
+
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="#000" barStyle="light-content" />
+
       {loadingPhotos ? (
         <View style={styles.centered}>
           {renderFallback()}
         </View>
       ) : photos.length > 0 ? (
-        <>
+        <View style={{ height: 370 }}>
           <FlatList
             ref={flatListRef}
             data={photos}
             horizontal
             pagingEnabled
-            scrollEnabled
             keyExtractor={(_, index) => index.toString()}
             renderItem={({ item }) => (
-              <View style={{ width: SCREEN_WIDTH, height: 370 }}>
+              <View style={{ width: SCREEN_WIDTH, height: 370 }}> {/* 👈 Item ارتفاع داره */}
                 <Image source={{ uri: item }} style={styles.image} />
-                {/* Go next */}
                 <TouchableWithoutFeedback onPress={goNext}>
-                  <View style={styles.touchRight} />
+                  <View style={styles.touchRight}></View>
                 </TouchableWithoutFeedback>
-                {/* Go previous */}
                 <TouchableWithoutFeedback onPress={goPrevious}>
-                  <View style={styles.touchLeft} />
+                  <View style={styles.touchLeft}></View>
                 </TouchableWithoutFeedback>
-                {renderName()}
               </View>
             )}
-            onMomentumScrollEnd={onMomentumScrollEnd}
-            showsHorizontalScrollIndicator={false}
             getItemLayout={(_, index) => ({
               length: SCREEN_WIDTH,
               offset: SCREEN_WIDTH * index,
               index,
             })}
+            onMomentumScrollEnd={onMomentumScrollEnd}
+            showsHorizontalScrollIndicator={false}
             onScrollToIndexFailed={(info) => {
               setTimeout(() => {
                 flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
               }, 100);
             }}
-            />
+          />
           {renderLineIndicator()}
-        </>
+        </View>
+
       ) : (
         renderFallback()
       )}
+
+      {/* اینجا ثابت میذاریم پایین عکس */}
+      {renderName()}
+
       {renderInformation()}
-      
+      {renderFavoriteTeams()}
     </View>
   );
+
 }
 
 const styles = StyleSheet.create({
@@ -271,7 +321,7 @@ const styles = StyleSheet.create({
     fontSize: 25,
     position: "absolute",
     left: 20,
-    bottom: 10,
+    top: 325,
     fontFamily: "SFArabic-Heavy",
   },
   phoneText: {
@@ -318,10 +368,11 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   informationBox: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal:10,
+    paddingVertical: 10,
     alignItems: "flex-start",
-    gap:20
+    gap:20,
+    backgroundColor: "#111"
   },
   infoRow: {
   
@@ -339,5 +390,50 @@ const styles = StyleSheet.create({
     fontFamily: "SFArabic-Light",
     marginTop: 1,
   },
+  favoritesBox: {
+    paddingHorizontal: 10,
+    paddingVertical:12,
+    backgroundColor: "#111",
+    marginTop: 15
+  },
+  favoritesTitle: {
+    color: '#ddd',
+    fontSize: 16,
+    fontFamily: 'SFArabic-Regular',
+    marginBottom: 10,
+  },
+  favoritesList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10, 
+  },
+  teamItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    padding: 10,
+    borderRadius: 10,
+    width: 70, 
+    height: 70,
+  },
+  teamLogo: {
+    width: 24,
+    height: 24,
+    marginBottom: 6,
+  },
+  teamName: {
+    color: '#ccc',
+    fontSize: 12,
+    textAlign: 'center',
+    fontFamily: 'SFArabic-Regular',
+  },
+  editTeams: {
+    borderRadius: 10,
+  },
+  editTeamsText: {
+    color: "#ccc",
+    fontFamily: 'SFArabic-Regular',
+    fontSize: 13,
+  }
 
 });
