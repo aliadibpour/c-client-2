@@ -1,73 +1,149 @@
-import React, { useCallback, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Button, Alert, Modal } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, DeviceEventEmitter, ToastAndroid, BackHandler } from 'react-native';
 import { TelegramService } from '../../services/TelegramService';
 import parsePhoneNumberFromString from 'libphonenumber-js';
 import { Keyboard } from '../../components/auth/Keyboard';
-import { ActivityIndicator } from 'react-native';
 import ModalMessage from '../../components/auth/ModalMessage';
-import TdLib from 'react-native-tdlib';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const LoginScreen = ({navigation} :any) => {
+const LoginScreen = ({ navigation }: any) => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [modalMessage, setModalMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const sendPhoneNumber = async () => {
-  //await TelegramService.logout()
-  navigation.navigate("Verify",
-    { phoneNumber:"99245086534" }
-  );
+  let timeout: NodeJS.Timeout | undefined;
+  let subscription: any;
 
-  if (isSubmitting) return;
-  try {
-    const fullNumber = `+98${phoneNumber}`;
-    const parsed = parsePhoneNumberFromString(fullNumber);
-    if (!parsed || !parsed.isValid()) {
-      if (phoneNumber) setModalMessage("شماره‌ی وارد شده معتبر نمی‌باشد");
-      else setModalMessage("لطفا شماره تلفن را وارد کنید");
+  const clearAll = () => {
+    if (timeout) clearTimeout(timeout);
+    if (subscription) subscription.remove();
+  };
+
+  const backPressCount = useRef(0);
+  useEffect(() => {
+    const backAction = () => {
+      if (backPressCount.current === 0) {
+        backPressCount.current = 1;
+        ToastAndroid.show('برای خروج دوباره کلیک کنید', ToastAndroid.SHORT);
+        setTimeout(() => { backPressCount.current = 0; }, 2000);
+        return true;
+      } else {
+        BackHandler.exitApp();
+        return true;
+      }
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, []);
+
+  const listenForAuthState = (fullNumber: string) => {
+    subscription = DeviceEventEmitter.addListener("tdlib-update", async (event) => {
+      console.log("Received tdlib update");
+      try {
+        const update = JSON.parse(event.raw);
+        console.log(update);
+
+        if (update.type === 'UpdateAuthorizationState') {
+          const authState = update.data.authorizationState;
+
+          // اگر codeInfo وجود داشت یعنی وارد WaitCode شدیم
+          if (authState.codeInfo) {
+            clearAll();
+            setIsSubmitting(false);
+            setLoading(false);
+            await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "Verify"}));
+            await AsyncStorage.setItem("phone-number", JSON.stringify({ phoneNumber }))
+            navigation.navigate("Verify", { phoneNumber: fullNumber });
+            return;
+          }
+
+          // اگر به هر دلیلی استیت کلوزد شد
+          if (authState.type === 'authorizationStateClosed') {
+            clearAll();
+            setIsSubmitting(false);
+            setLoading(false);
+            setModalMessage("اتصال به تلگرام قطع شد. لطفا دوباره تلاش کنید.");
+            setModalVisible(true);
+          }
+        }
+
+      } catch (err) {
+        console.warn("Invalid tdlib update:", event);
+      }
+    });
+  };
+
+  const handleFloodWaitError = (error: any, setModalMessage: Function, setModalVisible: Function) => {
+    if (!error || !error.message) return false;
+
+    const message = error.message;
+
+    if (message.includes("FLOOD_WAIT")) {
+      const waitTime = extractWaitTime(message);
+      setModalMessage(`شما بیش از حد تلاش کردید. لطفاً ${waitTime} ثانیه دیگر صبر کنید.`);
       setModalVisible(true);
-      setIsSubmitting(false);
-      return;
+      return true;
     }
 
-    setIsSubmitting(true);
-    setLoading(true); 
-
-    const timeout = setInterval(async () => {
-      setModalMessage("اتصال برقرار نشد. منتظر میمانیم تا پس از وصل شدن اتصال و فیلترشکن کد ارسال کنیم");
+    if (message.includes("Too Many Requests") || message.includes("TooManyRequests")) {
+      setModalMessage("شما بیش از حد درخواست ارسال کرده‌اید. لطفاً مدتی بعد دوباره تلاش کنید.");
       setModalVisible(true);
-    }, 15000);
+      return true;
+    }
 
-    await TelegramService.login(parsed.countryCallingCode, parsed.nationalNumber);
+    return false; // یعنی این ارور مربوط به FloodWait نبود
+  };
 
-    const interval = setInterval(async () => {
-      try {
-        const authState: any = await TelegramService.getAuthState();
-        const authType = JSON.parse(authState.data)["@type"];
-        console.log("Auth State:", authType);
-        
-        if (authType === "authorizationStateWaitCode") {
-          clearTimeout(timeout);
-          clearInterval(interval);
-          navigation.navigate("Verify",
-             { phoneNumber:fullNumber }
-          );
-        }
-      } catch (err) {
-        clearTimeout(timeout);
-        clearInterval(interval);
-        setModalMessage("خطایی در دریافت وضعیت احراز هویت به وجود آمد");
+  const extractWaitTime = (message: string): number => {
+    const match = message.match(/FLOOD_WAIT_(\d+)/);
+    return match ? parseInt(match[1], 10) : 60;
+  };
+
+  const sendPhoneNumber = async () => {
+     //await TelegramService.logout()
+    if (isSubmitting) return;
+
+    try {
+      const fullNumber = `+98${phoneNumber}`;
+      const parsed = parsePhoneNumberFromString(fullNumber);
+
+      if (!parsed || !parsed.isValid()) {
+        setModalMessage(phoneNumber ? "شماره‌ی وارد شده معتبر نمی‌باشد" : "لطفا شماره تلفن را وارد کنید");
         setModalVisible(true);
+        return;
       }
-    }, 500);
 
-    } catch (error: any) {
-      //await TelegramService.logout(); // اگر login خودش خطا داد
+      setIsSubmitting(true);
+      setLoading(true);
+
+      // Start listening before login
+      listenForAuthState(fullNumber);
+
+      // Timeout for fallback message after 15 seconds
+      timeout = setTimeout(() => {
+        setModalMessage("اتصال برقرار نشد. منتظر می‌مانیم تا پس از وصل شدن اتصال و فیلترشکن کد ارسال کنیم");
+        setModalVisible(true);
+      }, 15000);
+
+      // Start login
+      await TelegramService.login(parsed.countryCallingCode, parsed.nationalNumber);
+
+    } catch (error) {
+      const isFlood = handleFloodWaitError(error, setModalMessage, setModalVisible);
+      if (isFlood) {
+        setIsSubmitting(false);
+        setLoading(false);
+        return;
+      }
+
+      clearAll();
+      setIsSubmitting(false);
+      setLoading(false);
       setModalMessage("خطایی در برقراری ارتباط به وجود آمد. لطفاً دوباره تلاش کنید.");
       setModalVisible(true);
-      setIsSubmitting(false);
     }
   };
 
@@ -75,7 +151,7 @@ const LoginScreen = ({navigation} :any) => {
     <View style={styles.container}>
       <Text style={styles.title}>خوش آمدی👋</Text>
       <Text style={styles.subtitle}>
-         شماره ای را وارد کنید که حساب فعال تلگرام داشته باشد
+        شماره ای را وارد کنید که حساب فعال تلگرام داشته باشد
       </Text>
 
       <View style={styles.inputWrapper}>
@@ -111,7 +187,6 @@ const LoginScreen = ({navigation} :any) => {
 
       <Keyboard setState={setPhoneNumber} />
     </View>
-
   );
 };
 
@@ -176,6 +251,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     padding:4,
     lineHeight: 20,
+    fontFamily: "SFArabic-Regular"
   },
   Button: {
     backgroundColor: "#e8e8e8",
@@ -187,9 +263,8 @@ const styles = StyleSheet.create({
   ButtonText: {
     color: "#000",
     fontSize: 17,
-    fontWeight: "bold",
+    fontFamily: "SFArabic-Regular"
   },
 });
-
 
 export default LoginScreen;
