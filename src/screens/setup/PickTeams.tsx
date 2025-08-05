@@ -1,43 +1,60 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
-  StyleSheet, Image, BackHandler, ToastAndroid, Alert
+  StyleSheet, Image, BackHandler, ToastAndroid
 } from 'react-native';
 
+export const teamImages: { [key: string]: any } = {
+  'پرسپولیس': require('../../assets/teams/perspolis.png'),
+  'استقلال': require('../../assets/teams/ss.png'),
+  'سپاهان': require('../../assets/teams/sepahan.png'),
+  'تراکتور': require('../../assets/teams/Tractor.png'),
+
+  'بارسلونا': require('../../assets/teams/barcelona.webp'),
+  'رئال مادرید': require('../../assets/teams/realmadrid.png'),
+
+  'آرسنال': require('../../assets/teams/arsenal.webp'),
+  'منچستر یونایتد': require('../../assets/teams/man.webp'),
+  'لیورپول': require('../../assets/teams/liverpool.webp'),
+  'چلسی': require('../../assets/teams/Chelsea.png'),
+
+  'بایرن': require('../../assets/teams/munich.png'),
+  'اینتر': require('../../assets/teams/inter.png'),
+  'میلان': require('../../assets/teams/milan.png'),
+};
+
+
 const teamsData = [
-  { name: 'Persepolis', league: 'Iran', image: require('../../assets/teams/perspolis.png') },
-  { name: 'Esteghlal', league: 'Iran', image: require('../../assets/teams/esteghlal.png') },
-  { name: 'Sepahan', league: 'Iran', image: require('../../assets/teams/sepahan.png') },
-  { name: 'Tractor', league: 'Iran', image: require('../../assets/teams/Tractor.png') },
+  { name: 'پرسپولیس', league: 'Iran', image: require('../../assets/teams/perspolis.png') },
+  { name: 'استقلال', league: 'Iran', image: require('../../assets/teams/ss.png') },
+  { name: 'سپاهان', league: 'Iran', image: require('../../assets/teams/sepahan.png') },
+  { name: 'تراکتور', league: 'Iran', image: require('../../assets/teams/Tractor.png') },
 
-  { name: 'Barcelona', league: 'LaLiga', image: require('../../assets/teams/barcelona.webp') },
-  { name: 'Real Madrid', league: 'LaLiga', image: require('../../assets/teams/realmadrid.png') },
+  { name: 'بارسلونا', league: 'LaLiga', image: require('../../assets/teams/barcelona.webp') },
+  { name: 'رئال مادرید', league: 'LaLiga', image: require('../../assets/teams/realmadrid.png') },
 
-  { name: 'Arsenal', league: 'England', image: require('../../assets/teams/arsenal.webp') },
-  { name: 'Manchester City', league: 'England', image: require('../../assets/teams/city.png') },
-  { name: 'Manchester United', league: 'England', image: require('../../assets/teams/united.png') },
-  { name: 'Liverpool', league: 'England', image: require('../../assets/teams/liverpool.webp') },
-  { name: 'Chelsea', league: 'England', image: require('../../assets/teams/chealse.png') },
+  { name: 'آرسنال', league: 'England', image: require('../../assets/teams/arsenal.webp') },
+  { name: 'منچستر یونایتد', league: 'England', image: require('../../assets/teams/man.webp') },
+  { name: 'لیورپول', league: 'England', image: require('../../assets/teams/liverpool.webp') },
+  { name: 'چلسی', league: 'England', image: require('../../assets/teams/Chelsea.png') },
 
-  { name: 'Bayern', league: 'Bundesliga', image: require('../../assets/teams/bayern.png') },
-  { name: 'Dortmund', league: 'Bundesliga', image: require('../../assets/teams/dortmund.png') },
+  { name: 'بایرن', league: 'Bundesliga', image: require('../../assets/teams/munich.png') },
 
-  { name: 'Inter', league: 'Italy', image: require('../../assets/teams/inter.png') },
-  { name: 'Milan', league: 'Italy', image: require('../../assets/teams/milan.png') },
+  { name: 'اینتر', league: 'Italy', image: require('../../assets/teams/inter.png') },
+  { name: 'میلان', league: 'Italy', image: require('../../assets/teams/milan.png') },
 ];
 
 export default function PickTeamsScreen({ navigation }: any) {
   const backPressCount = useRef(0);
-  const [favorites, setFavorites] = useState<{ name: string; league: string; image: string }[]>([]);
+  const [favorites, setFavorites] = useState<typeof teamsData>([]);
 
   useEffect(() => {
     const backAction = () => {
       if (backPressCount.current === 0) {
-        ToastAndroid.show("برای خروج دوباره بازگشت را بزنید", ToastAndroid.SHORT);
         backPressCount.current = 1;
-        setTimeout(() => {
-          backPressCount.current = 0;
-        }, 2000);
+        ToastAndroid.show('برای خروج دوباره کلیک کنید', ToastAndroid.SHORT);
+        setTimeout(() => { backPressCount.current = 0; }, 2000);
         return true;
       } else {
         BackHandler.exitApp();
@@ -52,9 +69,8 @@ export default function PickTeamsScreen({ navigation }: any) {
   const isLeaguePicked = (league: string) =>
     favorites.some((team) => team.league === league);
 
-  const selectTeam = (team: { name: string; league: string; image: string }) => {
+  const selectTeam = (team: typeof teamsData[number]) => {
     if (favorites.length >= 3) return;
-    if (team.name === 'Persepolis') return; // Disable Persepolis
     if (isLeaguePicked(team.league)) return;
 
     setFavorites([...favorites, team]);
@@ -64,35 +80,36 @@ export default function PickTeamsScreen({ navigation }: any) {
     setFavorites(favorites.filter((team) => team.name !== name));
   };
 
-  const handleStart = () => {
+  const handleStart = async() => {
     if (favorites.length === 0) {
       ToastAndroid.show("حداقل یک تیم انتخاب کن!", ToastAndroid.SHORT);
       return;
     }
 
     if (favorites.length === 1) {
-      navigation.navigate('Home', { favorites });
+      await AsyncStorage.setItem("auth-status", JSON.stringify("home"))
+      await AsyncStorage.setItem("teams", JSON.stringify({team1: favorites[0].name}))
+      navigation.navigate('Tabs');
     } else {
       navigation.navigate('Priority', { favorites });
     }
   };
 
-
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>تیم‌های مورد علاقه‌ات رو انتخاب کن</Text>
+      <Text style={styles.title}>طرفدار کدام تیم ها هستید؟ (مهم)</Text>
 
       <FlatList
         data={favorites}
         keyExtractor={(item) => item.name}
         horizontal
-        contentContainerStyle={{ marginVertical: 10 }}
+        contentContainerStyle={styles.favoritesContainer}
         renderItem={({ item }) => (
           <View style={styles.favoriteItem}>
-            <Image source={{ uri: item.image }} style={styles.favoriteLogo} />
+            <Image source={item.image} style={styles.favoriteLogo} />
             <Text style={styles.favoriteText}>{item.name}</Text>
-            <TouchableOpacity onPress={() => removeTeam(item.name)}>
-              <Text style={styles.removeBtn}>✕</Text>
+            <TouchableOpacity onPress={() => removeTeam(item.name)} style={styles.removeBtn}>
+              <Text style={styles.removeBtnText}>✕</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -102,21 +119,23 @@ export default function PickTeamsScreen({ navigation }: any) {
         data={teamsData}
         keyExtractor={(item) => item.name}
         numColumns={3}
+        contentContainerStyle={{ paddingBottom: 20 }}
         renderItem={({ item }) => {
           const selected = favorites.some((t) => t.name === item.name);
           const leaguePicked = isLeaguePicked(item.league);
-          const disabled = leaguePicked && !selected;
+          const disabled = (leaguePicked && !selected) || favorites.length >= 3;
 
           return (
             <TouchableOpacity
-              disabled={item.name === 'Persepolis' || disabled}
+              disabled={disabled}
               onPress={() => selectTeam(item)}
               style={[
                 styles.teamCard,
                 selected && styles.selected,
-                disabled && styles.disabled,
+                disabled && styles.disabled
               ]}
             >
+              <View style={styles.blurOverlay} />
               <Image source={item.image} style={styles.teamLogo} />
               <Text style={styles.teamName}>{item.name}</Text>
             </TouchableOpacity>
@@ -125,66 +144,76 @@ export default function PickTeamsScreen({ navigation }: any) {
       />
 
       <TouchableOpacity style={styles.Button} onPress={handleStart}>
-        <Text style={styles.ButtonText}>شروع اپلیکیشن</Text>
+        <Text style={styles.ButtonText}>تمام</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#121212', padding: 15 },
-  title: { color: '#fff', fontSize: 16, marginBottom: 10, textAlign: 'center', fontWeight: 'bold' },
+  container: { flex: 1, backgroundColor: '#000', padding: 15 },
+  title: { color: '#fff', fontSize: 18, marginBottom: 15, textAlign: 'center', fontFamily: "SFArabic-Regular" },
+
+  favoritesContainer: { paddingVertical: 10 },
+  favoriteItem: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginRight: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    height: 50,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  favoriteLogo: { width: 25, height: 25, marginRight: 6, borderRadius: 8 },
+  favoriteText: { color: '#ddd', fontSize: 14, fontFamily: "SFArabic-Regular" },
+  removeBtn: { marginLeft: 8 },
+  removeBtnText: { color: '#fff', fontSize: 18 },
 
   teamCard: {
-    flex: 1,
-    backgroundColor: '#2b2b2b',
+    width: '30%', // مقدار ثابت برای 3 تا آیتم در هر ردیف
+    height: 95,
     margin: 6,
-    borderRadius: 10,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 10,
+    overflow: 'hidden',
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    position: 'relative',
   },
-  teamLogo: { width: 30, height: 30, marginBottom: 6 },
+  blurOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  teamLogo: { width: 38, height: 38, marginBottom: 8},
   teamName: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 13,
     textAlign: 'center',
-    fontWeight: '600',
+    fontFamily: "SFArabic-Regular",
   },
   selected: {
-    borderColor: '#444',
-    borderWidth: 2,
+    borderColor: '#555',
+    borderWidth: 1.4,
   },
   disabled: {
     opacity: 0.3,
   },
-  favoriteItem: {
-    backgroundColor: '#333',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-    marginRight: 10,
-    borderRadius: 5,
-  },
-  favoriteLogo: {
-    width: 40,
-    height: 40,
-    marginRight: 6,
-  },
-  favoriteText: { color: '#fff', fontSize: 13, marginRight: 5 },
-  removeBtn: { color: '#fff', fontSize: 16 },
   Button: {
     marginTop: 25,
     backgroundColor: '#fff',
-    borderRadius: 10,
+    borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   ButtonText: {
     color: '#000',
-    fontSize: 15,
-    fontWeight: 'bold',
+    fontSize: 16.5,
+    fontFamily: "SFArabic-Regular",
   },
 });

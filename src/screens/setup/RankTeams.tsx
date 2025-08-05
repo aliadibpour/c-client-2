@@ -1,8 +1,11 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { teamImages } from './PickTeams';
 
 export default function RankTeamsScreen({ route, navigation }: any) {
   const { favorites } = route.params;
+  console.log(favorites)
 
   const [round, setRound] = useState(1);
   const [firstMatchWinner, setFirstMatchWinner] = useState<any>(null);
@@ -10,7 +13,7 @@ export default function RankTeamsScreen({ route, navigation }: any) {
   const [finalWinner, setFinalWinner] = useState<any>(null);
   const [finalLoser, setFinalLoser] = useState<any>(null);
 
-  const handleSelection = (winner: any, loser: any) => {
+  const handleSelection = async (winner: any, loser: any) => {
     if (round === 1) {
       setFirstMatchWinner(winner);
       setFirstMatchLoser(loser);
@@ -25,27 +28,15 @@ export default function RankTeamsScreen({ route, navigation }: any) {
         setRound(3);
       } else {
         // پایان با دو راند کافی‌ست
-        navigation.navigate('Home', {
-          favorites,
-          ranking: {
-            first: winner.name,
-            second: firstMatchWinner.name,
-            third: firstMatchLoser.name,
-          },
-        });
+        navigation.navigate('Tabs');
       }
     } else if (round === 3) {
       // اینجا فقط برای تعیین دوم و سوم است
       const second = winner;
       const third = loser;
-      navigation.navigate('Home', {
-        favorites,
-        ranking: {
-          first: finalWinner.name,
-          second: second.name,
-          third: third.name,
-        },
-      });
+      await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "home"}));
+      await AsyncStorage.setItem("teams", JSON.stringify({ team1: finalWinner.name , team2: second.name , team3: third.name}));
+      navigation.navigate('Tabs');
     }
   };
 
@@ -65,10 +56,10 @@ export default function RankTeamsScreen({ route, navigation }: any) {
     <View style={styles.container}>
       <Text style={styles.title}>
         {round === 1
-          ? 'بین این دو تیم کدام را بیشتر دوست داری؟'
+          ? 'بین این دو تیم محتوای کدوم رو بیشتر دوست داری ببینی'
           : round === 2
-          ? 'حالا این تیم را با تیم سوم مقایسه کن:'
-          : 'و در آخر، این دو تیم بازنده را مقایسه کن:'}
+          ? 'بین اینا کدوم؟'
+          : 'این چی؟'}
       </Text>
 
       <View style={styles.matchupContainer}>
@@ -78,7 +69,7 @@ export default function RankTeamsScreen({ route, navigation }: any) {
             style={styles.teamCard}
             onPress={() => handleSelection(team, team === team1 ? team2 : team1)}
           >
-            <Image source={{ uri: team.logo }} style={styles.logo} />
+            <Image source={teamImages[team.name]} style={styles.logo} />
             <Text style={styles.teamName}>{team.name}</Text>
           </TouchableOpacity>
         ))}
@@ -98,7 +89,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontFamily: "SFArabic-Regular",
     marginBottom: 30,
     color: '#fff',
     textAlign: 'center',
@@ -108,7 +99,9 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   teamCard: {
-    backgroundColor: '#333',
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.17)',
     borderRadius: 16,
     padding: 16,
     alignItems: 'center',
@@ -116,15 +109,15 @@ const styles = StyleSheet.create({
     width: 140,
   },
   logo: {
-    width: 80,
-    height: 80,
+    width: 50,
+    height: 50,
     borderRadius: 12,
     marginBottom: 12,
   },
   teamName: {
     color: "#fff",
     fontSize: 15,
-    fontWeight: '600',
     textAlign: 'center',
+    fontFamily: "SFArabic-Regular",
   },
 });
