@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
     borderColor: '#333',
   },
   filledCell: {
-    borderColor: '#229ED9',
+    borderColor: '#444',
   },
   cellText: {
     color: '#fff',
@@ -263,13 +263,13 @@ const styles = StyleSheet.create({
     fontFamily: 'vazir',
   },
   focusCell: {
-    borderColor: '#1E90FF',
+    borderColor: '#555',
   },
   errorCell: {
     borderColor: '#ff4d4f',
   },
   successCell: {
-    borderColor: '#4caf50',
+    borderColor: '#00aaffff',
   },
   editNumber: {
     color: "#54afff",
