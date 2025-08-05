@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { NavigationContainer, useNavigation } from '@react-navigation/native';
+
 import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import PickTeamsScreen from '../screens/setup/PickTeams';
 import RankTeamsScreen from '../screens/setup/RankTeams';
 import Comments from '../screens/tabs/Home/Comments';
@@ -12,32 +14,52 @@ import ChannelDetailScreen from '../screens/tabs/ChannelDetail.Screen';
 
 const Stack = createNativeStackNavigator<any>();
 
-export default function RootNavigator() {
+function RootStack({ isAuth }: { isAuth: string }) {
+  const navigation = useNavigation();
 
-  const [isAuth, setIsAuth] = useState<boolean | null>(null);
   useEffect(() => {
-    const checkAuth = async () => {
-      const authStatus = await AsyncStorage.getItem("auth-status");
-      setIsAuth(JSON.parse(authStatus || '{"register": false}').register);
-    };
-
-    checkAuth();
-  },[])
-
+    if (isAuth === 'home') {
+      navigation.reset({ index: 0, routes: [{ name: 'Tabs' }] } as any);
+    } else if (isAuth === 'pick-team') {
+      navigation.reset({ index: 0, routes: [{ name: 'PickTeams' }] } as any);
+    } else {
+      navigation.reset({ index: 0, routes: [{ name: 'Auth' }] } as any);
+    }
+  }, [isAuth]);
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {!isAuth ? (
-        <Stack.Screen name="Tabs" component={TabNavigator} />
-      ) : (
-        <Stack.Screen name="Auth" component={AuthNavigator} />
-      )}
+      <Stack.Screen name="Tabs" component={TabNavigator} />
       <Stack.Screen name="PickTeams" component={PickTeamsScreen} />
+      <Stack.Screen name="Auth" component={AuthNavigator} />
       <Stack.Screen name="Priority" component={RankTeamsScreen} />
       <Stack.Screen name="Comments" component={Comments} />
       <Stack.Screen name="FullPhoto" component={FullPhotoScreen} />
       <Stack.Screen name="Channel" component={ChannelScreen} />
       <Stack.Screen name="ChannelDetail" component={ChannelDetailScreen} />
     </Stack.Navigator>
+  );
+}
+
+export default function RootNavigator() {
+  const [isAuth, setIsAuth] = useState<string>('loading');
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      //await AsyncStorage.removeItem("auth-status")
+      //await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "home" }))
+      const authStatus = await AsyncStorage.getItem('auth-status');
+      const teams = await AsyncStorage.getItem("teams")
+      console.log(teams, authStatus, ';;;');
+      setIsAuth(JSON.parse(authStatus || '{"status": "auth"}').status);
+    };
+
+    checkAuth();
+  }, []);
+
+  if (isAuth === 'loading') return null; // یا یک Splash Screen
+
+  return (
+      <RootStack isAuth={isAuth} />
   );
 }

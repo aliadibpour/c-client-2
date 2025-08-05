@@ -5,6 +5,7 @@ import VerifyScreen from '../screens/auth/Verify';
 import IntroScreen from '../screens/auth/Intro';
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { TelegramService } from '../services/TelegramService';
 
 const Stack = createNativeStackNavigator<any>();
 
@@ -14,9 +15,19 @@ export default function AuthNavigator() {
   useEffect(() => {
     const checkAuth = async () => {
       const authStatus = await AsyncStorage.getItem("auth-status");
-      const route = JSON.parse(authStatus || '{"route":"Intro"}').route;
+      const route = JSON.parse(authStatus || '{"status":"Intro"}').status || "Intro";
       console.log(authStatus)
-      setInitialRouteName(route);
+
+      const authStateTdlib = await TelegramService.getAuthState() 
+      const authType = JSON.parse(authStateTdlib.data)["@type"];
+      if (authType !== "authorizationStateWaitCode") {
+        setInitialRouteName("Intro")
+        await AsyncStorage.removeItem("auth-status")
+        await AsyncStorage.removeItem("phone-number")
+      }
+      else {
+        setInitialRouteName(route);
+      }
     };
     checkAuth();
   }, []);
@@ -26,7 +37,7 @@ export default function AuthNavigator() {
     return null;
   }
   return (
-    <Stack.Navigator initialRouteName={"Intro"} screenOptions={{ headerShown: false }}>
+    <Stack.Navigator initialRouteName={initialRouteName} screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Intro" component={IntroScreen} />
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Verify" component={VerifyScreen} />
