@@ -78,12 +78,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     color: 'white',
-    fontWeight: '700',
+    fontFamily: "SFArabic-Regular"
   },
   message: {
     fontSize: 16,
     color: '#CCCCCC',
-    paddingVertical: 22
+    paddingVertical: 22,
+    fontFamily: "SFArabic-Regular"
   },
   buttons: {
     flexDirection: 'row',
@@ -94,7 +95,7 @@ const styles = StyleSheet.create({
   },
   okText: {
     color: '#389af5',
-    fontWeight: 'bold',
+    fontFamily: "SFArabic-Regular",
     fontSize: 16
   },
   secondaryButton: {
@@ -103,6 +104,6 @@ const styles = StyleSheet.create({
   },
   secondaryText: {
     color: '#389af5',
-    fontWeight: 'bold'
+    fontFamily: "SFArabic-Regular",
   }
 });
