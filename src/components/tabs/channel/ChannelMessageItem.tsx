@@ -135,7 +135,7 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads }:
                 marginBottom: 8,
               },
               reactionBox: { backgroundColor: "#333", paddingHorizontal: 3 },
-              selectedBox: { backgroundColor: "#0088cc" },
+              selectedBox: { backgroundColor: "#666" },
               emoji: { fontSize: 12 },
               count: { color: "#ccc", fontWeight: "bold", fontSize: 11 },
             }}
@@ -184,7 +184,7 @@ const styles = StyleSheet.create({
   },
   text: {
     color: "#f2f2f2",
-    fontSize: 14,
+    fontSize: 13.4,
     fontFamily: "SFArabic-Regular",
     lineHeight: 24,
     padding: 10,
