@@ -15,6 +15,7 @@ import { ArrowLeft } from "lucide-react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import TdLib from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
+import ChannelMessageItem from "../../../components/tabs/channel/ChannelMessageItem";
 
 export default function Comments() {
   const route = useRoute();
@@ -23,6 +24,7 @@ export default function Comments() {
 
   const [mainMessage, setMainMessage] = useState<any>(null);
   const [comments, setComments] = useState<any[]>([]);
+  const [commentsCount, setCommentsCount] = useState()
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,7 +39,7 @@ export default function Comments() {
       try {
         const threadResponse: any = await TdLib.getMessageThread(chatId, messageId);
         const threadParsed = threadResponse?.raw ? JSON.parse(threadResponse.raw) : null;
-
+        console.log(threadParsed)
         const threadChatId = threadParsed?.chatId;
         const threadMsg = threadParsed?.messages?.[0];
 
@@ -45,17 +47,22 @@ export default function Comments() {
           setError("❌ Thread data not found.");
           return;
         }
-
+        console.log(threadParsed)
         setMainMessage(threadMsg);
 
-        const historyResponse: any = await TdLib.getMessageThreadHistory(
-          threadChatId,
-          threadMsg.id,
-          0,
-          50
+        const replyCount = threadParsed.replyInfo.replyCount;
+        const offset = -(replyCount - 50);
+
+        const historyResponse : any = await TdLib.getMessageThreadHistory(
+          chatId,
+          messageId,
+          messageId,     // یعنی از آخرین پیام
+          -99, 
+          100   // تعداد پیام‌ها
         );
 
         const historyParsed = historyResponse?.raw ? JSON.parse(historyResponse.raw) : null;
+        console.log(historyParsed)
 
         if (!Array.isArray(historyParsed?.messages)) {
           setError("No comments found.");
@@ -107,7 +114,7 @@ export default function Comments() {
             }
           });
 
-          setComments(merged);
+          setComments(merged.reverse())
         }
       } catch (err: any) {
         setError(err?.message || "Unexpected error occurred.");
@@ -179,7 +186,9 @@ export default function Comments() {
           <TouchableOpacity onPress={() => navigation.goBack()}>
             <ArrowLeft color="#fff" size={22} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{comments.length} نظر</Text>
+          {
+            !loading && <Text style={styles.headerTitle}>{comments.length} نظر</Text> 
+          }
           <View style={{ width: 22 }} />
         </View>
 
@@ -188,14 +197,22 @@ export default function Comments() {
         ) : error ? (
           <Text style={styles.errorText}>{error}</Text>
         ) : (
-          <FlatList
-            data={comments}
-            keyExtractor={(item: any) => item.id?.toString() ?? Math.random().toString()}
-            renderItem={({ item, index }) => renderComment({ item, index })}
-            inverted
-            contentContainerStyle={{ paddingBottom: 20 }}
-            ListEmptyComponent={<Text style={styles.noComments}>کامنتی وجود ندارد.</Text>}
+          <View>
+            <FlatList
+              data={comments}
+              style={{paddingVertical: 10}}
+              keyExtractor={(item: any) => item.id?.toString() ?? Math.random().toString()}
+              renderItem={({ item, index }) => renderComment({ item, index })}
+              ListHeaderComponent={
+                mainMessage ? (
+                  <ChannelMessageItem data={mainMessage} activeDownloads={[mainMessage.id]} isVisible={true} />
+                ) : null
+              }
+              
+              contentContainerStyle={{ paddingBottom: 20 }}
+              ListEmptyComponent={<Text style={styles.noComments}>کامنتی وجود ندارد.</Text>}
           />
+          </View>
         )}
       </SafeAreaView>
     </ImageBackground>
