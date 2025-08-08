@@ -17,10 +17,11 @@ import TdLib from "react-native-tdlib";
 import ChannelMessageItem from "../../components/tabs/channel/ChannelMessageItem";
 import { ViewToken } from "react-native";
 import ChannelHeader from "../../components/tabs/channel/ChannelHeader";
-import { ArrowLeft } from "../../assets/icons";
+import { ArrowLeftIcon } from "../../assets/icons";
+import { ArrowLeft } from "lucide-react-native";
 import ChannelAlbumItem from "../../components/tabs/channel/ChannelAlbumItem";
 import { useFocusEffect } from "@react-navigation/native";
-import { getChat, getChatHistory } from "../../services/TelegramService";
+import { getChat, getChatHistory, TelegramService } from "../../services/TelegramService";
 import { lstat } from "fs";
 
 const { width, height } = Dimensions.get("window");
@@ -31,6 +32,7 @@ export default function ChannelScreen({ route }: any) {
   const [messages, setMessages] = useState<any[]>([]);
   const [lastMessage, setLastMessage] = useState<any>([])
   const [chatInfo, setChatInfo] = useState<any>()
+  const [isMember, setIsMember] = useState<any>("loading")
   const messagesRef = useRef<any[]>([]); // track latest messages
 
   const [loading, setLoading] = useState(true);
@@ -88,9 +90,6 @@ export default function ChannelScreen({ route }: any) {
     setViewableItems(viewableItems);
   });
 
-  const fetcher = () => {
-    
-  }
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -104,6 +103,12 @@ export default function ChannelScreen({ route }: any) {
         const chat = await getChat(chatId)
         console.log(chat,"sss")
         setChatInfo(chat)
+
+
+        const a = await TdLib.getSupergroup(chat.type.supergroupId)
+        const supergroup = await JSON.parse(a.raw)
+        const ismem = supergroup.status ? Object.keys(supergroup.status) : []
+        setIsMember(ismem.length ? true : false)
 
         if (chat.lastMessage) {
           setLastMessage(chat.lastMessage); // ذخیره در state
@@ -221,6 +226,7 @@ export default function ChannelScreen({ route }: any) {
       const currentId = viewableItems[0].item.id
 
       if (oldMessages.includes(currentId)) {
+        console.log("aa")
         const anchorId = oldMessages[oldMessages.length - 1]
         const data = await getChatHistory(chatId, anchorId, 15, 0)
         setMessages(prev => {
@@ -234,7 +240,7 @@ export default function ChannelScreen({ route }: any) {
         console.log("alll")
         const anchorId = newMessages[0]
         const data = await getChatHistory(chatId, anchorId, 15, -15)
-        console.log(data)
+        console.log(data, ";")
         setMessages(prev => {
           const ids = new Set(prev.map(m => m.id))
           const filtered = data.filter(m => !ids.has(m.id))
@@ -315,11 +321,7 @@ export default function ChannelScreen({ route }: any) {
     else {
       setShowScrollToBottom("loading")
       const data = await getChatHistory(chatId, lastMessage.id, 50, -2)
-      setMessages(prev => {
-      const ids = new Set(prev.map(m => m.id))
-      const filtered = data.filter(m => !ids.has(m.id))
-        return [...filtered, ...prev]
-      })
+      setMessages(data)
       requestAnimationFrame(() => {
         listRef.current?.scrollToOffset({ offset: 0, animated: true })
       })
@@ -327,9 +329,30 @@ export default function ChannelScreen({ route }: any) {
     setShowScrollToBottom(false)
   }
 
+  const subscribe = async () => {
+    if (isMember == "loading") return
+
+    if (isMember == true) {
+      setIsMember("loading")
+      await TdLib.leaveChat(chatId)
+      const a = await TdLib.getSupergroup(chatInfo.type.supergroupId)
+      const supergroup = await JSON.parse(a.raw)
+      const ismem = supergroup.status ? Object.keys(supergroup.status) : []
+      setIsMember(ismem.length ? true : false)
+    }
+    else {
+      setIsMember("loading")
+      await TdLib.joinChat(chatId)
+      const a = await TdLib.getSupergroup(chatInfo.type.supergroupId)
+      const supergroup = await JSON.parse(a.raw)
+      const ismem = supergroup.status ? Object.keys(supergroup.status) : []
+      setIsMember(ismem.length ? true : false)
+    }
+  }
+
   return (
     <ImageBackground
-      source={require("../../assets/images/telBG.jpg")}
+      source={require("../../assets/images/background.jpg")}
       resizeMode="cover"
       style={styles.background}
     >
@@ -397,14 +420,15 @@ export default function ChannelScreen({ route }: any) {
           {
           showScrollToBottom === "loading" ? 
           <ActivityIndicator color="#888" /> : 
-          <ArrowLeft style={styles.arrowLeft} width={17} height={19} />
+          <ArrowLeftIcon style={styles.arrowLeft} width={17} height={19} />
           }
         </TouchableOpacity>
       )}
 
       <View style={styles.stickyFooter}>
-        <TouchableOpacity>
-          <Text style={styles.joinText}>عضویت</Text>
+        <TouchableOpacity onPress={subscribe}>
+          <Text style={isMember == true ? styles.leaveText : styles.joinText}>
+          {isMember == "loading" ? <ActivityIndicator color="#888" /> : isMember ? "ترک کانال" : "عضویت"}</Text>
         </TouchableOpacity>
       </View>
     </ImageBackground>
@@ -443,12 +467,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "SFArabic-Heavy",
   },
+  leaveText: {
+    color: "#747474ff",
+    fontSize: 13,
+    fontFamily: "SFArabic-Heavy",
+  },
   scrollToBottomButton: {
     position: "absolute",
     bottom: 65,
     right: 13,
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
     borderRadius: 20,
     backgroundColor: "#222",
     justifyContent: "center",
