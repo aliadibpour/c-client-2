@@ -109,7 +109,6 @@ export default function MessagePhoto({ photo, context = "channel", activeDownloa
     <View
       style={[
         styles.container,
-        context === "explore" && { alignItems: "center" },
       ]}
     >
       <TouchableOpacity onPress={handleOpenFull} disabled={loading}>
@@ -117,7 +116,9 @@ export default function MessagePhoto({ photo, context = "channel", activeDownloa
         style={{
           width: displayWidth < screenWidth * 0.72 ? screenWidth * 0.72 : displayWidth,
           height: displayHeight < 160 ? 160 : displayHeight, // حداقل ارتفاع
-          borderRadius: context === "channel" ? 8 : 12,
+          borderRadius: context !== "channel" ? 10 : '',
+          borderBottomLeftRadius: context === "channel" ? 3: "",
+          borderBottomRightRadius: context === "channel" ? 3 : "",
           backgroundColor: "#111",
           overflow: "hidden",
         }}
