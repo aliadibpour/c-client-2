@@ -17,6 +17,7 @@ import TdLib from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { teamImages } from "../setup/PickTeams";
+import { Edit, Edit2, Edit2Icon, Edit3, EditIcon, FileHeart, Heart, HeartCrack, HeartHandshake, HeartIcon, HeartMinus, LogOut, Phone, PhoneCall, PhoneIcon, PhoneIncoming, User } from "lucide-react-native";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -146,22 +147,28 @@ export default function ProfileScreen({ navigation }: any) {
     <View style={styles.informationBox}>
       {
         profile?.phoneNumber && (
-          <View style={styles.infoRow}>
-            <Text style={styles.infoValue}>
-              {profile.phoneNumber.startsWith("+") ? profile.phoneNumber : `${profile.phoneNumber}+`}
-            </Text>
-            <Text style={styles.infoLabel}>شماره تماس</Text>
+          <View style={{flexDirection: "row", gap:5, alignItems: "flex-start"}}>
+            <Phone color={"#999"} width={15} />
+            <View>
+              <Text style={styles.infoValue}>
+                {profile.phoneNumber.startsWith("+") ? profile.phoneNumber : `${profile.phoneNumber}+`}
+              </Text>
+              <Text style={styles.infoLabel}>شماره تماس</Text>
+            </View>
           </View>
         )
       }
 
       {
         profile?.usernames.activeUsernames[0] && (
-          <View style={styles.infoRow}>
-            <Text style={styles.infoValue}>
-              @{profile.usernames.activeUsernames[0]}
-            </Text>
-            <Text style={styles.infoLabel}>نام کاربری</Text>
+          <View style={{flexDirection: "row", gap:5, alignItems: "flex-start"}}>
+            <User color={"#999"} width={15} />
+            <View>
+              <Text style={styles.infoValue}>
+                @{profile.usernames.activeUsernames[0]}
+              </Text>
+              <Text style={styles.infoLabel}>نام کاربری</Text>
+            </View>
           </View>
         )
       }
@@ -211,13 +218,16 @@ export default function ProfileScreen({ navigation }: any) {
 
     return (
       <View style={styles.favoritesBox}>
-        <Text style={styles.favoritesTitle}>تیم‌های مورد علاقه</Text>
+        <View style={{flexDirection: "row", gap:5}}>
+          <Heart color={"#999"} width={15}/>
+          <Text style={styles.favoritesTitle}>تیم‌های مورد علاقه</Text>
+        </View>
         <View style={styles.favoritesList}>
           {items.map((teamName, index) => {
             if (teamName === "edit") {
               return (
                 <TouchableOpacity key="edit" style={styles.teamItem} onPress={() => navigation.navigate("PickTeams")}>
-                  {/* <Image source={require('../assets/edit-icon.png')} style={styles.teamLogo} /> */}
+                  <Edit2 color={"#999"} width={16}/>
                   <Text style={styles.teamName}>ویرایش</Text>
                 </TouchableOpacity>
               );
@@ -234,7 +244,6 @@ export default function ProfileScreen({ navigation }: any) {
       </View>
     );
   };
-
 
 
   return (
@@ -289,6 +298,16 @@ export default function ProfileScreen({ navigation }: any) {
 
       {renderInformation()}
       {renderFavoriteTeams()}
+
+
+      <View style={{backgroundColor: "#111", paddingVertical: 10, paddingHorizontal: 10, marginTop: 15}}>
+        <TouchableOpacity style={{gap :8, alignItems: "center", flexDirection:"row"}}>
+          <LogOut color={"#999"} width={15.6}/>
+          <Text style={{fontSize: 14, fontFamily: "SFArabic-Regular", color: "#ddd"}}>خروج از حساب کاربری</Text>
+        </TouchableOpacity>
+      </View>
+
+
     </View>
   );
 
@@ -347,7 +366,7 @@ const styles = StyleSheet.create({
   },
   indicator: {
     height: 2.3,
-    backgroundColor: "#999",
+    backgroundColor: "#666",
     borderRadius: 2,
   },
   indicatorActive: {
@@ -373,9 +392,6 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap:20,
     backgroundColor: "#111"
-  },
-  infoRow: {
-  
   },
   infoValue: {
     color: "#ccc",
@@ -410,7 +426,7 @@ const styles = StyleSheet.create({
   teamItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(0, 0, 0, 0.12)',
     padding: 10,
     borderRadius: 10,
     width: 70, 
