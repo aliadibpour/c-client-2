@@ -15,7 +15,7 @@ import { ArrowLeft } from "lucide-react-native";
 
 const { width } = Dimensions.get("window");
 
-export default function ChannelHeader({ chatId, chatInfo }: { chatId: number, chatInfo: any }) {
+export default function ChannelHeader({ chatId, chatInfo, superGroupeInfo }: { chatId: number, chatInfo: any, superGroupeInfo: any }) {
   const [title, setTitle] = useState("");
   const [memberCount, setMemberCount] = useState<number | null>(null);
   const [photoUri, setPhotoUri] = useState("");
@@ -24,10 +24,11 @@ export default function ChannelHeader({ chatId, chatInfo }: { chatId: number, ch
 
   const navigation:any = useNavigation();
 
+  console.log(superGroupeInfo)
   useEffect(() => {
     if (chatInfo) {
         setTitle(chatInfo?.title);
-        setMemberCount(chatInfo?.positions?.[0]?.total_count ?? null);
+        setMemberCount(superGroupeInfo?.memberCount || null);
 
         if (chatInfo?.photo?.minithumbnail?.data) {
           const buffer = Buffer.from(chatInfo.photo.minithumbnail.data);
@@ -81,7 +82,7 @@ export default function ChannelHeader({ chatId, chatInfo }: { chatId: number, ch
           <Text style={styles.title}>{title}</Text>
           {memberCount !== null && (
             <Text style={styles.members}>
-              {memberCount.toLocaleString("fa-IR")} عضو
+              {memberCount} عضو
             </Text>
           )}
         </View>
