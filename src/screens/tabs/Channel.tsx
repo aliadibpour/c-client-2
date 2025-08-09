@@ -101,7 +101,6 @@ export default function ChannelScreen({ route }: any) {
     const init = async () => {
       try {
         const chat = await getChat(chatId)
-        console.log(chat,"sss")
         setChatInfo(chat)
 
 
@@ -116,6 +115,7 @@ export default function ChannelScreen({ route }: any) {
           console.log(lastMessage)
           const messages = focusMessageId ? await getChatHistory(chatId, focusMessageId, 20, -10) :
           await getChatHistory(chatId, lastMessage.id, 50, 0)
+          console.log(messages, "sssssssssaaaaaaaaaaaaaawwwwwww")
           if (isMounted) {
             setMessages(messages);
             setLoading(false);
@@ -323,6 +323,7 @@ export default function ChannelScreen({ route }: any) {
       setShowScrollToBottom("loading")
       const data = await getChatHistory(chatId, lastMessage.id, 50, -2)
       setMessages(data)
+      console.log(messages)
       requestAnimationFrame(() => {
         listRef.current?.scrollToOffset({ offset: 0, animated: true })
       })
@@ -345,6 +346,32 @@ export default function ChannelScreen({ route }: any) {
     }
   }
 
+  const [pendingScrollId, setPendingScrollId] = useState<number | null>(null)
+
+  const clickReply = async (messageId: number) => {
+    const msgIds = messages.map(i => i.id)
+    
+    if (msgIds.includes(messageId)) {
+      const index = messages.findIndex(i => i.id == messageId)
+      listRef.current?.scrollToIndex({ index, animated: true, viewPosition: .5 })
+    } else {
+      const getMessage: any = await getChatHistory(chatId, messageId, 20, -10)
+      setMessages(getMessage)
+      setPendingScrollId(messageId)
+    }
+  }
+
+  useEffect(() => {
+    if (pendingScrollId !== null) {
+      const index = messages.findIndex(i => i.id == pendingScrollId)
+      if (index !== -1) {
+        listRef.current?.scrollToIndex({ index, animated: true, viewPosition: .5 })
+        setPendingScrollId(null)
+      }
+    }
+  }, [messages, pendingScrollId])
+
+
   return (
     <ImageBackground
       source={require("../../assets/images/background.jpg")}
@@ -363,7 +390,7 @@ export default function ChannelScreen({ route }: any) {
 
         <FlatList
           ref={listRef}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={(item) => item.id?.toString()}
           data={groupedMessages}
           renderItem={({ item }) => {
             if (item.type === "album") {
@@ -375,6 +402,7 @@ export default function ChannelScreen({ route }: any) {
                   data={item.message}
                   isVisible={isVisible}
                   activeDownloads={activeDownloads}
+                  clickReply={clickReply}
                 />
               );
             }

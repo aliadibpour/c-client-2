@@ -4,7 +4,7 @@ import MessagePhoto from "../home/MessagePhoto";
 import MessageVideo from "../home/MessageVideo";
 import MessageReactions from "../home/MessageReaction";
 import { useNavigation } from "@react-navigation/native";
-import { Eye } from "lucide-react-native";
+import { Eye, Reply, ReplyAll, ReplyIcon } from "lucide-react-native";
 import { ArrowLeftIcon } from "../../../assets/icons";
 import TdLib from "react-native-tdlib";
 
@@ -12,13 +12,14 @@ interface ChannelMessageItemProps {
   data: any;
   isVisible: boolean;
   activeDownloads: any;
+  clickReply: any;
 }
 
 const screenWidth = Dimensions.get("window").width
 const screenHeight = Dimensions.get("window").height
 
 
-export default function ChannelMessageItem({ data, isVisible, activeDownloads }: ChannelMessageItemProps) {
+export default function ChannelMessageItem({ data, isVisible, activeDownloads, clickReply }: ChannelMessageItemProps) {
   //console.log(data)
   const navigation: any = useNavigation();
   const [messageData, setMessageData] = useState<any>(data);
@@ -130,7 +131,16 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads }:
       <View style={[styles.card, { width: messageWidth }]}>
 
       {messageData.replyInfo && (
-        <TouchableOpacity style={styles.replyBox} onPress={() =>null}>
+        messageData.replyInfo.content.photo ? 
+        <TouchableOpacity style={styles.replyBox} onPress={() => clickReply(messageData.replyInfo.id)}>
+          <ReplyIcon width={18} height={18} color={`#999`} />
+          <MessagePhoto photo={messageData.replyInfo.content.photo} activeDownload={isActiveDownload} width={35} height={25}/>
+          <Text numberOfLines={1} style={styles.replyText}>
+            {messageData.replyInfo.content?.caption?.text.slice(0, 30)}
+          </Text>
+        </TouchableOpacity> : 
+        <TouchableOpacity style={styles.replyBox} onPress={() => clickReply(messageData.replyInfo.id)}>
+          <ReplyIcon width={18} height={18} color={`#999`} />
           <Text numberOfLines={1} style={styles.replyText}>
             🔁 {messageData.replyInfo.content?.text?.text.slice(0, 30)}
           </Text>
@@ -236,7 +246,7 @@ const styles = StyleSheet.create({
   },
   commentText: {
     color: "#54afff",
-    fontSize: 13.5,
+    fontSize: 13.6,
     fontFamily: "SFArabic-Regular",
     paddingHorizontal: 10,
     paddingBottom: 10,
@@ -278,14 +288,17 @@ const styles = StyleSheet.create({
   },
   replyBox: {
     backgroundColor: "rgba(111, 111, 111, 0.2)",
-    paddingVertical: 9,
-    paddingHorizontal: 5,
+    paddingVertical: 8,
+    paddingHorizontal:10,
     borderRadius: 2,
-    borderEndEndRadius: 0
+    borderEndEndRadius: 0,
+    flexDirection: "row",
+    gap: 4,
+    alignItems: "center"
   },
   replyText: {
     color: "#ccc",
-    fontSize: 13,
+    fontSize: 12.6,
     fontFamily: "SFArabic-Regular",
     textAlign: "left",
   },
