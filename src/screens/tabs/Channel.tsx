@@ -32,12 +32,12 @@ export default function ChannelScreen({ route }: any) {
   const [messages, setMessages] = useState<any[]>([]);
   const [lastMessage, setLastMessage] = useState<any>([])
   const [chatInfo, setChatInfo] = useState<any>()
+  const [supergroupInfo, setSuperGroupeInfo] = useState()
   const [isMember, setIsMember] = useState<any>("loading")
   const messagesRef = useRef<any[]>([]); // track latest messages
 
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
   const [viewableItems, setViewableItems] = useState<ViewToken[]>([]);
   const [listRendered, setListRendered] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState<boolean | "loading">(false);
@@ -105,10 +105,11 @@ export default function ChannelScreen({ route }: any) {
         setChatInfo(chat)
 
 
-        const a = await TdLib.getSupergroup(chat.type.supergroupId)
-        const supergroup = await JSON.parse(a.raw)
+        const getSupergroup = await TdLib.getSupergroup(chat.type.supergroupId)
+        const supergroup = await JSON.parse(getSupergroup.raw)
         const ismem = supergroup.status ? Object.keys(supergroup.status) : []
         setIsMember(ismem.length ? true : false)
+        setSuperGroupeInfo(supergroup)
 
         if (chat.lastMessage) {
           setLastMessage(chat.lastMessage); // ذخیره در state
@@ -264,7 +265,7 @@ export default function ChannelScreen({ route }: any) {
   };
 
   const handleEndReached = async () => {
-    if (loadingMore || !hasMore || messages.length === 0) return;
+    if (loadingMore || messages.length === 0) return;
     setLoadingMore(true);
     const last = messages[messages.length - 1];
     await getChatHistory(chatId, last.id);
@@ -335,18 +336,12 @@ export default function ChannelScreen({ route }: any) {
     if (isMember == true) {
       setIsMember("loading")
       await TdLib.leaveChat(chatId)
-      const a = await TdLib.getSupergroup(chatInfo.type.supergroupId)
-      const supergroup = await JSON.parse(a.raw)
-      const ismem = supergroup.status ? Object.keys(supergroup.status) : []
-      setIsMember(ismem.length ? true : false)
+      setIsMember(false)
     }
     else {
       setIsMember("loading")
       await TdLib.joinChat(chatId)
-      const a = await TdLib.getSupergroup(chatInfo.type.supergroupId)
-      const supergroup = await JSON.parse(a.raw)
-      const ismem = supergroup.status ? Object.keys(supergroup.status) : []
-      setIsMember(ismem.length ? true : false)
+      setIsMember(true)
     }
   }
 
@@ -358,7 +353,7 @@ export default function ChannelScreen({ route }: any) {
     >
       <StatusBar backgroundColor="#111" barStyle="light-content" />
       <View style={styles.container}>
-        <ChannelHeader chatId={chatId} chatInfo={chatInfo} />
+        <ChannelHeader chatId={chatId} chatInfo={chatInfo} superGroupeInfo={supergroupInfo} />
 
         {loading || !listRendered ? (
           <View style={styles.loadingContainer}>
