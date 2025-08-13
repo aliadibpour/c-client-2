@@ -16,6 +16,7 @@ import {
   NativeScrollEvent,
   ViewToken,
   DeviceEventEmitter,
+  InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ArrowLeftIcon } from "../../../assets/icons";
@@ -27,7 +28,7 @@ import MessageReactions from "../../../components/tabs/home/MessageReaction";
 
 export default function Comments() {
   const route = useRoute();
-  const navigation = useNavigation();
+  const navigation:any = useNavigation();
   const { chatId, messageId }: any = route.params || {};
   console.log(chatId ,messageId)
 
@@ -37,7 +38,6 @@ export default function Comments() {
   const [loading, setLoading] = useState(true);
   const [loadingBottom, setLoadingBottom] = useState<boolean>(false);
   const [loadingTop, setLoadingTop] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState<boolean | "loading">(false);
   const [text, setText] = useState('');
   const listRef = useRef<FlatList>(null);
@@ -47,20 +47,18 @@ export default function Comments() {
   useEffect(() => {
     if (!chatId || !messageId) {
       setLoading(false);
-      setError("Missing chatId or messageId.");
       return;
     }
 
     const getThread = async () => {
       const threadResponse: any = await TdLib.getMessageThread(chatId, messageId);
       const threadParsed = threadResponse?.raw ? JSON.parse(threadResponse.raw) : null;
+      console.log(threadParsed)
 
       if (threadParsed) {
         setThreadInfo(threadParsed);  // فقط اینجا Save می‌کنیم
         setCommentsCount(threadParsed.replyInfo.replyCount)
         await TdLib.openChat(threadParsed?.chatId)
-      } else {
-        setError("❌ Thread data not found.");
       }
     };
 
@@ -73,11 +71,11 @@ export default function Comments() {
     console.log(threadInfo)
     if (threadInfo) {
       const mainMessageId = threadInfo?.messages?.[0]?.id;
-      const a = async () => {
-        const b:any = await fetchComments(mainMessageId, -49, 50);
-        setComments(b)
+      const getInitialcomments = async () => {
+        const getcomments:any = await fetchComments(mainMessageId, -20, 20);
+        setComments(getcomments)
       }
-      a()
+      getInitialcomments()
     }
 
   }, [threadInfo]);
@@ -91,7 +89,6 @@ export default function Comments() {
       const threadMsg = threadInfo?.messages?.[0];
 
       if (!threadChatId || !threadMsg?.id) {
-        setError("❌ Thread data not found.");
         return;
       }
 
@@ -107,7 +104,6 @@ export default function Comments() {
       console.log(historyParsed);
 
       if (!Array.isArray(historyParsed?.messages)) {
-        setError("No comments found.");
       } else {
         const merged = await Promise.all(
           historyParsed.messages.map(async (msg: any) => {
@@ -125,15 +121,15 @@ export default function Comments() {
               const rawUser = await TdLib.getUserProfile(userId);
               const user = JSON.parse(rawUser);
 
-              let smallUri = null;
-              const smallId = user?.profilePhoto?.small?.id;
-              if (smallId) {
-                const fileResult: any = await TdLib.downloadFile(smallId);
-                const file = JSON.parse(fileResult.raw);
-                if (file?.local?.isDownloadingCompleted && file?.local?.path) {
-                  smallUri = `file://${file.local.path}`;
-                }
-              }
+              // let smallUri = null;
+              // const smallId = user?.profilePhoto?.small?.id;
+              // if (smallId) {
+              //   const fileResult: any = await TdLib.downloadFile(smallId);
+              //   const file = JSON.parse(fileResult.raw);
+              //   if (file?.local?.isDownloadingCompleted && file?.local?.path) {
+              //     smallUri = `file://${file.local.path}`;
+              //   }
+              // }
 
 
 
@@ -141,7 +137,7 @@ export default function Comments() {
                 ...msg,
                 user: {
                   ...user,
-                  avatarSmall: smallUri,
+                  //avatarSmall: smallUri,
                 },
                 replyInfo
               };
@@ -154,7 +150,6 @@ export default function Comments() {
         return merged.reverse()
       }
     } catch (err: any) {
-      setError(err?.message || "Unexpected error occurred.");
     } finally {
       setLoading(false);
     }
@@ -183,11 +178,15 @@ export default function Comments() {
       <View style={styles.commentItem}>
         {showAvatar ? (
           avatarUri ? (
-            <Image source={{ uri: avatarUri }} style={styles.avatar} />
+            <TouchableOpacity onPress={() => navigation.navigate("ProfileUser", {data: user})}>
+              <Image source={{ uri: avatarUri }} style={styles.avatar} />
+            </TouchableOpacity>
           ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Text style={{ color: "#fff" }}>{firstLetter}</Text>
-            </View>
+            <TouchableOpacity onPress={() => navigation.navigate("ProfileUser", {data: user})}>
+              <View style={styles.avatarPlaceholder}>
+                <Text style={{ color: "#fff" }}>{firstLetter}</Text>
+              </View>
+            </TouchableOpacity>
           )
         ) : (
           <View style={{ width: 36, marginHorizontal: 8 }} />
@@ -199,7 +198,7 @@ export default function Comments() {
             {item.replyInfo && (
               <TouchableOpacity style={styles.replyBox} onPress={() => clickReply(item.replyTo.messageId)}>
                 <Text numberOfLines={1} style={styles.replyText}>
-                  🔁 {item.replyInfo.content.text.text.slice(0, 30)}
+                  🔁 {item.replyInfo?.content?.text?.text.slice(0, 30)}
                 </Text>
               </TouchableOpacity>
             )}
@@ -236,22 +235,23 @@ export default function Comments() {
   };
 
     useEffect(() => {
-      console.log(comments)
       const fetchMessages = async () => {
         if (!viewableItems.length) return;
   
         const oldComments = comments.slice(0, 4).map(i => i.id)
         const newComments = comments.slice(-4).map(i => i.id)
         const currentId = viewableItems[0].item.id
+        const furrentId = viewableItems[viewableItems.length - 1].item.id
         const mainMessageId = threadInfo?.messages?.[0]?.id;
+        const a = await TdLib.getChatMessagePosition(threadInfo.chatId, furrentId, threadInfo.messageThreadId)
+        console.log(a)
 
-        const newc:any = await fetchComments(0, 0, 1)
-        const old:any = await fetchComments(mainMessageId, -1, 1)
 
-        if (oldComments.includes(currentId) && !oldComments.includes(old[0].id)) {
+        if (oldComments.includes(currentId)) {
+          if (oldComments.includes(comments[0].id)) return
           setLoadingTop(true)
           const anchorId = oldComments[oldComments.length - 1]
-          const data:any = await fetchComments(anchorId, 0, 100)
+          const data:any = await fetchComments(anchorId, 0, 50)
           setComments(prev => {
             const ids = new Set(prev.map(m => m.id))
             const filtered = data.filter((m:any) => !ids.has(m.id))
@@ -260,15 +260,17 @@ export default function Comments() {
           setLoadingTop(false)
         }
   
-        if (newComments.includes(currentId) && !comments.includes(newc[0].id)) {
+        if (newComments.includes(furrentId)) {
+          const newc:any = await fetchComments(0, 0, 1)
+          if (comments.includes(newc[0].id)) return
           setLoadingBottom(true)
-          const anchorId = newComments[0]
-          const data:any = await fetchComments(anchorId, 0, 100)
+          const anchorId = newComments[newComments.length -1]
+          const data:any = await fetchComments(anchorId, -49, 50)
           console.log(data, ";")
           setComments(prev => {
             const ids = new Set(prev.map(m => m.id))
             const filtered = data.filter((m:any) => !ids.has(m.id))
-            return [...filtered, ...prev]
+            return [...prev,...filtered]
           })
           setLoadingBottom(false)
         }
@@ -277,35 +279,48 @@ export default function Comments() {
     }, [viewableItems])
   
   const clickReply = async (messageId:number) => {
-    const getComments:any = await fetchComments(messageId, -50, 100)
-    setComments(getComments)
-
-    const index = comments.findIndex(item => item.id == messageId)
-    listRef.current?.scrollToIndex({index, animated: true, viewPosition: 0.5})
-  }
-
-  const scrollBottom = async () => {
-    const lastComment = threadInfo.replyInfo.lastMessageId;
-    const lastCommentInState = comments[comments.length -1]
-    if (!lastComment) setShowScrollToBottom(false)
-
-    if (comments.map(i => i.id).includes(lastComment)) {
-      setShowScrollToBottom(false)
-      listRef.current?.scrollToEnd({ animated: true })
+    const messagesIds = comments.map(item => item.id)
+    if (messagesIds.includes(messageId)) {
+      const index = comments.findIndex(item => item.id == messageId)
+      listRef.current?.scrollToIndex({index, animated: true, viewPosition: 0.5})
     }
     else {
-      const getComments: any = await fetchComments(lastComment, -1, 100)
+      setLoadingTop(true)
+      const getComments:any = await fetchComments(messageId, -25, 50)
       setComments(getComments)
-      
-      setShowScrollToBottom(false)
-      listRef.current?.scrollToEnd({animated: true})
+      const index = comments.findIndex(item => item.id == messageId)
+      listRef.current?.scrollToIndex({index, animated: true, viewPosition: 0.5})
     }
+    setLoadingTop(false)
 
   }
+
+const scrollBottom = async () => {
+  const lastComment = threadInfo.replyInfo.lastMessageId;
+  if (!lastComment) {
+    setShowScrollToBottom(false);
+    return;
+  }
+
+  if (comments.map(i => i.id).includes(lastComment)) {
+    setShowScrollToBottom(false);
+    listRef.current?.scrollToEnd({ animated: true });
+  } else {
+    setShowScrollToBottom("loading");
+    const getComments: any = await fetchComments(lastComment, -1, 50);
+    setComments(getComments);
+  
+    InteractionManager.runAfterInteractions(() => {
+      listRef.current?.scrollToEnd({ animated: true });
+      setShowScrollToBottom(false);
+    });
+  }
+};
+
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetY = event.nativeEvent.contentOffset.y;
-    setShowScrollToBottom(offsetY > 20);
+    setShowScrollToBottom(offsetY > 0);
   };
   
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -366,6 +381,7 @@ export default function Comments() {
   };
 
   const handleInteractionUpdate = (data: any) => {
+    console.log("intraction info calllllllllllllll")
     const { messageId, interactionInfo } = data;
     setComments((prev) =>
       prev.map((msg) => {
@@ -409,11 +425,9 @@ export default function Comments() {
           <View style={{ flex: 1 }}>
             {loading ? (
               <ActivityIndicator color="#fff" size="large" style={{ flex: 1, justifyContent: 'center' }} />
-            ) : error ? (
-              <Text style={styles.errorText}>{error}</Text>
             ) : (
               <View>
-                {loadingTop && <ActivityIndicator color="#fff" size="large" style={{ flex: 1, justifyContent: 'center',position: "relative", top:20 }} />}
+                {loadingTop && <ActivityIndicator color="#888" size="small" style={{ flex: 1, justifyContent: 'center',position: "absolute", top:20, right: "50%", zIndex:2 }} />}
                 <FlatList
                   ref={listRef}
                   onViewableItemsChanged={onViewableItemsChanged.current}
@@ -424,7 +438,7 @@ export default function Comments() {
                   contentContainerStyle={{ paddingBottom: 80 }}
                   ListEmptyComponent={<Text style={styles.noComments}>کامنتی وجود ندارد.</Text>}
                 />
-                {loadingBottom && <ActivityIndicator color="#fff" size="large" style={{ flex: 1, justifyContent: 'center', position: "relative", bottom:20 }} />}
+                {loadingBottom && <ActivityIndicator color="#888" size="small" style={{ flex: 1, justifyContent: 'center', position: "absolute", bottom:20, right: "50%" }} />}
               </View>
             )}
           </View>
