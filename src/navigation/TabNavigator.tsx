@@ -5,7 +5,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Text, View, Platform, StyleSheet } from "react-native";
 import Home from "../screens/tabs/Home/Home";
 import LiveMatch from "../screens/tabs/LiveMatch";
-import Profile from "../screens/tabs/Profile";
+import Profile from "../screens/tabs/ProfileMe";
 import Telegram from "../screens/tabs/Telegram";
 import Comments from "../screens/tabs/Home/Comments";
 import {
@@ -22,7 +22,7 @@ import AppText from "../components/ui/AppText";
 const Tab = createBottomTabNavigator();
 
 export default function TabNavigator() {
-  const iconSize = Platform.select({ web: 22, default: 22 });
+  const iconSize = 25;
   const [isAuth, setIsAuth] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -52,7 +52,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
               <HouseIcon size={iconSize} outline={!focused} />
-              {/* <AppText style={[styles.iconText, focused && styles.activeText]}>خانه</AppText> */}
+              <AppText style={[styles.iconText, focused && styles.activeText]}>خانه</AppText>
             </View>
           ),
         }}
@@ -64,7 +64,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
               <TelegramIcon size={iconSize} outline={!focused} />
-              {/* <AppText style={[styles.iconText, focused && styles.activeText]}>تلگرام</AppText> */}
+              <AppText style={[styles.iconText, focused && styles.activeText]}>تلگرام</AppText>
             </View>
           ),
         }}
@@ -76,7 +76,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
               <FootballPitchIcon size={iconSize} outline={focused} />
-              {/* <AppText style={[styles.iconText, focused && styles.activeText]}>بازی‌ها</AppText> */}
+              <AppText style={[styles.iconText, focused && styles.activeText]}>بازی‌ها</AppText>
             </View>
           ),
         }}
@@ -88,7 +88,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
               <ProfileIcon size={iconSize} outline={!focused} />
-              {/* <AppText style={[styles.iconText, focused && styles.activeText]}>پروفایل</AppText> */}
+              <AppText style={[styles.iconText, focused && styles.activeText]}>پروفایل</AppText>
             </View>
           ),
         }}
@@ -100,9 +100,9 @@ export default function TabNavigator() {
 const styles = StyleSheet.create({
   tabBar: {
     backgroundColor: "#000",
-    paddingTop: 1,
+    paddingTop: 5,
     paddingBottom: 1,
-    height: 50,
+    height: 56,
     borderTopWidth: 0.4,
     borderColor: "#222"
   },
@@ -114,10 +114,10 @@ const styles = StyleSheet.create({
   iconText: {
     fontSize: 10,
     marginTop: 0,
-    color: "rgba(255, 255, 255, 0.4)",
+    color: "rgba(194, 194, 194, 1)",
   },
   activeText: {
-    color: "#ffffff",
+    color: "rgba(194, 194, 194, 1)",
   },
   centered: {
     flex: 1,
