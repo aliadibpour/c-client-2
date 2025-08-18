@@ -5,15 +5,42 @@ import MessageHeader from "./MessageHeader";
 import PhotoMessage from "./MessagePhoto";
 import VideoMessage from "./MessageVideo";
 import MessageReactions from "./MessageReaction";
-import { ArrowLeft } from "../../../assets/icons";
+import { ArrowLeftIcon } from "../../../assets/icons";
 
 const cleanText = (text: string): string => {
   return text
-    .replace(/[\p{Emoji}\s@‌\w]+@[\w_]+$/gu, "")
-    .replace(/@\w+$/gm, "")
-    .replace(/https?:\/\/\S+$/gm, "")
+    // پاک کردن لینک‌های تلگرام (مثلاً t.me یا telegram.me)
+    .replace(/https?:\/\/t\.me\/[^\s]+/gi, "")
+    .replace(/https?:\/\/telegram\.me\/[^\s]+/gi, "")
+
+    // پاک کردن mention ها (@username) مخصوصاً در انتهای متن
+    .replace(/\n*@\w+[^\n]*$/gm, "")
+
+    // پاک کردن pattern های "| کانال" در انتها
+    .replace(/\|\s*[^\n]+$/gm, "")
+
+    // حذف هشتگ‌ها (انگلیسی و فارسی)
+    .replace(/#[\p{L}0-9_]+/gu, "")
+
+    // حذف ایموجی‌ها (مخصوصاً آخر متن)
+    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]+/gu, "")
+
+    // حذف خط‌های خالی اضافی قبل از mention یا هشتگ یا ایموجی در انتهای متن
+    .replace(/(\n\s*)+(?=(?:@|#|[\p{Emoji_Presentation}\p{Extended_Pictographic}]))/gu, "\n")
+
+    // حذف خط‌های خالی در انتهای متن (اما وسط متن نگه می‌داره)
+    .replace(/(\n\s*)+$/g, "")
+
+    // حذف خطوطی که فقط کاراکترهای بی‌معنی مثل - _ . هستند
+    .replace(/^[\s\-_.]+$/gm, "")
+
+    // جمع کردن خط‌های خالی پشت سر هم (بیشتر از 2 → فقط 1)
+    .replace(/\n{3,}/g, "\n\n")
+
     .trim();
 };
+
+
 
 const getRelativeTime = (unixTimestamp: number): string => {
   const now = Date.now();
@@ -34,7 +61,7 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
   // همگام‌سازی prop با state داخلی
   useEffect(() => {
     setMessage(data);
-    console.log("new data come")
+    // console.log("new data come")
   }, [data]);
 
   const content = message?.content;
@@ -95,7 +122,7 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
         </Text>
       )}
 
-      {content?.photo && <PhotoMessage photo={content.photo} activeDownload={activeDownload} />}
+      {content?.photo && <PhotoMessage photo={content.photo} activeDownload={activeDownload} context="explore" />}
       {content?.video && <VideoMessage video={content.video} isVisible={isVisible} activeDownload={activeDownload} />}
 
       {message.interactionInfo?.reactions?.reactions?.length > 0 && (
@@ -124,7 +151,7 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
             <Text style={{ color: "#adadad", fontSize: 13.6, fontFamily: "SFArabic-Regular" }}>
               {message.interactionInfo.replyInfo.replyCount} کامنت
             </Text>
-            <ArrowLeft style={{ color: "#adadad" }} width={13.5} height={13.5} />
+            <ArrowLeftIcon style={{ color: "#adadad" }} width={13.5} height={13.5} />
           </View>
         </TouchableOpacity>
       )}
