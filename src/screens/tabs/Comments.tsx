@@ -17,15 +17,17 @@ import {
   ViewToken,
   DeviceEventEmitter,
   InteractionManager,
+  Keyboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ArrowLeftIcon } from "../../assets/icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import TdLib, { getMessage } from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
-import { ArrowLeft } from "lucide-react-native";
+import { ArrowLeft, Send, SendHorizonal } from "lucide-react-native";
 import MessageReactions from "../../components/tabs/home/MessageReaction";
 import { FlashList, FlashListRef } from "@shopify/flash-list";
+import Composer from "../../components/tabs/comments/CommentsKeyboard";
 
 type commentStateType = {comments:any[], start: number, end: number}[]
 export default function Comments() {
@@ -751,10 +753,16 @@ useEffect(() => {
   // };
 
 
+  const sendComment = async (text: string) => {
+    const a = await TdLib.addComment(threadInfo.chatId, threadInfo.messageThreadId, text)
+    console.log(a)
+  }
+
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0} // می‌تونی مقدار مناسب بدی
     >
       <StatusBar backgroundColor="#000" barStyle="light-content" />
       <ImageBackground
@@ -800,18 +808,10 @@ useEffect(() => {
                     ) : null}
                   />
             )}
+            
+            <Composer onSend={(text) => sendComment(text)} value={text} onChangeText={(e) => setText(e)}/>
           </View>
-
-          {/* Fixed Bottom Input */}
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="متنت رو بنویس..."
-              placeholderTextColor="#888"
-              value={text}
-              onChangeText={setText}
-            />
-          </View>
+          
 
           {showScrollToBottom && (
             <TouchableOpacity
@@ -947,14 +947,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderTopColor: '#333',
+    backgroundColor: '#111',
+    height:50,
+    justifyContent: "space-between",
+    paddingHorizontal:8
   },
   input: {
-    flex: 1,
-    height: 50,
-    backgroundColor: '#111',
     color: '#fff',
-    fontFamily: "SFArabic-Regular"
-
+    fontFamily: "SFArabic-Regular",
+    flex:1,
+    textAlign: "right"
   },
   preview: {
     marginTop: 20,
