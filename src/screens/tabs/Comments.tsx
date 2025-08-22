@@ -24,7 +24,7 @@ import { ArrowLeftIcon } from "../../assets/icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import TdLib, { getMessage } from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
-import { ArrowLeft, Send, SendHorizonal } from "lucide-react-native";
+import { ArrowLeft, Reply, Send, SendHorizonal } from "lucide-react-native";
 import MessageReactions from "../../components/tabs/home/MessageReaction";
 import { FlashList, FlashListRef } from "@shopify/flash-list";
 import Composer from "../../components/tabs/comments/CommentsKeyboard";
@@ -96,72 +96,82 @@ export default function Comments() {
 
 
   // تابع fetchComments دیگه نیازی به دریافت threadData نداره
-  const fetchComments = async (fromMessageId: number, offset: number, limit: number): Promise<any[]> => {
-    try {
-      const threadChatId = threadInfo?.chatId;
-      const threadMsg = threadInfo?.messages?.[0];
+const fetchComments = async (fromMessageId: number, offset: number, limit: number): Promise<any[]> => {
+  try {
+    const threadChatId = threadInfo?.chatId;
+    const threadMsg = threadInfo?.messages?.[0];
 
-      if (!threadChatId || !threadMsg?.id) {
-        return [];
-      }
-
-      const historyResponse: any = await TdLib.getMessageThreadHistory(
-        chatId,
-        messageId,
-        fromMessageId,
-        offset,
-        limit
-      );
-
-      const historyParsed = historyResponse?.raw ? JSON.parse(historyResponse.raw) : null;
-      console.log(historyParsed);
-
-      if (!Array.isArray(historyParsed?.messages)) {
-        return []
-      } else {
-        const merged = await Promise.all(
-          historyParsed.messages.map(async (msg: any) => {
-            const userId = msg?.senderId?.userId;
-            if (!userId) return { ...msg, user: null };
-            // if any comment replyTo another messsageId of the main post that has reply in chat
-            const isReply = msg.replyTo.messageId == threadInfo.messageThreadId ? false : true
-            let replyInfo
-            if (isReply) {
-              const allCommentsIds = comments.flatMap(c => c.comments.map(i => i.id))
-              if (allCommentsIds.includes(msg.replyTo.messageId)) {
-                replyInfo = allCommentsIds.find(i => i == msg.replyTo.messageId)
-              }
-              else {
-                const getReply = await TdLib.getMessage(msg.replyTo.chatId, msg.replyTo.messageId)
-                replyInfo = await JSON.parse(getReply.raw)
-              }
-            }
-
-            try {
-              const rawUser = await TdLib.getUserProfile(userId);
-              const user = JSON.parse(rawUser);
-              return {
-                ...msg,
-                user: {
-                  ...user,
-                  //avatarSmall: smallUri,
-                },
-                replyInfo
-              };
-            } catch (e) {
-              return { ...msg, user: null };
-            }
-          })
-        );
-
-        return merged.reverse()
-      }
-    } catch (err: any) {
-      return []
-    } finally {
-      setLoading(false);
+    if (!threadChatId || !threadMsg?.id) {
+      return [];
     }
-  };
+
+    // 1. گرفتن تاریخچه
+    const historyResponse: any = await TdLib.getMessageThreadHistory(
+      chatId,
+      messageId,
+      fromMessageId,
+      offset,
+      limit
+    );
+    const historyParsed = historyResponse?.raw ? JSON.parse(historyResponse.raw) : null;
+
+    if (!Array.isArray(historyParsed?.messages)) {
+      return [];
+    }
+
+    // 2. ترتیب درست (قدیمی → جدید)
+    const messages = historyParsed.messages.slice().reverse();
+
+    // 3. جمع کردن یوزرها
+    const userIds = [...new Set(messages.map((m: any) => m?.senderId?.userId).filter(Boolean))];
+    const rawUsers = await TdLib.getUsersCompat(userIds);
+    const users = JSON.parse(rawUsers);
+
+    // تبدیل به map برای lookup سریع
+    const usersMap = (users || []).reduce((acc: any, u: any) => {
+      acc[u.id] = u;
+      return acc;
+    }, {});
+
+    // 4. ساخت لیست پیام‌ها
+    const merged = await Promise.all(
+      messages.map(async (msg: any) => {
+        const userId = msg?.senderId?.userId;
+        let replyInfo;
+
+        // بررسی ریپلای
+        const isReply = msg.replyTo.messageId !== threadInfo.messageThreadId;
+        if (isReply) {
+          const allCommentsIds = comments.flatMap(c => c.comments.map(i => i.id));
+          if (allCommentsIds.includes(msg.replyTo.messageId)) {
+            replyInfo = allCommentsIds.find(i => i == msg.replyTo.messageId);
+          } else {
+            // fallback
+            try {
+              const getReply = await TdLib.getMessage(msg.replyTo.chatId, msg.replyTo.messageId);
+              replyInfo = JSON.parse(getReply.raw);
+            } catch {
+              replyInfo = null;
+            }
+          }
+        }
+
+        return {
+          ...msg,
+          user: userId ? usersMap[userId] || null : null,
+          replyInfo,
+        };
+      })
+    );
+
+    return merged;
+  } catch (err: any) {
+    return [];
+  } finally {
+    setLoading(false);
+  }
+};
+
 
 
   const renderComment = ({ item, index }: any) => {
@@ -205,8 +215,9 @@ export default function Comments() {
             {showAvatar && name ? <Text style={styles.username}>{name}</Text> : null}
             {item.replyInfo && (
               <TouchableOpacity style={styles.replyBox} onPress={() => handleReplyClick(item.replyInfo.id)}>
+                <Reply width={19} color={"#999"} style={{position: "relative", bottom: 3}}/>
                 <Text numberOfLines={1} style={styles.replyText}>
-                  🔁 {item.replyInfo?.content?.text?.text.slice(0, 30)}
+                  {item.replyInfo?.content?.text?.text.slice(0, 30)}
                 </Text>
               </TouchableOpacity>
             )}
@@ -307,6 +318,8 @@ export default function Comments() {
           limit <= PAGE_SIZE
             ? await fetchComments(topViewItem, 0, limit)
             : await fetchComments(topViewItem, 0, PAGE_SIZE);
+
+            console.log(fetched, "ffffff")
 
         const pos: any = await TdLib.getChatMessagePosition(
           threadInfo.chatId,
@@ -483,11 +496,11 @@ export default function Comments() {
           const beforeBox = newComments[indexBefore];
           const afterBox = newComments[indexAfter];
 
-          const mergedComments = dedupeById([
+          const mergedComments = [
             ...beforeBox.comments,
             ...getComments.reverse(),
             ...afterBox.comments,
-          ]);
+          ];
 
           const mergedBox = {
             comments: mergedComments,
@@ -808,7 +821,7 @@ useEffect(() => {
                     ) : null}
                   />
             )}
-            
+
             <Composer onSend={(text) => sendComment(text)} value={text} onChangeText={(e) => setText(e)}/>
           </View>
           
@@ -865,7 +878,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(31, 29, 29, 1)",
     borderRadius: 12,
     paddingBottom: 12,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     maxWidth: "85%",
     minWidth: "40%",
   },
@@ -903,7 +916,10 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 2,
     borderRadius: 8,
-    marginBottom: 6,
+    marginVertical: 6,
+    flexDirection: "row",
+    alignContent: "center",
+    gap:4
   },
   replyText: {
     color: "#ccc",
