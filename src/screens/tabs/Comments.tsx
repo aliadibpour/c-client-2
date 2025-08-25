@@ -29,19 +29,17 @@ import MessageReactions from "../../components/tabs/home/MessageReaction";
 import { FlashList, FlashListRef } from "@shopify/flash-list";
 import Composer from "../../components/tabs/comments/CommentsKeyboard";
 
-type commentStateType = {comments:any[], start: number, end: number}[]
+type commentStateType = {comments:any[], start: number, end: number}
 export default function Comments() {
   const route = useRoute();
   const navigation:any = useNavigation();
   const { chatId, messageId }: any = route.params || {};
 
-  const [comments, setComments] = useState<commentStateType>([]);
-  const [commentsBox, setCommentsBox] = useState<number>(0);
+  const [comments, setComments] = useState<commentStateType>({comments: [], start: 0, end:0});
+  const [isFetching, setIsFetching] = useState(false);
   const [commentsCount, setCommentsCount] = useState<any>();
   const [threadInfo, setThreadInfo] = useState<any>();
   const [loading, setLoading] = useState(true);
-  const [loadingBottom, setLoadingBottom] = useState<boolean>(false);
-  const [loadingTop, setLoadingTop] = useState<boolean>(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState<boolean | "loading">(false);
   const [text, setText] = useState('');
   const listRef = useRef<FlashListRef<any>>(null);
@@ -58,7 +56,7 @@ export default function Comments() {
       const threadResponse: any = await TdLib.getMessageThread(chatId, messageId);
       const threadParsed = threadResponse?.raw ? JSON.parse(threadResponse.raw) : null;
       console.log(threadParsed)
-
+      await TdLib.openChat(threadParsed?.chatId)
       if (threadParsed) {
         setThreadInfo(threadParsed);  // فقط اینجا Save می‌کنیم
         setCommentsCount(threadParsed.replyInfo.replyCount)
@@ -80,11 +78,11 @@ export default function Comments() {
         const getcommentStartPosition = await TdLib.getChatMessagePosition(threadInfo.chatId, getcomments[0].id, threadInfo.messageThreadId)
         const getcommentEndPosition = await TdLib.getChatMessagePosition(threadInfo.chatId, getcomments[getcomments.length -1].id, threadInfo.messageThreadId)
         console.log(getcommentStartPosition.count, getcommentEndPosition.count ,getcomments)
-        setComments([{
+        setComments({
           comments: getcomments,
           start: getcommentStartPosition.count,
           end: getcommentEndPosition.count
-        }])
+        })
 
         console.log(comments)
       }
@@ -96,7 +94,11 @@ export default function Comments() {
 
 
   // تابع fetchComments دیگه نیازی به دریافت threadData نداره
-const fetchComments = async (fromMessageId: number, offset: number, limit: number): Promise<any[]> => {
+const fetchComments = async (
+  fromMessageId: number,
+  offset: number,
+  limit: number
+): Promise<any[]> => {
   try {
     const threadChatId = threadInfo?.chatId;
     const threadMsg = threadInfo?.messages?.[0];
@@ -113,7 +115,9 @@ const fetchComments = async (fromMessageId: number, offset: number, limit: numbe
       offset,
       limit
     );
-    const historyParsed = historyResponse?.raw ? JSON.parse(historyResponse.raw) : null;
+    const historyParsed = historyResponse?.raw
+      ? JSON.parse(historyResponse.raw)
+      : null;
 
     if (!Array.isArray(historyParsed?.messages)) {
       return [];
@@ -123,7 +127,9 @@ const fetchComments = async (fromMessageId: number, offset: number, limit: numbe
     const messages = historyParsed.messages.slice().reverse();
 
     // 3. جمع کردن یوزرها
-    const userIds = [...new Set(messages.map((m: any) => m?.senderId?.userId).filter(Boolean))];
+    const userIds = [
+      ...new Set(messages.map((m: any) => m?.senderId?.userId).filter(Boolean)),
+    ];
     const rawUsers = await TdLib.getUsersCompat(userIds);
     const users = JSON.parse(rawUsers);
 
@@ -133,36 +139,55 @@ const fetchComments = async (fromMessageId: number, offset: number, limit: numbe
       return acc;
     }, {});
 
-    // 4. ساخت لیست پیام‌ها
-    const merged = await Promise.all(
-      messages.map(async (msg: any) => {
-        const userId = msg?.senderId?.userId;
-        let replyInfo;
+    // 4. جمع کردن همه replyId هایی که نیاز داریم
+    const knownIds = new Set(comments.comments.map((c) => c.id));
+    const replyIds = messages
+      .map((m: any) => m?.replyTo?.messageId)
+      .filter(Boolean)
+      .filter((id: any) => !knownIds.has(id));
 
-        // بررسی ریپلای
-        const isReply = msg.replyTo.messageId !== threadInfo.messageThreadId;
-        if (isReply) {
-          const allCommentsIds = comments.flatMap(c => c.comments.map(i => i.id));
-          if (allCommentsIds.includes(msg.replyTo.messageId)) {
-            replyInfo = allCommentsIds.find(i => i == msg.replyTo.messageId);
-          } else {
-            // fallback
-            try {
-              const getReply = await TdLib.getMessage(msg.replyTo.chatId, msg.replyTo.messageId);
-              replyInfo = JSON.parse(getReply.raw);
-            } catch {
-              replyInfo = null;
-            }
-          }
+    let repliesMap: Record<string, any> = {};
+    if (replyIds.length > 0) {
+      // chunk در صورتی که replyIds خیلی بزرگ باشه
+      const chunkSize = 100;
+      for (let i = 0; i < replyIds.length; i += chunkSize) {
+        const chunk = replyIds.slice(i, i + chunkSize);
+        try {
+          const repliesResponse = await TdLib.getMessagesCompat(chatId, chunk);
+          const repliesParsed = JSON.parse(repliesResponse.raw);
+          (repliesParsed.messages || []).forEach((r: any) => {
+            repliesMap[r.id] = r;
+          });
+        } catch {
+          // skip errors
         }
+      }
+    }
 
-        return {
-          ...msg,
-          user: userId ? usersMap[userId] || null : null,
-          replyInfo,
-        };
-      })
-    );
+    // 5. ساخت لیست پیام‌ها
+    const merged = messages.map((msg: any) => {
+      const userId = msg?.senderId?.userId;
+      let replyInfo = null;
+
+      if (msg?.replyTo?.messageId) {
+        // اول از cache (کامنت‌های موجود)
+        const existing = comments.comments.find(
+          (c) => c.id === msg.replyTo.messageId
+        );
+        if (existing) {
+          replyInfo = existing;
+        } else {
+          // بعد از batch repliesMap
+          replyInfo = repliesMap[msg.replyTo.messageId] || null;
+        }
+      }
+
+      return {
+        ...msg,
+        user: userId ? usersMap[userId] || null : null,
+        replyInfo,
+      };
+    });
 
     return merged;
   } catch (err: any) {
@@ -171,7 +196,6 @@ const fetchComments = async (fromMessageId: number, offset: number, limit: numbe
     setLoading(false);
   }
 };
-
 
 
   const renderComment = ({ item, index }: any) => {
@@ -185,7 +209,7 @@ const fetchComments = async (fromMessageId: number, offset: number, limit: numbe
     const avatarUri = user?.avatarSmall || base64Thumb;
     const firstLetter = user?.firstName?.[0]?.toUpperCase() || "?";
 
-    const previousMessage = comments[commentsBox].comments[index - 1];
+    const previousMessage = comments.comments[index - 1];
     const showAvatar =
       !previousMessage || previousMessage?.senderId?.userId !== item?.senderId?.userId;
 
@@ -214,7 +238,7 @@ const fetchComments = async (fromMessageId: number, offset: number, limit: numbe
           <View style={styles.bubble}>
             {showAvatar && name ? <Text style={styles.username}>{name}</Text> : null}
             {item.replyInfo && (
-              <TouchableOpacity style={styles.replyBox} onPress={() => handleReplyClick(item.replyInfo.id)}>
+              <TouchableOpacity style={styles.replyBox} onPress={() => handleReplyClick(item.id)}>
                 <Reply width={19} color={"#999"} style={{position: "relative", bottom: 3}}/>
                 <Text numberOfLines={1} style={styles.replyText}>
                   {item.replyInfo?.content?.text?.text.slice(0, 30)}
@@ -225,25 +249,25 @@ const fetchComments = async (fromMessageId: number, offset: number, limit: numbe
               {item?.content?.text?.text || "بدون متن"}
             </Text>
 
-              {item.interactionInfo?.reactions?.reactions?.length > 0 && (
-            <MessageReactions
-              reactions={item.interactionInfo.reactions.reactions}
-              chatId={item.chatId}
-              messageId={item.id}
-              onReact={(emoji) => console.log("🧡", emoji)}
-              customStyles={{
-                container: {
-                  justifyContent: "flex-start",
-                  marginTop: 8,
-                  paddingHorizontal: 0,
-                  marginBottom: 8,
-                },
-                reactionBox: { backgroundColor: "#333", paddingHorizontal: 0 },
-                selectedBox: { backgroundColor: "#666" },
-                emoji: { fontSize: 12 },
-                count: { color: "#ccc", fontWeight: "bold", fontSize: 11 },
-              }}
-            />
+            {item.interactionInfo?.reactions?.reactions?.length > 0 && (
+              <MessageReactions
+                reactions={item.interactionInfo.reactions.reactions}
+                chatId={item.chatId}
+                messageId={item.id}
+                onReact={(emoji) => console.log("🧡", emoji)}
+                customStyles={{
+                  container: {
+                    justifyContent: "flex-start",
+                    marginTop: 8,
+                    paddingHorizontal: 0,
+                    marginBottom: 8,
+                  },
+                  reactionBox: { backgroundColor: "#333", paddingHorizontal: 0 },
+                  selectedBox: { backgroundColor: "#666" },
+                  emoji: { fontSize: 12 },
+                  count: { color: "#ccc", fontWeight: "bold", fontSize: 11 },
+                }}
+              />
           )}
           </View>
 
@@ -253,378 +277,171 @@ const fetchComments = async (fromMessageId: number, offset: number, limit: numbe
     );
   };
 
-  useEffect(() => {
-    console.log(comments);
-    
-    const fetchOldOrNewComments = async () => {
-      if (!comments[commentsBox] || viewableItems.length === 0) return;
+  const handleEndReached = async () => {
+    if (!comments || isFetching) return;
+    if (comments.comments.length === 0) return;
 
-      const data = comments[commentsBox].comments;
-      const oldCommentsInSate = data.slice(0, 4).map(i => i.id);
-      const newCommentsInstate = data.slice(-4).map(i => i.id);
+    const lastItemId = comments.comments[comments.comments.length - 1].id;
+    if (lastItemId === threadInfo.replyInfo.lastMessageId) return;
 
-      const topViewItem = viewableItems[0].item.id;
-      const bottomViewItem = viewableItems[viewableItems.length - 1].item.id;
-
-      const oldComments = comments[0].comments.slice(0,5).map(item => item.id)
-
-      if (bottomViewItem === threadInfo.replyInfo.lastMessageId) return;
-      if (oldComments.includes(topViewItem)) return;
-      console.log("pass")
-      // --- Load newer comments (scroll down)
-      if (newCommentsInstate.includes(bottomViewItem)) {
-        console.log("paddes doen")
-        const endPosition = comments[commentsBox].end;
-        const limit =
-          comments[commentsBox + 1]?.end
-            ? comments[commentsBox + 1].start - comments[commentsBox].end
-            : PAGE_SIZE;
-
-        const fetched:any= await fetchComments(bottomViewItem, -PAGE_SIZE, PAGE_SIZE);
-        const pos: any = await TdLib.getChatMessagePosition(
-          threadInfo.chatId,
-          fetched[fetched.length - 1].id,
-          threadInfo.messageThreadId
-        );
-
-        setComments(prev => {
-          const updated = prev.map(item => {
-            if (item.end === endPosition) {
-              const allIds = prev.flatMap(m => m.comments.map(i => i.id));
-              const filtered = (fetched ?? []).filter((m:any) => !allIds.includes(m.id));
-              return {
-                ...item,
-                comments: [...item.comments, ...filtered],
-                end: pos.count
-              };
-            }
-            return item;
-          });
-          return mergeAdjacentChunks(updated);
-        });
-      }
-
-      // --- Load older comments (scroll up)
-      if (oldCommentsInSate.includes(topViewItem)) {
-        console.log("passe up")
-        console.log(oldCommentsInSate, topViewItem)
-        const startPosition = comments[commentsBox].start;
-        const limit =
-          comments[commentsBox - 1]?.end
-            ? comments[commentsBox - 1].end - comments[commentsBox].start
-            : PAGE_SIZE;
-
-        const fetched: any =
-          limit <= PAGE_SIZE
-            ? await fetchComments(topViewItem, 0, limit)
-            : await fetchComments(topViewItem, 0, PAGE_SIZE);
-
-            console.log(fetched, "ffffff")
-
-        const pos: any = await TdLib.getChatMessagePosition(
-          threadInfo.chatId,
-          fetched[0].id,
-          threadInfo.messageThreadId
-        );
-
-        setComments(prev => {
-          const updated = prev.map(item => {
-            if (item.start === startPosition) {
-              const allIds = prev.flatMap(m => m.comments.map(i => i.id));
-              const filtered = (fetched ?? []).filter((m:any) => !allIds.includes(m.id));
-              return {
-                ...item,
-                comments: [...filtered, ...item.comments],
-                start: pos.count
-              };
-            }
-            return item;
-          });
-          return mergeAdjacentChunks(updated);
-        });
-      }
-    };
-
-    fetchOldOrNewComments();
-    downloadVisibleProfilePhotos(viewableItems)
-  }, [viewableItems]);
-
-  // --- Utility to merge adjacent chunks ---
-  function mergeAdjacentChunks(arr: { comments: any[]; start: number; end: number }[]) {
-    if (arr.length <= 1) return arr;
-
-    const merged: typeof arr = [];
-    for (let i = 0; i < arr.length; i++) {
-      const current = arr[i];
-      const last = merged[merged.length - 1];
-
-      if (last && last.end === current.start) {
-        merged[merged.length - 1] = {
-          comments: [...last.comments, ...current.comments],
-          start: last.start,
-          end: current.end
-        };
-        setCommentsBox(prev => prev -1)
-      } else {
-        merged.push(current);
-      }
-    }
-    return merged;
-  }
-
-  
-  // Utility to dedupe by message ID
-  function dedupeById(arr: any[]) {
-    const map = new Map<number, any>();
-    arr.forEach(item => {
-      map.set(item.id, item);
-    });
-    return Array.from(map.values());
-  }
-
-  const handleReplyClick = async (messageId: number) => {
+    setIsFetching(true);
     try {
-      // --- 1) اگر پیام قبلاً در state هست، فقط روی همون باکس اسکرول کنیم
-      const existingBoxIndex = comments.findIndex(box =>
-        box.comments.some(c => c.id === messageId)
-      );
+      const getComments: any = await fetchComments(lastItemId, -PAGE_SIZE, PAGE_SIZE);
+      if (getComments.length === 0) return;
 
-      if (existingBoxIndex !== -1) {
-        console.log("is theree")
-        setCommentsBox(existingBoxIndex);
-        requestAnimationFrame(() => {
-          const commentIndex = comments[existingBoxIndex].comments.findIndex(c => c.id === messageId);
-          if (commentIndex >= 0) {
-            listRef.current?.scrollToIndex({
-              index: commentIndex,
-              animated: true,
-              viewPosition: 0.5,
-            });
-          }
-        });
-        return;
-      }
-
-      // --- 2) موقعیت پیام را از TDLib بگیریم
       const pos: any = await TdLib.getChatMessagePosition(
         threadInfo.chatId,
-        messageId,
+        getComments[getComments.length - 1].id,
         threadInfo.messageThreadId
       );
-      const messagePos = pos?.count;
-      if (messagePos == null) return;
 
-      const startPos = messagePos + 25;
-      const endPos = messagePos - 25;
+      setComments((prev) => {
+        const existingIds = new Set(prev.comments.map(c => c.id));
+        const uniqueNew = getComments.filter((c: any) => !existingIds.has(c.id));
 
-      let conflictBox: {boxIndex: number, distance: number, isbefore: boolean}[] = [];
-      comments.forEach((box, index) => {
-        if (box.start > startPos && startPos > box.end) {
-          conflictBox.push({boxIndex: index, distance: Math.abs(box.end - messagePos), isbefore: false});
-        } else if (box.start > endPos && endPos > box.end) {
-          conflictBox.push({boxIndex: index, distance: Math.abs(box.start - messagePos), isbefore: true});
-        }
+        return {
+          ...prev,
+          comments: [...prev.comments, ...uniqueNew],
+          end: pos.count,
+        };
       });
-
-      if (!conflictBox.length) {
-        const getComments: any[] = await fetchComments(messageId, -PAGE_SIZE / 2, PAGE_SIZE);
-        const data: commentStateType = [
-          ...comments,
-          { comments: dedupeById(getComments.reverse()), start: startPos, end: endPos }
-        ];
-        setComments(data.sort((a, b) => b.start - a.start));
-      } 
-      else if (conflictBox.length === 1) {
-        const target = conflictBox[0];
-        const getComments: any[] = target.isbefore
-          ? await fetchComments(messageId, -target.distance, Math.abs(PAGE_SIZE / 2 + target.distance))
-          : await fetchComments(messageId, -PAGE_SIZE / 2, target.distance);
-        console.log(getComments.some(i => i.id == messageId), "test some")
-        setComments(prev => {
-          const newComments = [...prev];
-          const targetBox = newComments[target.boxIndex];
-
-          // Merge with dedupe
-          const mergedComments =
-            target.isbefore
-              ? [...getComments.reverse(), ...targetBox.comments]
-              : [...targetBox.comments, ...getComments.reverse()]
-
-
-          newComments[target.boxIndex] = {
-            comments: mergedComments,
-            start: Math.max(targetBox.start, startPos),
-            end: Math.min(targetBox.end, endPos),
-          };
-
-          const sorted = newComments.sort((a, b) => b.start - a.start);
-          console.log(sorted,messageId, messagePos , "soarted")
-          const foundBoxIndex = sorted.findIndex(box =>
-            box.comments.some(c => c.id == messageId)
-          );
-          console.log(foundBoxIndex, "ssssssss", target.boxIndex)
-          if (foundBoxIndex !== -1) setCommentsBox(foundBoxIndex);
-
-          requestAnimationFrame(() => {
-            const commentIndex = sorted[foundBoxIndex].comments.findIndex(c => c.id == messageId);
-            console.log(commentIndex, "aaaaaaaaaaaaaaaaaaa")
-            if (commentIndex >= 0) {
-              listRef.current?.scrollToIndex({
-                index: commentIndex,
-                animated: true,
-                viewPosition: 0.5,
-              });
-            }
-          });
-
-
-          return sorted;
-        });
-      } 
-      else if (conflictBox.length === 2) {
-        const indexBefore = conflictBox.find(i => i.isbefore)!.boxIndex;
-        const indexAfter = conflictBox.find(i => !i.isbefore)!.boxIndex;
-
-        const getComments: any[] = await fetchComments(
-          messageId,
-          conflictBox.find(i => i.isbefore)!.distance,
-          conflictBox.find(i => !i.isbefore)!.distance
-        );
-
-        setComments(prev => {
-          const newComments = [...prev];
-          const beforeBox = newComments[indexBefore];
-          const afterBox = newComments[indexAfter];
-
-          const mergedComments = [
-            ...beforeBox.comments,
-            ...getComments.reverse(),
-            ...afterBox.comments,
-          ];
-
-          const mergedBox = {
-            comments: mergedComments,
-            start: Math.max(beforeBox.start, startPos, afterBox.start),
-            end: Math.min(beforeBox.end, endPos, afterBox.end),
-          };
-
-          const filtered = newComments.filter((_, idx) => idx !== indexBefore && idx !== indexAfter);
-          const sorted = [...filtered, mergedBox].sort((a, b) => b.start - a.start);
-
-          const foundBoxIndex = sorted.findIndex(box =>
-            box.comments.some(c => c.id === messageId)
-          );
-          if (foundBoxIndex !== -1) setCommentsBox(foundBoxIndex);
-
-          requestAnimationFrame(() => {
-            const commentIndex = sorted[foundBoxIndex].comments.findIndex(c => c.id == messageId);
-            console.log(commentIndex, "aaaaaaaaaaaaaaaaaaa")
-            if (commentIndex >= 0) {
-              listRef.current?.scrollToIndex({
-                index: commentIndex,
-                animated: true,
-                viewPosition: 0.5,
-              });
-            }
-          });
-
-          return sorted;
-        });
-      }
-    } catch (err) {
-      console.warn("handleReplyClick error:", err);
+    } finally {
+      setIsFetching(false);
     }
   };
 
 
+  const handleStartReached = async () => {
+    if (!comments || isFetching) return;
+    if (comments.comments.length === 0) return;
+
+    const firstItemId = comments.comments[0].id;
+
+    setIsFetching(true);
+    try {
+      const limit =
+        comments?.end
+          ? comments.start - comments.end
+          : PAGE_SIZE;
+
+      const getComments: any =
+        limit <= PAGE_SIZE
+          ? await fetchComments(firstItemId, -1, limit)
+          : await fetchComments(firstItemId, -1, PAGE_SIZE);
+
+      console.log(getComments, "the data")
+      if (getComments.length === 0) return;
+
+      const pos: any = await TdLib.getChatMessagePosition(
+        threadInfo.chatId,
+        getComments[0].id,
+        threadInfo.messageThreadId
+      );
+
+      setComments((prev) => {
+        const existingIds = new Set(prev.comments.map(c => c.id));
+        const uniqueNew = getComments.filter((c: any) => !existingIds.has(c.id));
+
+        return {
+          ...prev,
+          comments: [...uniqueNew, ...prev.comments],
+          start: pos.count,
+        };
+      });
+    } finally {
+      setIsFetching(false);
+    }
+  };
 
 
-const pendingScrollRef = useRef<number | null>(null);
+const handleReplyClick = async (messageId: number) => {
+  const existIndex = comments.comments.findIndex(i => i.id === messageId);
 
-// هر جا روی ریپلای کلیک شد:
-pendingScrollRef.current = messageId;
-
-// یک بار تعریف کن:
-useEffect(() => {
-  const mid = pendingScrollRef.current;
-  if (mid == null) return;
-
-  const box = comments[commentsBox];
-  if (!box) return;
-
-  const idx = box.comments.findIndex(c => c.id === mid);
-  if (idx >= 0) {
-    requestAnimationFrame(() => {
+  if (existIndex !== -1) {
+    // پیام موجوده → مستقیم اسکرول کن
+    InteractionManager.runAfterInteractions(() => {
       listRef.current?.scrollToIndex({
-        index: idx,
+        index: existIndex,
         animated: true,
         viewPosition: 0.5,
       });
-      pendingScrollRef.current = null; // تمیزکاری
     });
+  } else {
+    // پیام موجود نیست → لود کن
+    const getComments = await fetchComments(messageId, -PAGE_SIZE, PAGE_SIZE);
+
+    // مرتب‌سازی
+    const sortedComments = [...getComments].sort((a, b) => a.id - b.id);
+
+    // گرفتن پوزیشن‌ها
+    const startPos = await TdLib.getChatMessagePosition(
+      threadInfo.chatId,
+      sortedComments[sortedComments.length - 1].id,
+      threadInfo.messageThreadId
+    );
+    const endPos = await TdLib.getChatMessagePosition(
+      threadInfo.chatId,
+      sortedComments[0].id,
+      threadInfo.messageThreadId
+    );
+
+    // آپدیت استیت
+    setComments({
+      comments: sortedComments,
+      start: startPos.count,
+      end: endPos.count,
+    });
+
+    // ایندکس پیام هدف
+    const targetIndex = sortedComments.findIndex(i => i.id === messageId);
+
+    // اسکرول
+    if (targetIndex !== -1) {
+      InteractionManager.runAfterInteractions(() => {
+        listRef.current?.scrollToIndex({
+          index: targetIndex,
+          animated: true,
+          viewPosition: 0.5,
+        });
+      });
+    }
   }
-}, [comments, commentsBox]);
-
-
-
-
+};
 
 
   const scrollBottom = async () => {
-    console.log("scroll")
+    console.log("scroll");
     const lastComment = threadInfo.replyInfo.lastMessageId;
     if (!lastComment) {
       setShowScrollToBottom(false);
       return;
     }
-    const allComments = comments.flatMap(c => c.comments)
-    if (allComments.map(i => i.id).includes(lastComment)) {
-      setCommentsBox(comments.length -1)
+
+    const allIds = comments.comments.map(c => c.id);
+
+    if (allIds.includes(lastComment)) {
+      // already in state
       setShowScrollToBottom(false);
       listRef.current?.scrollToEnd({ animated: true });
     } else {
       setShowScrollToBottom("loading");
 
-      const lastCommentPositionInState = comments[comments.length - 1].end
+      const getComments = await fetchComments(lastComment, -1, PAGE_SIZE);
+        setComments({
+          comments: getComments,
+          start: PAGE_SIZE,
+          end: 1,
+        }
+      );
 
-      if (lastCommentPositionInState > PAGE_SIZE) {
-        const getComments = await fetchComments(lastComment, -1, PAGE_SIZE)
-        const commentBoxCount = comments.length
-        setComments(prev => [
-          ...prev,
-          {
-            comments: getComments ?? [],
-            start: PAGE_SIZE,
-            end: 1
-          }
-        ]);
-        setCommentsBox(commentBoxCount)
-      }
-      else if (lastCommentPositionInState <= PAGE_SIZE){
-        const getComments:any = await fetchComments(lastComment, -1, lastCommentPositionInState+1)
-        setComments(prev =>
-          prev.map(item => {
-            if (item.end === lastCommentPositionInState) {
-              const ids = prev.map(m => m.comments.map(i => i.id))
-              const filtered = getComments.filter((m:any) => !ids[0].includes(m.id))
-              return {
-                ...item,
-                comments: [...item.comments, ...(filtered ?? [])],
-                end: 1
-              };
-            }
-            return item;
-          })
-        );
-      }
-      // await new Promise(r => setTimeout(r, 5000));
+
       InteractionManager.runAfterInteractions(() => {
         listRef.current?.scrollToEnd({ animated: true });
         setShowScrollToBottom(false);
       });
     }
-    console.log(comments[commentsBox], "pool")
   };
+
 
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -633,9 +450,13 @@ useEffect(() => {
   };
   
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    console.log(comments, "state")
     setViewableItems(viewableItems);
   });
 
+  useEffect(() => {
+    downloadVisibleProfilePhotos(viewableItems)
+  }, [viewableItems])
 
   const downloadVisibleProfilePhotos = async (viewableItems: { item: any }[]) => {
     if (!viewableItems || viewableItems.length === 0) return;
@@ -674,96 +495,117 @@ useEffect(() => {
 
     if (updates.length === 0) return;
 
-    // اعمال تغییرات روی state بدون mutate کل state
-    setComments(prev =>
-      prev.map(box => ({
-        ...box,
-        comments: box.comments.map(c => {
-          const update = updates.find(u => u.itemId === c.id);
-          if (!update) return c;
-          return {
-            ...c,
-            user: {
-              ...update.parsedUser,
-              avatarSmall: update.smallUri,
-            },
-          };
-        }),
-      }))
-    );
+    setComments(prev => ({
+      ...prev,
+      comments: prev.comments.map(c => {
+        const update = updates.find(u => u.itemId === c.id);
+        if (!update) return c;
+        return {
+          ...c,
+          user: {
+            ...update.parsedUser,
+            avatarSmall: update.smallUri,
+          },
+        };
+      }),
+    }));
+
+
+
   };
 
-  //handle updates
-  // useEffect(() => {
-  //   const subscription = DeviceEventEmitter.addListener("tdlib-update", async (event) => {
-  //     try {
-  //       const update = JSON.parse(event.raw);
-  //       const { type, data } = update;
+  // handle updates
+useEffect(() => {
+  const subscription = DeviceEventEmitter.addListener("tdlib-update", async (event) => {
+    try {
+      const update = JSON.parse(event.raw);
+      const { type, data } = update;
 
-  //       if (!data || data.chatId !== chatId) return;
+      if (!data || data.chatId !== chatId) return;
 
-  //       switch (type) {
-  //         case "UpdateNewMessage":
-  //           handleNewComment(data);
-  //           break;
+      switch (type) {
+        case "UpdateNewMessage":
+          handleNewComment(data);
+          break;
 
-  //         case "UpdateDeleteMessages":
-  //           handleDeleteComments(data);
-  //           break;
+        case "UpdateDeleteMessages":
+          handleDeleteComments(data);
+          break;
 
-  //         case "UpdateMessageInteractionInfo":
-  //           handleInteractionUpdate(data);
-  //           break;
+        case "UpdateMessageInteractionInfo":
+          console.log(data)
+          handleInteractionUpdate(data);
+          break;
 
-  //         case "UpdateChatLastMessage":
-  //           if (data?.lastMessage?.id === threadInfo?.replyInfo?.lastMessageId) {
-  //             // شاید پیام اصلی باشد
-  //             handleNewComment(data.lastMessage);
-  //           }
-  //           break;
+        case "UpdateChatLastMessage":
+          if (data?.lastMessage?.id === threadInfo?.replyInfo?.lastMessageId) {
+            handleNewComment(data.lastMessage);
+          }
+          break;
 
-  //         default:
-  //           return;
-  //       }
-  //     } catch (err) {
-  //       console.warn("Invalid tdlib update:", event);
-  //     }
-  //   });
+        default:
+          return;
+      }
+    } catch (err) {
+      console.warn("Invalid tdlib update:", event);
+    }
+  });
 
-  //   return () => subscription.remove();
-  // }, [chatId, messageId, threadInfo]);
+  return () => subscription.remove();
+}, [chatId, messageId, threadInfo]);
 
-  // const handleNewComment = (message: any) => {
-  //   setComments((prev) => {
-  //     const exists = prev.some((msg) => msg.id === message.id);
-  //     if (exists) return prev;
-  //     return [...prev, message];
-  //   });
-  // };
+const handleNewComment = (message: any) => {
+  setComments((prev) => {
+    const exists = prev.comments.some((msg) => msg.id === message.id);
+    if (exists) return prev;
 
-  // const handleDeleteComments = (data: any) => {
-  //   const { messageIds } = data;
-  //   setComments((prev) => prev.filter((msg) => !messageIds.includes(msg.id)));
-  // };
+    const updatedComments = [...prev.comments, message];
 
-  // const handleInteractionUpdate = (data: any) => {
-  //   console.log("intraction info calllllllllllllll")
-  //   const { messageId, interactionInfo } = data;
-  //   setComments((prev) =>
-  //     prev.map((msg) => {
-  //       if (msg.id === messageId) {
-  //         return {
-  //           ...msg,
-  //           interactionInfo: {
-  //             ...msg.interactionInfo,
-  //             ...interactionInfo,
-  //           },
-  //         };
-  //       }
-  //       return msg;
-  //     })
-  //   );
-  // };
+    setCommentsCount((c:any) => c + 1);
+
+    return {
+      ...prev,
+      comments: updatedComments,
+      end: prev.end + 1, // اگر end نمایانگر تعداد کل است
+    };
+  });
+};
+
+const handleDeleteComments = (data: any) => {
+  const { messageIds } = data;
+
+  setComments((prev) => {
+    const updatedComments = prev.comments.filter((msg) => !messageIds.includes(msg.id));
+
+    setCommentsCount((c:any) => c - messageIds.length);
+
+    return {
+      ...prev,
+      comments: updatedComments,
+      end: prev.end - messageIds.length,
+    };
+  });
+};
+
+const handleInteractionUpdate = (data: any) => {
+  const { messageId, interactionInfo } = data;
+
+  setComments((prev) => ({
+    ...prev,
+    comments: prev.comments.map((msg) => {
+      if (msg.id === messageId) {
+        return {
+          ...msg,
+          interactionInfo: {
+            ...msg.interactionInfo,
+            ...interactionInfo,
+          },
+        };
+      }
+      return msg;
+    }),
+  }));
+};
 
 
   const sendComment = async (text: string) => {
@@ -795,26 +637,31 @@ useEffect(() => {
 
           {/* Main Content */}
           <View style={{ flex: 1 }}>
-            {loading ? (
+            {comments.comments.length == 0 ? (
               <ActivityIndicator color="#fff" size="large" style={{ flex: 1, justifyContent: 'center' }} />
             ) : (
                 <FlashList
                     ref={listRef}
-                    data={comments[commentsBox]?.comments || []}
+                    data={comments?.comments || []}
                     keyExtractor={(item: any) => item.id?.toString() ?? Math.random().toString()}
                     renderItem={({ item, index }) => renderComment({ item, index })}
                     onViewableItemsChanged={onViewableItemsChanged.current}
                     viewabilityConfig={{ itemVisiblePercentThreshold: 40 }}
                     onScroll={handleScroll}
                     contentContainerStyle={{ paddingBottom: 0 }}
-                    maintainVisibleContentPosition={undefined}
 
-                    ListHeaderComponent={comments[commentsBox]?.start !== commentsCount ? (
+                    onEndReached={handleEndReached}
+                    onStartReached={handleStartReached}
+                    
+                    removeClippedSubviews={false}
+                    drawDistance={1000} // آیتم‌های بیشتری رو توی حافظه نگه دار
+
+                    ListHeaderComponent={comments?.start !== commentsCount && comments.comments.length ? (
                       <View style={{ justifyContent: 'center', alignItems: 'center', paddingVertical: 10 }}>
                         <ActivityIndicator color="#888" size="small" />
                       </View>
                     ) : null}
-                    ListFooterComponent={comments[commentsBox]?.end !== 1 ? (
+                    ListFooterComponent={comments?.end !== 1 && comments.comments.length ? (
                       <View style={{ justifyContent: 'center', alignItems: 'center', paddingVertical: 10 }}>
                         <ActivityIndicator color="#888" size="small" />
                       </View>
@@ -869,6 +716,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     marginVertical: 6,
     paddingHorizontal: 6,
+    
   },
   bubbleContainer: {
     flexShrink: 1,
