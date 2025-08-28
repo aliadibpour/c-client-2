@@ -1,16 +1,13 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Platform, StyleSheet, View } from 'react-native';
-import { DefaultTheme, NavigationContainer, ThemeProvider } from '@react-navigation/native';
+import { DefaultTheme, NavigationContainer, ThemeProvider, useNavigation } from '@react-navigation/native';
 import React, { useCallback, useEffect, useState } from 'react';
 import RootNavigator from './src/navigation/RootNavigatore';
-import TdLib, { TdLibParameters } from 'react-native-tdlib';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TelegramService } from './src/services/TelegramService';
 import { StatusBar } from "react-native";
 
-
 function App(): React.JSX.Element {
-
   const MyDarkTheme = {
     ...DefaultTheme,
     colors: {
@@ -21,19 +18,13 @@ function App(): React.JSX.Element {
     },
   };
 
-
   useEffect(() => {
-    const setAuthJwt = async() => {
-      //await AsyncStorage.clear()
-      const authStatus = await AsyncStorage.getItem("auth-status");
-      if (!authStatus) await AsyncStorage.setItem("auth-status", JSON.stringify({register: false, route: "Intro"}))// to default open intro screen
+    const configTdlib = async () => {
+      await TelegramService.start()
+      const authState = await TelegramService.getAuthState()
+      console.log(authState.data)
     }
-    setAuthJwt()
-  },[])
-
-  useEffect(() => {
-    TelegramService.start()
-    TelegramService.getAuthState()
+    configTdlib()
   }, []);
 
   return (

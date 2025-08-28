@@ -13,6 +13,7 @@ export default function MessageHeader({ chatId }: any) {
 
   useEffect(() => {
     const fetchChatInfo = async () => {
+      if (!chatId) return
       try {
         const result: any = await TdLib.getChat(chatId);
         const chat = JSON.parse(result.raw);

@@ -15,10 +15,12 @@ import { cancelDownload } from "../../../hooks/useMediaDownloadManager";
 interface Props {
   photo: any;
   context?: "channel" | "explore";
-  activeDownload?:any
+  activeDownload?:any;
+  width?: number;
+  height?: number;
 }
 
-export default function MessagePhoto({ photo, context = "channel", activeDownload }: Props) {
+export default function MessagePhoto({ photo, context = "channel", activeDownload , width, height}: Props) {
   const [photoPath, setPhotoPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const navigation: any = useNavigation();
@@ -114,8 +116,8 @@ export default function MessagePhoto({ photo, context = "channel", activeDownloa
       <TouchableOpacity onPress={handleOpenFull} disabled={loading}>
       <View
         style={{
-          width: displayWidth < screenWidth * 0.72 ? screenWidth * 0.72 : displayWidth,
-          height: displayHeight < 160 ? 160 : displayHeight, // حداقل ارتفاع
+          width: width ? width : displayWidth < screenWidth * 0.72 ? screenWidth * 0.72 : displayWidth,
+          height: height ? height : displayHeight < 160 ? 160 : displayHeight, // حداقل ارتفاع
           borderRadius: context !== "channel" ? 10 : '',
           borderBottomLeftRadius: context === "channel" ? 3: "",
           borderBottomRightRadius: context === "channel" ? 3 : "",

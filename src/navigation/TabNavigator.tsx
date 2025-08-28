@@ -7,7 +7,7 @@ import Home from "../screens/tabs/Home/Home";
 import LiveMatch from "../screens/tabs/LiveMatch";
 import Profile from "../screens/tabs/ProfileMe";
 import Telegram from "../screens/tabs/Telegram";
-import Comments from "../screens/tabs/Home/Comments";
+import Comments from "../screens/tabs/Comments";
 import {
   HouseIcon,
   TelegramIcon,
@@ -16,7 +16,6 @@ import {
   CommentsIcon,
 } from "../assets/icons/index";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import PickTeams from "../screens/setup/PickTeams";
 import AppText from "../components/ui/AppText";
 
 const Tab = createBottomTabNavigator();

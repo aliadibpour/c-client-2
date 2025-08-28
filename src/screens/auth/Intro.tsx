@@ -108,7 +108,7 @@ export default function IntroScreen({ navigation }: any) {
         {/* نمایش لوگو فقط در اسلاید اول */}
         {slide.key === 'slide1' && (
           <Image
-            source={require('../../assets/images/logo.jpg')}
+            source={require('../../assets/images/corner-logo.png')}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -212,10 +212,8 @@ const styles = StyleSheet.create({
   logo: {
     width: 70,
     height: 70,
-    borderRadius: 45,
+    borderRadius: 10,
     position: 'absolute',
-    bottom: 135,
-    borderColor: "#777",
-    borderWidth:2
+    bottom: 140,
   },
 });

@@ -5,7 +5,6 @@ import {
   startDownload,
   cancelDownload,
 } from "../../../hooks/useMediaDownloadManager";
-import CustomVideoPlayer from "./CustomVideoPlayer";
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -41,7 +40,7 @@ export default function MessageVideo({ video, isVisible, context = "channel", ac
   // ✅ اندازه‌ها بر اساس context
   const maxWidth = screenWidth * 0.92;
   const minWidth = screenWidth * 0.65;
-  const maxHeight = 360;
+  const maxHeight = 320;
 
   let displayWidth = Math.min(originalWidth, maxWidth);
   displayWidth = Math.max(displayWidth, minWidth);

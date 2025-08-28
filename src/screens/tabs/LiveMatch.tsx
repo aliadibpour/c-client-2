@@ -34,7 +34,7 @@ export default function LiveMatchScreen() {
   const scrollViewRef = useRef<Animated.FlatList>(null);
 
   useEffect(() => {
-    socketRef.current = io("http://192.168.1.100:3100", {
+    socketRef.current = io("http://192.168.1.103:3100", {
       transports: ["websocket"],
     });
 

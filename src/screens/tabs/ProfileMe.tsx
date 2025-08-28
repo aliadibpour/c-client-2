@@ -17,7 +17,7 @@ import TdLib from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { teamImages } from "../setup/PickTeams";
-import { Edit, Edit2, Edit2Icon, Edit3, EditIcon, FileHeart, Heart, HeartCrack, HeartHandshake, HeartIcon, HeartMinus, LogOut, Phone, PhoneCall, PhoneIcon, PhoneIncoming, User } from "lucide-react-native";
+import { Edit2, Heart, LogOut, Phone, User } from "lucide-react-native";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -35,7 +35,7 @@ type Profile = {
 };
 
 export default function ProfileScreen({ navigation }: any) {
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<any>(null);
   const [photos, setPhotos] = useState<string[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -65,6 +65,7 @@ export default function ProfileScreen({ navigation }: any) {
         setLoadingPhotos(true);
         const photoListRaw = await TdLib.getUserProfilePhotos(profile.id, 0, 10);
         const parsedPhotos = JSON.parse(photoListRaw);
+        console.log(parsedPhotos, "ali adib")
         const uris: string[] = [];
 
         for (let photo of parsedPhotos.photos || []) {
@@ -77,13 +78,12 @@ export default function ProfileScreen({ navigation }: any) {
           }
         }
 
-        const reversed = uris.reverse();
-        setPhotos(reversed);
-        setCurrentIndex(reversed.length - 1);
+        setPhotos(uris);
+        setCurrentIndex(uris.length - 1);
 
         setTimeout(() => {
           flatListRef.current?.scrollToIndex({
-            index: reversed.length - 1,
+            index: uris.length - 1,
             animated: false,
           });
         }, 100);
@@ -117,7 +117,7 @@ export default function ProfileScreen({ navigation }: any) {
 
   const renderFallback = () => {
     if (profile?.profilePhoto?.minithumbnail?.data) {
-      const base64 = fromByteArray(profile.profilePhoto.minithumbnail.data as any);
+      const base64 = fromByteArray(profile?.profilePhoto?.minithumbnail?.data as any);
       return (
         <View>
           <Image
@@ -127,21 +127,14 @@ export default function ProfileScreen({ navigation }: any) {
         </View>
       );
     }
-
     return (
       <View style={styles.placeholder}>
         <Text style={styles.initial}>
-          {profile?.firstName?.[0]?.toUpperCase() || "?"}
+          {profile?.firstName?.[0]?.toUpperCase() || <ActivityIndicator color={"#999"} />}
         </Text>
       </View>
     );
   };
-
-  const renderName = () => (
-    <Text style={styles.nameText}>
-      {profile?.firstName} {profile?.lastName}
-    </Text>
-  );
 
   const renderInformation = () => (
     <View style={styles.informationBox}>
@@ -294,7 +287,9 @@ export default function ProfileScreen({ navigation }: any) {
       )}
 
       {/* اینجا ثابت میذاریم پایین عکس */}
-      {renderName()}
+      <Text style={styles.nameText}>
+        {profile?.firstName} {profile?.lastName}
+      </Text>
 
       {renderInformation()}
       {renderFavoriteTeams()}
@@ -303,7 +298,7 @@ export default function ProfileScreen({ navigation }: any) {
       <View style={{backgroundColor: "#111", paddingVertical: 10, paddingHorizontal: 10, marginTop: 15}}>
         <TouchableOpacity style={{gap :8, alignItems: "center", flexDirection:"row"}}>
           <LogOut color={"#999"} width={15.6}/>
-          <Text style={{fontSize: 14, fontFamily: "SFArabic-Regular", color: "#ddd"}}>خروج از حساب کاربری</Text>
+          <Text style={{fontSize: 15, fontFamily: "SFArabic-Regular", color: "#ddd"}}>خروج از حساب کاربری</Text>
         </TouchableOpacity>
       </View>
 
@@ -327,7 +322,7 @@ const styles = StyleSheet.create({
   placeholder: {
     width: SCREEN_WIDTH,
     height: 370,
-    backgroundColor: "#444",
+    backgroundColor: "#222",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -395,7 +390,7 @@ const styles = StyleSheet.create({
   },
   infoValue: {
     color: "#ccc",
-    fontSize: 16,
+    fontSize: 15,
     textAlign: "right",
     fontFamily: "SFArabic-Regular",
   },
@@ -414,7 +409,7 @@ const styles = StyleSheet.create({
   },
   favoritesTitle: {
     color: '#ddd',
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: 'SFArabic-Regular',
     marginBottom: 10,
   },

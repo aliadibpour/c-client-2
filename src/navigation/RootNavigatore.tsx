@@ -7,10 +7,11 @@ import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
 import PickTeamsScreen from '../screens/setup/PickTeams';
 import RankTeamsScreen from '../screens/setup/RankTeams';
-import Comments from '../screens/tabs/Home/Comments';
+import Comments from '../screens/tabs/Comments';
 import FullPhotoScreen from '../screens/tabs/Home/FullPhotoScreen';
 import ChannelScreen from '../screens/tabs/Channel';
 import ChannelDetailScreen from '../screens/tabs/ChannelDetail.Screen';
+import ProfileUser from '../screens/tabs/ProfileUser';
 
 const Stack = createNativeStackNavigator<any>();
 
@@ -35,6 +36,7 @@ function RootStack({ isAuth }: { isAuth: string }) {
       <Stack.Screen name="Priority" component={RankTeamsScreen} />
       <Stack.Screen name="Comments" component={Comments} />
       <Stack.Screen name="FullPhoto" component={FullPhotoScreen} />
+      <Stack.Screen name="ProfileUser" component={ProfileUser} />
       <Stack.Screen name="Channel" component={ChannelScreen} />
       <Stack.Screen name="ChannelDetail" component={ChannelDetailScreen} />
     </Stack.Navigator>
@@ -47,10 +49,12 @@ export default function RootNavigator() {
   useEffect(() => {
     const checkAuth = async () => {
       //await AsyncStorage.removeItem("auth-status")
-      //await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "home" }))
+      await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "Inrto" }))
       const authStatus = await AsyncStorage.getItem('auth-status');
       const teams = await AsyncStorage.getItem("teams")
+      const userId = await AsyncStorage.getItem("userId-corner")
       console.log(teams, authStatus, ';;;');
+      console.log(userId);
       setIsAuth(JSON.parse(authStatus || '{"status": "auth"}').status);
     };
 

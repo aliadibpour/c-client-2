@@ -57,6 +57,11 @@ const LoginScreen = ({ navigation }: any) => {
             await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "Verify"}));
             await AsyncStorage.setItem("phone-number", JSON.stringify({ phoneNumber }))
             navigation.navigate("Verify", { phoneNumber: fullNumber });
+
+            const saveUserId = await fetch("http://192.168.1.101:9000/save-user")
+            const response = await saveUserId.json()
+            console.log(response, "save user id response");
+            await AsyncStorage.setItem("userId-corner", JSON.stringify({ uuid: response.uuid }));
             return;
           }
 

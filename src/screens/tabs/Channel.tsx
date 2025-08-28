@@ -391,6 +391,7 @@ export default function ChannelScreen({ route }: any) {
         <FlatList
           ref={listRef}
           keyExtractor={(item) => item.id?.toString()}
+          style={{paddingHorizontal: 8}}
           data={groupedMessages}
           renderItem={({ item }) => {
             if (item.type === "album") {

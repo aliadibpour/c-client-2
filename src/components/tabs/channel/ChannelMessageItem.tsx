@@ -242,7 +242,6 @@ const styles = StyleSheet.create({
     fontFamily: "SFArabic-Regular",
     lineHeight: 24,
     padding: 10,
-    paddingTop: 2,
   },
   commentText: {
     color: "#54afff",

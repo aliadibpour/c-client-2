@@ -35,7 +35,7 @@ export default function RankTeamsScreen({ route, navigation }: any) {
       const second = winner;
       const third = loser;
       await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "home"}));
-      await AsyncStorage.setItem("teams", JSON.stringify({ team1: finalWinner.name , team2: second.name , team3: third.name}));
+      await AsyncStorage.setItem("teams", JSON.stringify({ team1: finalWinner.name , team2: second.name , team3: third.name || null}));
       navigation.navigate('Tabs');
     }
   };
