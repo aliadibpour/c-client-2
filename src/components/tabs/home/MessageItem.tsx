@@ -91,7 +91,7 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
       borderBottomWidth: 1,
       paddingVertical: 15,
     }}>
-      <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 7 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
         <MessageHeader chatId={message.chatId} />
         <Text style={{ color: "#999", fontSize: 12.4, fontFamily: "SFArabic-Regular", marginBottom: 6 }}>
           {getRelativeTime(message.date)}
@@ -100,8 +100,8 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
 
       {!!cleanedCaption && (
         <Text style={{
-          color: "#f2f2f2",
-          marginBottom: 11,
+          color: "#ccc",
+          marginBottom: 10,
           fontSize: 14,
           fontFamily: "SFArabic-Regular",
           lineHeight: 25,
@@ -112,8 +112,8 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
 
       {!!cleanedText && (
         <Text style={{
-          color: "#f2f2f2",
-          marginBottom: 11,
+          color: "#ccc",
+          marginBottom: 10,
           fontSize: 14,
           fontFamily: "SFArabic-Regular",
           lineHeight: 25,
