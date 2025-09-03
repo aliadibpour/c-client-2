@@ -30,8 +30,9 @@ export default function HomeHeader() {
   const [teams, setTeams] = useState<any>()
   useEffect(() => {
     const getTeams = async () => {
-        const teams = await AsyncStorage.getItem("teams")
+        const teams:any = await AsyncStorage.getItem("teams")
         setTeams(teams ? JSON.parse(teams) : null)
+        setTeams(teams?.length > 1 ? ["برای شما", ...Object.values(JSON.parse(teams))] : ["برای شما"])
         console.log(teams)
     }
 
@@ -40,26 +41,25 @@ export default function HomeHeader() {
 
   const [activeTab, setActiveTab] = useState("برای شما");
 
-  const tabs = ["برای شما", ...(teams ? Object.values(teams) : [])];
-
   return (
     <View style={styles.headerContainer}>
         <Image source={require("../../../assets/images/corner-logo.png")} style={styles.logo} />
 
     <FlatList
-        data={tabs}
+        data={teams}
         horizontal
         showsHorizontalScrollIndicator={false}
         keyExtractor={(item:any, index) => `${item}-${index}`}
         renderItem={({ item }) => {
           const isActive = activeTab === item;
           return (
-            <TouchableOpacity onPress={() => setActiveTab(item)}>
-              <View style={[styles.tabItem, isActive && styles.activeTab]}>
+            <TouchableOpacity onPress={() => setActiveTab(item)} style={[styles.tabItem, isActive && styles.activeTab]}>
+              {
+                teamImages[item] ? <Image source={teamImages[item]} style={{ width: 16, height: 16, marginBottom: -2, marginHorizontal: 6 }} /> : null
+              }
                 <Text style={[styles.tabText, isActive && styles.activeTabText]}>
                   {item}
                 </Text>
-              </View>
             </TouchableOpacity>
           );
         }}
@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
   headerContainer: {
     borderColor: "#222",
     borderBottomWidth: .7,
-    gap: 10,
+    gap: 9,
     paddingHorizontal: 14,
     paddingTop: 5,
     backgroundColor: "#000000d7",
@@ -86,10 +86,12 @@ const styles = StyleSheet.create({
   },
     tabItem: {
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
-    marginRight: 8,
+    marginRight: 5,
+    flexDirection: "row",
+    alignItems: "center"
   },
   activeTab: {
     borderBottomColor: "#e6e6e6ff", // آبی شبیه X
