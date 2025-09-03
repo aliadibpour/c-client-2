@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
   teamItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.12)',
+    backgroundColor: 'rgba(224, 222, 222, 0.12)',
     padding: 10,
     borderRadius: 10,
     width: 70, 
