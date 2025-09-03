@@ -78,7 +78,7 @@ export default function MessageHeader({ chatId }: any) {
       <Text
         style={{
           fontSize: 16,
-          marginLeft: 10,
+          marginLeft: 7,
           fontFamily: "SFArabic-Heavy",
           color: "white",
         }}

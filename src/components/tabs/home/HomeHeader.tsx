@@ -73,14 +73,14 @@ const styles = StyleSheet.create({
     borderColor: "#222",
     borderBottomWidth: .7,
     gap: 9,
-    paddingHorizontal: 14,
+    paddingHorizontal: 1,
     paddingTop: 5,
     backgroundColor: "#000000d7",
     overflow: "scroll",
   },
   logo: {
-    width: 20.5,
-    height: 20.5,
+    width: 22.5,
+    height: 22.5,
     borderRadius: 5,
     marginHorizontal: "auto"
   },

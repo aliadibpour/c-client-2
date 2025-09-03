@@ -120,7 +120,6 @@ export default function MessageVideo({ video, isVisible, context = "channel", ac
               didSetPathRef.current = true;
               setVideoPath(uri);
               setLoading(false);
-              console.log("[MessageVideo] setVideoPath from updateFile:", uri, "completed:", isCompleted);
             } else {
               console.log("[MessageVideo] updateFile: localPath exists but below threshold:", downloadedSize);
             }
