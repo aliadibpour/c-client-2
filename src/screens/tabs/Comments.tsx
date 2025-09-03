@@ -238,7 +238,7 @@ const fetchComments = async (
           <View style={styles.bubble}>
             {showAvatar && name ? <Text style={styles.username}>{name}</Text> : null}
             {item.replyInfo && (
-              <TouchableOpacity style={styles.replyBox} onPress={() => handleReplyClick(item.id)}>
+              <TouchableOpacity style={styles.replyBox} onPress={() => handleReplyClick(item.replyInfo.id)}>
                 <Reply width={19} color={"#999"} style={{position: "relative", bottom: 3}}/>
                 <Text numberOfLines={1} style={styles.replyText}>
                   {item.replyInfo?.content?.text?.text.slice(0, 30)}
@@ -354,59 +354,59 @@ const fetchComments = async (
   };
 
 
-const handleReplyClick = async (messageId: number) => {
-  const existIndex = comments.comments.findIndex(i => i.id === messageId);
+  const handleReplyClick = async (messageId: number) => {
+    const existIndex = comments.comments.findIndex(i => i.id === messageId);
 
-  if (existIndex !== -1) {
-    // پیام موجوده → مستقیم اسکرول کن
-    InteractionManager.runAfterInteractions(() => {
-      listRef.current?.scrollToIndex({
-        index: existIndex,
-        animated: true,
-        viewPosition: 0.5,
-      });
-    });
-  } else {
-    // پیام موجود نیست → لود کن
-    const getComments = await fetchComments(messageId, -PAGE_SIZE, PAGE_SIZE);
-
-    // مرتب‌سازی
-    const sortedComments = [...getComments].sort((a, b) => a.id - b.id);
-
-    // گرفتن پوزیشن‌ها
-    const startPos = await TdLib.getChatMessagePosition(
-      threadInfo.chatId,
-      sortedComments[sortedComments.length - 1].id,
-      threadInfo.messageThreadId
-    );
-    const endPos = await TdLib.getChatMessagePosition(
-      threadInfo.chatId,
-      sortedComments[0].id,
-      threadInfo.messageThreadId
-    );
-
-    // آپدیت استیت
-    setComments({
-      comments: sortedComments,
-      start: startPos.count,
-      end: endPos.count,
-    });
-
-    // ایندکس پیام هدف
-    const targetIndex = sortedComments.findIndex(i => i.id === messageId);
-
-    // اسکرول
-    if (targetIndex !== -1) {
+    if (existIndex !== -1) {
+      // پیام موجوده → مستقیم اسکرول کن
       InteractionManager.runAfterInteractions(() => {
         listRef.current?.scrollToIndex({
-          index: targetIndex,
+          index: existIndex,
           animated: true,
           viewPosition: 0.5,
         });
       });
+    } else {
+      // پیام موجود نیست → لود کن
+      const getComments = await fetchComments(messageId, -PAGE_SIZE, PAGE_SIZE);
+
+      // مرتب‌سازی
+      const sortedComments = [...getComments].sort((a, b) => a.id - b.id);
+
+      // گرفتن پوزیشن‌ها
+      const startPos = await TdLib.getChatMessagePosition(
+        threadInfo.chatId,
+        sortedComments[sortedComments.length - 1].id,
+        threadInfo.messageThreadId
+      );
+      const endPos = await TdLib.getChatMessagePosition(
+        threadInfo.chatId,
+        sortedComments[0].id,
+        threadInfo.messageThreadId
+      );
+
+      // آپدیت استیت
+      setComments({
+        comments: sortedComments,
+        start: startPos.count,
+        end: endPos.count,
+      });
+
+      // ایندکس پیام هدف
+      const targetIndex = sortedComments.findIndex(i => i.id === messageId);
+
+      // اسکرول
+      if (targetIndex !== -1) {
+        InteractionManager.runAfterInteractions(() => {
+          listRef.current?.scrollToIndex({
+            index: targetIndex,
+            animated: true,
+            viewPosition: 0.5,
+          });
+        });
+      }
     }
-  }
-};
+  };
 
 
   const scrollBottom = async () => {
