@@ -18,6 +18,7 @@ import {
   DeviceEventEmitter,
   InteractionManager,
   Keyboard,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ArrowLeftIcon } from "../../assets/icons";
@@ -28,6 +29,7 @@ import { ArrowLeft, Reply, Send, SendHorizonal } from "lucide-react-native";
 import MessageReactions from "../../components/tabs/home/MessageReaction";
 import { FlashList, FlashListRef } from "@shopify/flash-list";
 import Composer from "../../components/tabs/comments/CommentsKeyboard";
+import CommentItem from "../../components/tabs/comments/CommentItem";
 
 type commentStateType = {comments:any[], start: number, end: number}
 export default function Comments() {
@@ -35,6 +37,7 @@ export default function Comments() {
   const navigation:any = useNavigation();
   const { chatId, messageId }: any = route.params || {};
 
+  const [highlightedId, setHighlightedId] = useState<number | null>(null);
   const [comments, setComments] = useState<commentStateType>({comments: [], start: 0, end:0});
   const [isFetching, setIsFetching] = useState(false);
   const [commentsCount, setCommentsCount] = useState<any>();
@@ -93,188 +96,108 @@ export default function Comments() {
 
 
 
-  // تابع fetchComments دیگه نیازی به دریافت threadData نداره
-const fetchComments = async (
-  fromMessageId: number,
-  offset: number,
-  limit: number
-): Promise<any[]> => {
-  try {
-    const threadChatId = threadInfo?.chatId;
-    const threadMsg = threadInfo?.messages?.[0];
+    // تابع fetchComments دیگه نیازی به دریافت threadData نداره
+  const fetchComments = async (
+    fromMessageId: number,
+    offset: number,
+    limit: number
+  ): Promise<any[]> => {
+    try {
+      const threadChatId = threadInfo?.chatId;
+      const threadMsg = threadInfo?.messages?.[0];
 
-    if (!threadChatId || !threadMsg?.id) {
-      return [];
-    }
-
-    // 1. گرفتن تاریخچه
-    const historyResponse: any = await TdLib.getMessageThreadHistory(
-      chatId,
-      messageId,
-      fromMessageId,
-      offset,
-      limit
-    );
-    const historyParsed = historyResponse?.raw
-      ? JSON.parse(historyResponse.raw)
-      : null;
-
-    if (!Array.isArray(historyParsed?.messages)) {
-      return [];
-    }
-
-    // 2. ترتیب درست (قدیمی → جدید)
-    const messages = historyParsed.messages.slice().reverse();
-
-    // 3. جمع کردن یوزرها
-    const userIds = [
-      ...new Set(messages.map((m: any) => m?.senderId?.userId).filter(Boolean)),
-    ];
-    const rawUsers = await TdLib.getUsersCompat(userIds);
-    const users = JSON.parse(rawUsers);
-
-    // تبدیل به map برای lookup سریع
-    const usersMap = (users || []).reduce((acc: any, u: any) => {
-      acc[u.id] = u;
-      return acc;
-    }, {});
-
-    // 4. جمع کردن همه replyId هایی که نیاز داریم
-    const knownIds = new Set(comments.comments.map((c) => c.id));
-    const replyIds = messages
-      .map((m: any) => m?.replyTo?.messageId)
-      .filter(Boolean)
-      .filter((id: any) => !knownIds.has(id));
-
-    let repliesMap: Record<string, any> = {};
-    if (replyIds.length > 0) {
-      // chunk در صورتی که replyIds خیلی بزرگ باشه
-      const chunkSize = 100;
-      for (let i = 0; i < replyIds.length; i += chunkSize) {
-        const chunk = replyIds.slice(i, i + chunkSize);
-        try {
-          const repliesResponse = await TdLib.getMessagesCompat(chatId, chunk);
-          const repliesParsed = JSON.parse(repliesResponse.raw);
-          (repliesParsed.messages || []).forEach((r: any) => {
-            repliesMap[r.id] = r;
-          });
-        } catch {
-          // skip errors
-        }
+      if (!threadChatId || !threadMsg?.id) {
+        return [];
       }
-    }
 
-    // 5. ساخت لیست پیام‌ها
-    const merged = messages.map((msg: any) => {
-      const userId = msg?.senderId?.userId;
-      let replyInfo = null;
+      // 1. گرفتن تاریخچه
+      const historyResponse: any = await TdLib.getMessageThreadHistory(
+        chatId,
+        messageId,
+        fromMessageId,
+        offset,
+        limit
+      );
+      const historyParsed = historyResponse?.raw
+        ? JSON.parse(historyResponse.raw)
+        : null;
 
-      if (msg?.replyTo?.messageId) {
-        // اول از cache (کامنت‌های موجود)
-        const existing = comments.comments.find(
-          (c) => c.id === msg.replyTo.messageId
-        );
-        if (existing) {
-          replyInfo = existing;
-        } else {
-          // بعد از batch repliesMap
-          replyInfo = repliesMap[msg.replyTo.messageId] || null;
+      if (!Array.isArray(historyParsed?.messages)) {
+        return [];
+      }
+
+      // 2. ترتیب درست (قدیمی → جدید)
+      const messages = historyParsed.messages.slice().reverse();
+
+      // 3. جمع کردن یوزرها
+      const userIds = [
+        ...new Set(messages.map((m: any) => m?.senderId?.userId).filter(Boolean)),
+      ];
+      const rawUsers = await TdLib.getUsersCompat(userIds);
+      const users = JSON.parse(rawUsers);
+
+      // تبدیل به map برای lookup سریع
+      const usersMap = (users || []).reduce((acc: any, u: any) => {
+        acc[u.id] = u;
+        return acc;
+      }, {});
+
+      // 4. جمع کردن همه replyId هایی که نیاز داریم
+      const knownIds = new Set(comments.comments.map((c) => c.id));
+      const replyIds = messages
+        .map((m: any) => m?.replyTo?.messageId)
+        .filter(Boolean)
+        .filter((id: any) => !knownIds.has(id));
+
+      let repliesMap: Record<string, any> = {};
+      if (replyIds.length > 0) {
+        // chunk در صورتی که replyIds خیلی بزرگ باشه
+        const chunkSize = 100;
+        for (let i = 0; i < replyIds.length; i += chunkSize) {
+          const chunk = replyIds.slice(i, i + chunkSize);
+          try {
+            const repliesResponse = await TdLib.getMessagesCompat(chatId, chunk);
+            const repliesParsed = JSON.parse(repliesResponse.raw);
+            (repliesParsed.messages || []).forEach((r: any) => {
+              repliesMap[r.id] = r;
+            });
+          } catch {
+            // skip errors
+          }
         }
       }
 
-      return {
-        ...msg,
-        user: userId ? usersMap[userId] || null : null,
-        replyInfo,
-      };
-    });
+      // 5. ساخت لیست پیام‌ها
+      const merged = messages.map((msg: any) => {
+        const userId = msg?.senderId?.userId;
+        let replyInfo = null;
 
-    return merged;
-  } catch (err: any) {
-    return [];
-  } finally {
-    setLoading(false);
-  }
-};
+        if (msg?.replyTo?.messageId) {
+          // اول از cache (کامنت‌های موجود)
+          const existing = comments.comments.find(
+            (c) => c.id === msg.replyTo.messageId
+          );
+          if (existing) {
+            replyInfo = existing;
+          } else {
+            // بعد از batch repliesMap
+            replyInfo = repliesMap[msg.replyTo.messageId] || null;
+          }
+        }
 
+        return {
+          ...msg,
+          user: userId ? usersMap[userId] || null : null,
+          replyInfo,
+        };
+      });
 
-  const renderComment = ({ item, index }: any) => {
-    const user = item?.user;
-    const name = `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim();
-
-    const base64Thumb = user?.profilePhoto?.minithumbnail?.data
-      ? `data:image/jpeg;base64,${fromByteArray(user.profilePhoto.minithumbnail.data)}`
-      : null;
-
-    const avatarUri = user?.avatarSmall || base64Thumb;
-    const firstLetter = user?.firstName?.[0]?.toUpperCase() || "?";
-
-    const previousMessage = comments.comments[index - 1];
-    const showAvatar =
-      !previousMessage || previousMessage?.senderId?.userId !== item?.senderId?.userId;
-
-    const date = new Date(item.date * 1000);
-    const timeString = `${date.getHours()}:${date.getMinutes().toString().padStart(2, "0")}`;
-
-    return (
-      <View style={styles.commentItem}>
-        {showAvatar ? (
-          avatarUri ? (
-            <TouchableOpacity onPress={() => navigation.navigate("ProfileUser", {data: user})}>
-              <Image source={{ uri: avatarUri }} style={styles.avatar} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity onPress={() => navigation.navigate("ProfileUser", {data: user})}>
-              <View style={styles.avatarPlaceholder}>
-                <Text style={{ color: "#fff" }}>{firstLetter}</Text>
-              </View>
-            </TouchableOpacity>
-          )
-        ) : (
-          <View style={{ width: 36, marginHorizontal: 8 }} />
-        )}
-
-        <View style={styles.bubbleContainer}>
-          <View style={styles.bubble}>
-            {showAvatar && name ? <Text style={styles.username}>{name}</Text> : null}
-            {item.replyInfo && (
-              <TouchableOpacity style={styles.replyBox} onPress={() => handleReplyClick(item.replyInfo.id)}>
-                <Reply width={19} color={"#999"} style={{position: "relative", bottom: 3}}/>
-                <Text numberOfLines={1} style={styles.replyText}>
-                  {item.replyInfo?.content?.text?.text.slice(0, 30)}
-                </Text>
-              </TouchableOpacity>
-            )}
-            <Text style={styles.commentText}>
-              {item?.content?.text?.text || "بدون متن"}
-            </Text>
-
-            {item.interactionInfo?.reactions?.reactions?.length > 0 && (
-              <MessageReactions
-                reactions={item.interactionInfo.reactions.reactions}
-                chatId={item.chatId}
-                messageId={item.id}
-                onReact={(emoji) => console.log("🧡", emoji)}
-                customStyles={{
-                  container: {
-                    justifyContent: "flex-start",
-                    marginTop: 8,
-                    paddingHorizontal: 0,
-                    marginBottom: 8,
-                  },
-                  reactionBox: { backgroundColor: "#333", paddingHorizontal: 0 },
-                  selectedBox: { backgroundColor: "#666" },
-                  emoji: { fontSize: 12 },
-                  count: { color: "#ccc", fontWeight: "bold", fontSize: 11 },
-                }}
-              />
-          )}
-          </View>
-
-
-        </View>
-      </View>
-    );
+      return merged;
+    } catch (err: any) {
+      return [];
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleEndReached = async () => {
@@ -366,6 +289,8 @@ const fetchComments = async (
           viewPosition: 0.5,
         });
       });
+      setHighlightedId(messageId);
+      setTimeout(() => setHighlightedId(null), 2000);
     } else {
       // پیام موجود نیست → لود کن
       const getComments = await fetchComments(messageId, -PAGE_SIZE, PAGE_SIZE);
@@ -404,6 +329,8 @@ const fetchComments = async (
             viewPosition: 0.5,
           });
         });
+        setHighlightedId(messageId);
+        setTimeout(() => setHighlightedId(null), 2000);
       }
     }
   };
@@ -640,38 +567,49 @@ const handleInteractionUpdate = (data: any) => {
             {comments.comments.length == 0 ? (
               <ActivityIndicator color="#fff" size="large" style={{ flex: 1, justifyContent: 'center' }} />
             ) : (
-                <FlashList
-                    ref={listRef}
-                    data={comments?.comments || []}
-                    keyExtractor={(item: any) => item.id?.toString() ?? Math.random().toString()}
-                    renderItem={({ item, index }) => renderComment({ item, index })}
-                    onViewableItemsChanged={onViewableItemsChanged.current}
-                    viewabilityConfig={{ itemVisiblePercentThreshold: 40 }}
-                    onScroll={handleScroll}
-                    contentContainerStyle={{ paddingBottom: 0 }}
-
-                    onEndReached={handleEndReached}
-                    onStartReached={handleStartReached}
-                    
-                    removeClippedSubviews={false}
-                    drawDistance={1000} // آیتم‌های بیشتری رو توی حافظه نگه دار
-
-                    ListHeaderComponent={comments?.start !== commentsCount && comments.comments.length ? (
-                      <View style={{ justifyContent: 'center', alignItems: 'center', paddingVertical: 10 }}>
-                        <ActivityIndicator color="#888" size="small" />
-                      </View>
-                    ) : null}
-                    ListFooterComponent={comments?.end !== 1 && comments.comments.length ? (
-                      <View style={{ justifyContent: 'center', alignItems: 'center', paddingVertical: 10 }}>
-                        <ActivityIndicator color="#888" size="small" />
-                      </View>
-                    ) : null}
+              <FlashList
+                ref={listRef}
+                data={comments?.comments || []}
+                keyExtractor={(item: any) => item.id?.toString() ?? Math.random().toString()}
+                renderItem={({ item, index }) => (
+                  <CommentItem
+                    item={item}
+                    index={index}
+                    comments={comments}
+                    navigation={navigation}
+                    highlightedId={highlightedId}
+                    handleReplyClick={handleReplyClick}
                   />
+                )}
+                onViewableItemsChanged={onViewableItemsChanged.current}
+                viewabilityConfig={{ itemVisiblePercentThreshold: 40 }}
+                onScroll={handleScroll}
+                contentContainerStyle={{ paddingBottom: 0 }}
+                onEndReached={handleEndReached}
+                onStartReached={handleStartReached}
+                removeClippedSubviews={false}
+                drawDistance={1000}
+
+                // 🔽 دوباره اضافه کن
+                ListHeaderComponent={
+                  comments?.start !== commentsCount && comments.comments.length ? (
+                    <View style={{ justifyContent: "center", alignItems: "center", paddingVertical: 10 }}>
+                      <ActivityIndicator color="#888" size="small" />
+                    </View>
+                  ) : null
+                }
+                ListFooterComponent={
+                  comments?.end !== 1 && comments.comments.length ? (
+                    <View style={{ justifyContent: "center", alignItems: "center", paddingVertical: 10 }}>
+                      <ActivityIndicator color="#888" size="small" />
+                    </View>
+                  ) : null
+                }
+              />
             )}
 
             <Composer onSend={(text) => sendComment(text)} value={text} onChangeText={(e) => setText(e)}/>
           </View>
-          
 
           {showScrollToBottom && (
             <TouchableOpacity
