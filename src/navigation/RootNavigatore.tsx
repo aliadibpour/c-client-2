@@ -8,7 +8,7 @@ import TabNavigator from './TabNavigator';
 import PickTeamsScreen from '../screens/setup/PickTeams';
 import RankTeamsScreen from '../screens/setup/RankTeams';
 import Comments from '../screens/tabs/Comments';
-import FullPhotoScreen from '../screens/tabs/Home/FullPhotoScreen';
+import FullPhotoScreen from '../screens/tabs/FullPhotoScreen';
 import ChannelScreen from '../screens/tabs/Channel';
 import ChannelDetailScreen from '../screens/tabs/ChannelDetail.Screen';
 import ProfileUser from '../screens/tabs/ProfileUser';
@@ -49,7 +49,7 @@ export default function RootNavigator() {
   useEffect(() => {
     const checkAuth = async () => {
       //await AsyncStorage.removeItem("auth-status")
-      await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "Inrto" }))
+      await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "home" }))
       const authStatus = await AsyncStorage.getItem('auth-status');
       const teams = await AsyncStorage.getItem("teams")
       const userId = await AsyncStorage.getItem("userId-corner")

@@ -92,7 +92,7 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
       paddingVertical: 15,
     }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
-        <MessageHeader chatId={message.chatId} />
+        <MessageHeader chat={message.chatRaw} chatId={message.chatId} />
         <Text style={{ color: "#999", fontSize: 12.4, fontFamily: "SFArabic-Regular", marginBottom: 6 }}>
           {getRelativeTime(message.date)}
         </Text>

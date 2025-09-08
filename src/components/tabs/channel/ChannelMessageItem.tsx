@@ -1,10 +1,10 @@
 import { Dimensions, Text, View, TouchableOpacity, StyleSheet } from "react-native";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import MessagePhoto from "../home/MessagePhoto";
 import MessageVideo from "../home/MessageVideo";
 import MessageReactions from "../home/MessageReaction";
 import { useNavigation } from "@react-navigation/native";
-import { Eye, Reply, ReplyAll, ReplyIcon } from "lucide-react-native";
+import { Eye, ReplyIcon } from "lucide-react-native";
 import { ArrowLeftIcon } from "../../../assets/icons";
 import TdLib from "react-native-tdlib";
 
@@ -15,41 +15,37 @@ interface ChannelMessageItemProps {
   clickReply: any;
 }
 
-const screenWidth = Dimensions.get("window").width
-const screenHeight = Dimensions.get("window").height
-
+const screenWidth = Dimensions.get("window").width;
+const screenHeight = Dimensions.get("window").height;
 
 export default function ChannelMessageItem({ data, isVisible, activeDownloads, clickReply }: ChannelMessageItemProps) {
-  //console.log(data)
   const navigation: any = useNavigation();
   const [messageData, setMessageData] = useState<any>(data);
   const isActiveDownload = activeDownloads.includes(data?.id);
 
-  const chatId = data.chatId;
-  const messageId = data.id;
+  const chatId = data?.chatId;
+  const messageId = data?.id;
 
   useEffect(() => {
-    let isMounted = true; // avoid setting state after unmount
+    let isMounted = true;
 
     const fetchReply = async () => {
+      // اگر replyTo متعلق به همین چت باشه سعی کن پیام ریپلای رو بگیری
       if (data?.replyTo?.chatId === chatId) {
         try {
-          const getReply = await TdLib.getMessage(
-            data.replyTo.chatId,
-            data.replyTo.messageId
-          );
-
+          const getReply = await TdLib.getMessage(data.replyTo.chatId, data.replyTo.messageId);
           if (isMounted) {
             setMessageData({
               ...data,
-              replyInfo: JSON.parse(getReply.raw),
+              replyInfo: getReply?.raw ? JSON.parse(getReply.raw) : undefined,
             });
           }
         } catch (err) {
           console.error("Failed to get reply message:", err);
+          if (isMounted) setMessageData(data);
         }
-      } else {        
-        setMessageData(data);
+      } else {
+        if (isMounted) setMessageData(data);
       }
     };
 
@@ -60,28 +56,26 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
     };
   }, [data, chatId]);
 
+  // mark message as viewed (depend on chatId/messageId so it runs when item mounts)
   useEffect(() => {
-  console.log("messageData updated:", messageData);
-}, [messageData]);
+    if (!chatId || !messageId) return;
+    TdLib.viewMessages(chatId, [messageId], false).catch(() => {});
+  }, [chatId, messageId]);
 
-
-
-  useEffect(() =>{
-    TdLib.viewMessages(chatId, [messageId], false)
-  } ,[])
-
+  // safe access to content
   const content = messageData?.content;
-  const captionText = content?.caption?.text || "";
-  const messageText = content?.text?.text || "";
+  const captionText = content?.caption?.text ?? "";
+  const messageText = content?.text?.text ?? "";
 
   const photo = content?.photo;
   const video = content?.video;
 
+  // compute media sizes safely
   let mediaWidth = 0;
   let mediaHeight = 0;
   if (photo?.sizes?.length) {
     const biggest = photo.sizes[photo.sizes.length - 1];
-    const ratio = biggest.width / biggest.height;
+    const ratio = (biggest.width || 1) / (biggest.height || 1);
     const maxWidth = screenWidth * 0.85;
     const maxHeight = 280;
     let w = maxWidth;
@@ -105,6 +99,7 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
       w = h * ratio;
     }
     mediaWidth = w;
+    mediaHeight = h;
   }
 
   const MIN_WIDTH = screenWidth * 0.72;
@@ -113,69 +108,72 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
   const messageWidth = hasMedia ? Math.max(mediaWidth, MIN_WIDTH) : MIN_WIDTH;
   const messageHeight = hasMedia ? Math.max(mediaHeight, MIN_HEIGHT) : MIN_HEIGHT;
 
-  const date = new Date(messageData.date * 1000);
-  const timeString = `${date.getHours()}:${date.getMinutes().toString().padStart(2, "0")}`;
-  const authorName = messageData.authorSignature?.trim();
+  // safe date/time formatting
+  let timeString = "";
+  if (messageData?.date) {
+    const date = new Date(Number(messageData.date) * 1000);
+    if (!isNaN(date.getTime())) {
+      const hours = date.getHours();
+      const minutes = date.getMinutes().toString().padStart(2, "0");
+      timeString = `${hours}:${minutes}`;
+    }
+  }
+
+  const authorName = messageData?.authorSignature?.trim() ?? "";
 
   const formatNumber = (num: number): string => {
+    if (!num && num !== 0) return "0";
     if (num < 1000) return num.toString();
     if (num < 1_000_000) return (num / 1000).toFixed(1).replace(/\.0$/, "") + "k";
     return (num / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
   };
 
-  const viewCount = formatNumber(messageData?.interactionInfo?.viewCount || 0);
-  
+  const viewCount = formatNumber(messageData?.interactionInfo?.viewCount ?? 0);
+
+  // reply rendering: guard all accesses
+  const reply = messageData?.replyInfo;
+  const replyContent = reply?.content ?? {};
+  const replyCaption = replyContent?.caption?.text ?? "";
+  const replyText = replyContent?.text?.text ?? "";
 
   return (
     <View style={styles.wrapper}>
       <View style={[styles.card, { width: messageWidth }]}>
-
-      {messageData.replyInfo && (
-        messageData.replyInfo.content.photo ? 
-        <TouchableOpacity style={styles.replyBox} onPress={() => clickReply(messageData.replyInfo.id)}>
-          <ReplyIcon width={18} height={18} color={`#999`} />
-          <MessagePhoto photo={messageData.replyInfo.content.photo} activeDownload={isActiveDownload} width={35} height={25}/>
-          <Text numberOfLines={1} style={styles.replyText}>
-            {messageData.replyInfo.content?.caption?.text.slice(0, 30)}
-          </Text>
-        </TouchableOpacity> : 
-        <TouchableOpacity style={styles.replyBox} onPress={() => clickReply(messageData.replyInfo.id)}>
-          <ReplyIcon width={18} height={18} color={`#999`} />
-          <Text numberOfLines={1} style={styles.replyText}>
-            🔁 {messageData.replyInfo.content?.text?.text.slice(0, 30)}
-          </Text>
-        </TouchableOpacity>
-      )}
+        {reply ? (
+          replyContent?.photo ? (
+            <TouchableOpacity style={styles.replyBox} onPress={() => clickReply(reply.id)}>
+              <ReplyIcon width={18} height={18} color={`#999`} />
+              <MessagePhoto photo={replyContent.photo} activeDownload={isActiveDownload} width={35} height={25} />
+              <Text numberOfLines={1} style={styles.replyText}>
+                {replyCaption.slice(0, 30)}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.replyBox} onPress={() => clickReply(reply.id)}>
+              <ReplyIcon width={18} height={18} color={`#999`} />
+              <Text numberOfLines={1} style={styles.replyText}>
+                🔁 {replyText.slice(0, 30)}
+              </Text>
+            </TouchableOpacity>
+          )
+        ) : null}
 
         {photo && (
           <View style={{ width: "100%" }}>
             <MessagePhoto photo={photo} activeDownload={isActiveDownload} />
           </View>
         )}
+
         {video && (
           <View style={{ width: "100%" }}>
-            <MessageVideo
-              video={video}
-              isVisible={isVisible}
-              context="channel"
-              activeDownload={isActiveDownload}
-            />
+            <MessageVideo video={video} isVisible={isVisible} context="channel" activeDownload={isActiveDownload} />
           </View>
         )}
 
-        {!!captionText && (
-          <Text style={styles.text}>
-            {captionText}
-          </Text>
-        )}
-        {!!messageText && (
-          <Text style={styles.text}>
-            {messageText}
-          </Text>
-        )}
+        {!!captionText && <Text style={styles.text}>{captionText}</Text>}
+        {!!messageText && <Text style={styles.text}>{messageText}</Text>}
 
-
-        {messageData.interactionInfo?.reactions?.reactions?.length > 0 && (
+        {messageData?.interactionInfo?.reactions?.reactions?.length > 0 && (
           <MessageReactions
             reactions={messageData.interactionInfo.reactions.reactions}
             chatId={messageData.chatId}
@@ -205,7 +203,7 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
           </View>
         </View>
 
-        {messageData.interactionInfo?.replyInfo?.replyCount > 0 && (
+        {messageData?.interactionInfo?.replyInfo?.replyCount > 0 && (
           <TouchableOpacity
             onPress={() =>
               navigation.navigate("Comments", {
@@ -215,9 +213,7 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
             }
             style={styles.commentBox}
           >
-            <Text style={styles.commentText}>
-              {messageData.interactionInfo.replyInfo.replyCount} کامنت
-            </Text>
+            <Text style={styles.commentText}>{messageData.interactionInfo.replyInfo.replyCount} کامنت</Text>
             <ArrowLeftIcon style={{ color: "#54afff" }} width={14.5} />
           </TouchableOpacity>
         )}
@@ -288,12 +284,12 @@ const styles = StyleSheet.create({
   replyBox: {
     backgroundColor: "rgba(111, 111, 111, 0.2)",
     paddingVertical: 8,
-    paddingHorizontal:10,
+    paddingHorizontal: 10,
     borderRadius: 2,
     borderEndEndRadius: 0,
     flexDirection: "row",
     gap: 4,
-    alignItems: "center"
+    alignItems: "center",
   },
   replyText: {
     color: "#ccc",

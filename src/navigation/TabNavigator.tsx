@@ -21,7 +21,7 @@ import AppText from "../components/ui/AppText";
 const Tab = createBottomTabNavigator();
 
 export default function TabNavigator() {
-  const iconSize = 25;
+  const iconSize = 24;
   const [isAuth, setIsAuth] = useState<boolean | null>(null);
 
   useEffect(() => {

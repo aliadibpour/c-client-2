@@ -1,7 +1,7 @@
 import React from "react";
 import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
 
-export const HouseIcon = ({ color = "white", size = 24, outline = false }) => (
+export const HouseIcon = ({ color = "#ddd", size = 24, outline = false }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Path
       d="
@@ -33,7 +33,7 @@ export const HouseIcon = ({ color = "white", size = 24, outline = false }) => (
 );
 
 
-export const TelegramIcon = ({ color = "white", size = 24, outline = false }) => (
+export const TelegramIcon = ({ color = "#ddd", size = 24, outline = false }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Path
       d="M21.5 3.5L3 10.5C2 10.9 2 11.6 2.9 11.9L7.5 13.3L18 6.5C18.4 6.2 18.8 6.3 18.5 6.7L10 14.5V17L12.2 15.1L17.2 18.9C17.8 19.3 18.4 19.1 18.6 18.4L22 4.5C22.2 3.7 21.9 3.3 21.5 3.5Z"
@@ -45,7 +45,7 @@ export const TelegramIcon = ({ color = "white", size = 24, outline = false }) =>
 );
 
 
-export const ProfileIcon = ({ color = "white", size = 24, outline = false }) => (
+export const ProfileIcon = ({ color = "#ddd", size = 24, outline = false }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     {outline ? (
       <>
@@ -82,7 +82,7 @@ export const ProfileIcon = ({ color = "white", size = 24, outline = false }) => 
 );
 
 
-export const CommentsIcon = ({ color = "white", size = 24, outline = false }) => (
+export const CommentsIcon = ({ color = "#ddd", size = 24, outline = false }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Path
       d="M4 4H20C21.1 4 22 4.9 22 6V16C22 17.1 21.1 18 20 18H7L2 22V6C2 4.9 2.9 4 4 4Z"
@@ -106,7 +106,7 @@ export const SendIcon = ({ color = "white", size = 20 }) => (
 )
 
 
-export const FootballPitchIcon = ({ color = "white", size = 24, outline = false }) => (
+export const FootballPitchIcon = ({ color = "#ddd", size = 24, outline = false }) => (
     <Svg width={size} height={size} viewBox="0 0 24 24">
         {outline ? (
             <>

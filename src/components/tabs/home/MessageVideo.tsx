@@ -72,7 +72,6 @@ export default function MessageVideo({ video, isVisible, context = "channel", ac
           didSetPathRef.current = true;
           setVideoPath(uri);
           setLoading(false);
-          console.log("[MessageVideo] setVideoPath from startDownload fallback:", uri);
         }
       });
     } catch (e) {
@@ -104,7 +103,7 @@ export default function MessageVideo({ video, isVisible, context = "channel", ac
           const downloadedSize = local.downloadedSize ?? local.downloaded_size ?? local.downloadedPrefixSize ?? local.downloaded_prefix_size ?? file.downloadedSize ?? file.size ?? 0;
           const isCompleted = !!local.is_downloading_completed || !!local.isDownloadingCompleted || false;
 
-          console.log("[MessageVideo] UpdateFile - id:", file.id, "localPath:", localPath, "downloadedSize:", downloadedSize, "completed:", isCompleted);
+          // console.log("[MessageVideo] UpdateFile - id:", file.id, "localPath:", localPath, "downloadedSize:", downloadedSize, "completed:", isCompleted);
 
           // match by file id (لینت‌فیلد)
           if (!(String(file.id) === String(fileId) || (file.remote && String(file.remote.id) === String(fileId)))) {

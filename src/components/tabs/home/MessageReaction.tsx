@@ -42,7 +42,7 @@ export default function MessageReactions({ reactions, chatId, messageId, customS
     if (count >= 1000) {
       return (count / 1000).toFixed(1).replace(/\.0$/, "") + "k";
     }
-    return count.toString();
+    return count?.toString();
   };
 
 const handleReact = async (emoji: string) => {

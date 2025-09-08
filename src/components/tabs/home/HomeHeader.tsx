@@ -43,7 +43,7 @@ export default function HomeHeader() {
 
   return (
     <View style={styles.headerContainer}>
-        <Image source={require("../../../assets/images/corner-logo.png")} style={styles.logo} />
+      <Image source={require("../../../assets/images/corner-logo.png")} style={styles.logo} />
 
     <FlatList
         data={teams}
@@ -54,9 +54,9 @@ export default function HomeHeader() {
           const isActive = activeTab === item;
           return (
             <TouchableOpacity onPress={() => setActiveTab(item)} style={[styles.tabItem, isActive && styles.activeTab]}>
-              {
+              {/* {
                 teamImages[item] ? <Image source={teamImages[item]} style={{ width: 16, height: 16, marginBottom: -2, marginHorizontal: 6 }} /> : null
-              }
+              } */}
                 <Text style={[styles.tabText, isActive && styles.activeTabText]}>
                   {item}
                 </Text>
@@ -73,19 +73,24 @@ const styles = StyleSheet.create({
     borderColor: "#222",
     borderBottomWidth: .7,
     gap: 9,
-    paddingHorizontal: 1,
+    paddingHorizontal: 8,
     paddingTop: 5,
-    backgroundColor: "#000000d7",
+    backgroundColor: "#000000e8",
     overflow: "scroll",
   },
   logo: {
-    width: 22.5,
-    height: 22.5,
+    width: 21,
+    height: 21,
     borderRadius: 5,
     marginHorizontal: "auto"
   },
-    tabItem: {
-    paddingVertical: 12,
+  logoText: {
+    color: "#f1f1f1ff",
+    fontSize: 10.4,
+    fontFamily: "SFArabic-Regular",
+  },
+  tabItem: {
+    paddingVertical: 9,
     paddingHorizontal: 12,
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
@@ -98,7 +103,7 @@ const styles = StyleSheet.create({
   },
   tabText: {
     color: "#aaa",
-    fontSize: 15,
+    fontSize: 13.5,
     fontFamily: "SFArabic-Regular",
   },
   activeTabText: {
