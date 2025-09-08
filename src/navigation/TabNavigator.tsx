@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Text, View, Platform, StyleSheet } from "react-native";
-import Home from "../screens/tabs/Home/Home";
+import Home from "../screens/tabs/Home";
 import LiveMatch from "../screens/tabs/LiveMatch";
 import Profile from "../screens/tabs/ProfileMe";
 import Telegram from "../screens/tabs/Telegram";

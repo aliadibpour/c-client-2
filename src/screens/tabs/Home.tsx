@@ -14,10 +14,10 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import TdLib from "react-native-tdlib";
-import MessageItem from "../../../components/tabs/home/MessageItem";
+import MessageItem from "../../components/tabs/home/MessageItem";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import HomeHeader from "../../../components/tabs/home/HomeHeader";
+import HomeHeader from "../../components/tabs/home/HomeHeader";
 
 // ---- CONFIG ----
 const BATCH_SIZE = 5; // بچ‌بِچ
