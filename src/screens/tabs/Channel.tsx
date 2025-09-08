@@ -22,9 +22,10 @@ import { ArrowLeft } from "lucide-react-native";
 import ChannelAlbumItem from "../../components/tabs/channel/ChannelAlbumItem";
 import { useFocusEffect } from "@react-navigation/native";
 import { getChat, getChatHistory, TelegramService } from "../../services/TelegramService";
+import { lstat } from "fs";
 
 const { width, height } = Dimensions.get("window");
-const PAGE_SIZE = 50;
+
 export default function ChannelScreen({ route }: any) {
   const { chatId, focusMessageId } = route.params;
 
@@ -33,7 +34,6 @@ export default function ChannelScreen({ route }: any) {
   const [chatInfo, setChatInfo] = useState<any>()
   const [supergroupInfo, setSuperGroupeInfo] = useState()
   const [isMember, setIsMember] = useState<any>("loading")
-  const [isFetching, setIsFetching] = useState(false);
   const messagesRef = useRef<any[]>([]); // track latest messages
 
   const [loading, setLoading] = useState(true);
@@ -113,7 +113,7 @@ export default function ChannelScreen({ route }: any) {
         if (chat.lastMessage) {
           setLastMessage(chat.lastMessage); // ذخیره در state
           console.log(lastMessage)
-          const messages = focusMessageId ? await getChatHistory(chatId, focusMessageId, PAGE_SIZE, -40) :
+          const messages = focusMessageId ? await getChatHistory(chatId, focusMessageId, 20, -10) :
           await getChatHistory(chatId, lastMessage.id, 50, 0)
           console.log(messages, "sssssssssaaaaaaaaaaaaaawwwwwww")
           if (isMounted) {
@@ -218,56 +218,39 @@ export default function ChannelScreen({ route }: any) {
     );
   };
 
-  const handleStartReached = async () => {
-    if (!messages) return;
-    if (messages.length === 0 || isFetching) return;
+  useEffect(() => {
+    const fetchMessages = async () => {
+      if (!viewableItems.length) return;
 
-    const firstItemId = messages[messages.length - 1].id;
+      const newMessages = messages.slice(0, 4).map(i => i.id)
+      const oldMessages = messages.slice(-4).map(i => i.id)
+      const currentId = viewableItems[0].item.id
 
-    setIsFetching(true);
-    try {
-      const getComments: any = await getChatHistory(chatId, firstItemId, PAGE_SIZE, -PAGE_SIZE);
-      if (getComments.length === 0) return;
+      if (oldMessages.includes(currentId)) {
+        console.log("aa")
+        const anchorId = oldMessages[oldMessages.length - 1]
+        const data = await getChatHistory(chatId, anchorId, 15, 0)
+        setMessages(prev => {
+          const ids = new Set(prev.map(m => m.id))
+          const filtered = data.filter(m => !ids.has(m.id))
+          return [...prev, ...filtered]
+        })
+      }
 
-      setMessages((prev) => {
-        const existingIds = new Set(prev.map(c => c.id));
-        const uniqueNew = getComments.filter((c: any) => !existingIds.has(c.id));
-
-        return [
-          ...uniqueNew,
-          ...prev,
-        ];
-      });
-    } finally {
-      setIsFetching(false);
+      if (newMessages.includes(currentId)) {
+        console.log("alll")
+        const anchorId = newMessages[0]
+        const data = await getChatHistory(chatId, anchorId, 15, -15)
+        console.log(data, ";")
+        setMessages(prev => {
+          const ids = new Set(prev.map(m => m.id))
+          const filtered = data.filter(m => !ids.has(m.id))
+          return [...filtered, ...prev]
+        })
+      }
     }
-  }
-
-  const handleEndReached = async () => {
-    if (!messages) return;
-    if (messages.length === 0 || isFetching) return;
-
-    const lastItemId = messages[messages.length - 1].id;
-    if (lastItemId === lastMessage.id) return;
-
-    setIsFetching(true);
-    try {
-      const getComments: any = await getChatHistory(chatId, lastItemId, PAGE_SIZE, 0);
-      if (getComments.length === 0) return;
-
-      setMessages((prev) => {
-        const existingIds = new Set(prev.map(c => c.id));
-        const uniqueNew = getComments.filter((c: any) => !existingIds.has(c.id));
-
-        return [
-          ...prev,
-          ...uniqueNew,
-        ];
-      });
-    } finally {
-      setIsFetching(false);
-    }
-  }
+    fetchMessages()
+  }, [viewableItems])
 
   useEffect(() => {
     if (!loading && listRendered && messages.length > 0 && !hasScrolledToBottom.current) {
@@ -279,6 +262,14 @@ export default function ChannelScreen({ route }: any) {
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     setShowScrollToBottom(offsetY > 300);
+  };
+
+  const handleEndReached = async () => {
+    if (loadingMore || messages.length === 0) return;
+    setLoadingMore(true);
+    const last = messages[messages.length - 1];
+    await getChatHistory(chatId, last.id);
+    setLoadingMore(false);
   };
 
   const activeDownloads = useMemo(() => {
@@ -400,7 +391,6 @@ export default function ChannelScreen({ route }: any) {
         <FlatList
           ref={listRef}
           keyExtractor={(item) => item.id?.toString()}
-          style={{paddingHorizontal: 8}}
           data={groupedMessages}
           renderItem={({ item }) => {
             if (item.type === "album") {
@@ -431,31 +421,17 @@ export default function ChannelScreen({ route }: any) {
           showsVerticalScrollIndicator={false}
           onLayout={() => setListRendered(true)}
           onScroll={handleScroll}
-
           onEndReached={handleEndReached}
-          onStartReached={handleStartReached}
-
           onEndReachedThreshold={0.8}
           scrollEventThrottle={16}
-          getItemLayout={(data, index) => ({
-            length: 80,
-            offset: 80 * index,
-            index,
-          })}
-
           ListFooterComponent={
-            <View style={{ paddingVertical: 5 }}>
-              <ActivityIndicator color="#888" />
-            </View>
+            loadingMore ? (
+              <View style={{ paddingVertical: 20 }}>
+                <ActivityIndicator color="#888" />
+              </View>
+            ) : null
           }
 
-          ListHeaderComponent={
-            messages[0]?.id !== lastMessage?.id ?
-            <View style={{ paddingVertical: 20 }}>
-              <ActivityIndicator color="#888" />
-            </View>: 
-            null
-          }
         />
       </View>
 
