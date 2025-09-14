@@ -76,6 +76,7 @@ export default function MessageHeader({ chatId }: any) {
         style={{ width: 35, height: 35, borderRadius: 25, backgroundColor: "#eee" }}
       />
       <Text
+        numberOfLines={1}
         style={{
           fontSize: 16,
           marginLeft: 7,

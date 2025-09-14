@@ -79,7 +79,7 @@ export default function ChannelHeader({ chatId, chatInfo, superGroupeInfo }: { c
 
         {/* 📝 عنوان و اعضا */}
         <View style={styles.textContainer}>
-          <Text style={styles.title}>{title}</Text>
+          <Text numberOfLines={1} style={styles.title}>{title}</Text>
           {memberCount !== null && (
             <Text style={styles.members}>
               {memberCount} عضو
