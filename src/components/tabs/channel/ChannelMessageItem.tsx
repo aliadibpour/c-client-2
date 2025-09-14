@@ -225,7 +225,8 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
 const styles = StyleSheet.create({
   wrapper: {
     alignItems: "flex-start",
-    paddingVertical: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
   card: {
     backgroundColor: "rgba(31, 29, 29, 1)",
