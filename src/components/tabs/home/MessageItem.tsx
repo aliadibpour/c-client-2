@@ -91,9 +91,9 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
       borderBottomWidth: 1,
       paddingVertical: 15,
     }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
         <MessageHeader chatId={message.chatId} />
-        <Text style={{ color: "#999", fontSize: 12.4, fontFamily: "SFArabic-Regular", marginBottom: 6 }}>
+        <Text style={{ color: "#999", fontSize: 12.33, fontFamily: "SFArabic-Regular", marginBottom: 8 }}>
           {getRelativeTime(message.date)}
         </Text>
       </View>
@@ -102,7 +102,7 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
         <Text style={{
           color: "#ccc",
           marginBottom: 10,
-          fontSize: 13.87,
+          fontSize: 13.3,
           fontFamily: "SFArabic-Regular",
           lineHeight: 25,
         }}>
@@ -114,7 +114,7 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
         <Text style={{
           color: "#ccc",
           marginBottom: 10,
-          fontSize: 13.87,
+          fontSize: 13.3,
           fontFamily: "SFArabic-Regular",
           lineHeight: 25,
         }}>
