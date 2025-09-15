@@ -19,7 +19,7 @@ export default function TelegramHeader() {
 
   return (
     <View style={styles.headerContainer}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a1919ff" />
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
       <Image source={require("../../../assets/images/corner-logo.png")} style={styles.logo} />
 
     <FlatList
@@ -44,12 +44,12 @@ export default function TelegramHeader() {
 
 const styles = StyleSheet.create({
   headerContainer: {
-    borderColor: "#222",
+    borderColor: "#111",
     borderBottomWidth: .7,
     gap: 9,
     paddingHorizontal: 8,
     paddingTop: 5,
-    backgroundColor: "#1a1919ff",
+    backgroundColor: "#000",
     overflow: "scroll",
   },
   logo: {

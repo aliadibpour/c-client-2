@@ -253,8 +253,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 10,
     paddingHorizontal: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: "#444",
+    borderBottomWidth: .9,
+    borderColor: "#222",
     backgroundColor: "#111",
   },
   avatar: {
@@ -283,8 +283,8 @@ const styles = StyleSheet.create({
     fontFamily: "SFArabic-Regular",
   },
   lastThumb: {
-    width: 22,
-    height: 20,
+    width: 20,
+    height: 18,
     borderRadius: 4,
     backgroundColor: "#333",
     marginRight: 3,

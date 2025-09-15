@@ -8,7 +8,7 @@ export default function TelegramScreen() {
     const [channels, setChannels] = useState<any[]>([])
     useEffect(() => {
         const fetchChannels = async () => {
-            const res:any = await fetch(`http://10.226.97.115:9000/feed-channel?team=perspolis`);
+            const res:any = await fetch(`http://10.226.97.115:9000/feed-channel?team=esteghlal`);
             const data = await res.json();
             console.log(data)
             setChannels(data) 
@@ -18,7 +18,6 @@ export default function TelegramScreen() {
 
     return (
         <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="light-content" backgroundColor="#000" />
             <TelegramHeader />
 
             <FlatList
