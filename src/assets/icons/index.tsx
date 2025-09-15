@@ -24,7 +24,7 @@ export const HouseIcon = ({ color = "#ddd", size = 24, outline = false }) => (
         Z
       "
       stroke={color}
-      strokeWidth={outline ? 1.7 : 0}
+      strokeWidth={outline ? 1.3 : 0}
       fill={outline ? "none" : color}
       strokeLinejoin="round"
       strokeLinecap="round"
@@ -38,7 +38,7 @@ export const TelegramIcon = ({ color = "#ddd", size = 24, outline = false }) => 
     <Path
       d="M21.5 3.5L3 10.5C2 10.9 2 11.6 2.9 11.9L7.5 13.3L18 6.5C18.4 6.2 18.8 6.3 18.5 6.7L10 14.5V17L12.2 15.1L17.2 18.9C17.8 19.3 18.4 19.1 18.6 18.4L22 4.5C22.2 3.7 21.9 3.3 21.5 3.5Z"
       stroke={outline ? color : "none"}
-      strokeWidth="1.4"
+      strokeWidth="1.2"
       fill={outline ? "none" : color}
     />
   </Svg>
@@ -53,14 +53,14 @@ export const ProfileIcon = ({ color = "#ddd", size = 24, outline = false }) => (
         <Path
           d="M12 12C14.761 12 17 9.761 17 7C17 4.239 14.761 2 12 2C9.239 2 7 4.239 7 7C7 9.761 9.239 12 12 12Z"
           stroke={color}
-          strokeWidth={1.5}
+          strokeWidth={1.3}
           fill="none"
         />
         {/* Body - outline */}
         <Path
           d="M4 20C4 16.686 7.134 14 13 14H13C16.866 14 20 16.686 20 20"
           stroke={color}
-          strokeWidth={1.5}
+          strokeWidth={1.3}
           fill="none"
         />
       </>
@@ -118,11 +118,11 @@ export const FootballPitchIcon = ({ color = "#ddd", size = 24, outline = false }
             </>
         ) : (
             <>
-                <Rect x="2" y="4" width="20" height="16" stroke={color} strokeWidth="1.2" fill="none" rx="2" />
-                <Circle cx="12" cy="12" r="3.5" stroke={color} strokeWidth="1.2" fill="none" />
-                <Line x1="12" y1="4" x2="12" y2="20" stroke={color} strokeWidth="1.2" />
-                <Rect x="2" y="8" width="3.5" height="8" stroke={color} strokeWidth="1.2" fill="none" />
-                <Rect x="18.5" y="8" width="3.5" height="8" stroke={color} strokeWidth="1.2" fill="none" />
+                <Rect x="2" y="4" width="20" height="16" stroke={color} strokeWidth="1" fill="none" rx="2" />
+                <Circle cx="12" cy="12" r="3.5" stroke={color} strokeWidth="1" fill="none" />
+                <Line x1="12" y1="4" x2="12" y2="20" stroke={color} strokeWidth="1" />
+                <Rect x="2" y="8" width="3.5" height="8" stroke={color} strokeWidth="1" fill="none" />
+                <Rect x="18.5" y="8" width="3.5" height="8" stroke={color} strokeWidth="1" fill="none" />
             </>
         )}
     </Svg>
