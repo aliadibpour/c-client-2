@@ -11,6 +11,7 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
   TouchableOpacity,
+  StatusBar,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import TdLib from "react-native-tdlib";
@@ -18,6 +19,7 @@ import MessageItem from "../../components/tabs/home/MessageItem";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import HomeHeader from "../../components/tabs/home/HomeHeader";
+import changeNavigationBarColor from 'react-native-navigation-bar-color';
 
 // ---- CONFIG ----
 const BATCH_SIZE = 5; // بچ‌بِچ
@@ -183,7 +185,8 @@ export default function HomeScreen() {
       try {
         setInitialLoading(true);
         const uuid: any = await AsyncStorage.getItem("userId-corner");
-        const res = await fetch(`http://192.168.1.102:9000/feed-message?team=perspolis&uuid=${JSON.parse(uuid || '{}').uuid}`);
+        //const res = await fetch(`http://192.168.1.102:9000/feed-message?team=perspolis&uuid=${JSON.parse(uuid || '{}').uuid}`);
+        const res = await fetch(`http://10.226.97.115:9000/messages?team=perspolis`);
         const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
         // sort by messageId desc and keep a reasonable cap
         const datas = datass.sort((a, b) => +b.messageId - +a.messageId).slice(0, 200);
@@ -482,9 +485,14 @@ export default function HomeScreen() {
       </View>
     );
   };
+useEffect(() => {
+  // Set navigation bar to black and icons to light
+  changeNavigationBarColor('#000000', false, true);
+}, []);
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
       <Animated.View
         pointerEvents="box-none"
         onLayout={(e) => {
@@ -523,12 +531,16 @@ export default function HomeScreen() {
             initialNumToRender={5}
             maxToRenderPerBatch={5}
             windowSize={10}
-            contentContainerStyle={{ paddingTop: measuredHeaderHeight + insets.top, paddingBottom: 40 }}
+            contentContainerStyle={{ paddingTop: measuredHeaderHeight + insets.top, paddingBottom: 20 }}
             onScroll={onScroll}
             scrollEventThrottle={16}
             onEndReached={onEndReached}
             onEndReachedThreshold={0.5}
-            ListFooterComponent={<FooterLoading loading={loadingMore} />}
+            ListFooterComponent={
+              <View style={{ justifyContent: "center", alignItems: "center", paddingVertical: 20 }}>
+                <ActivityIndicator color="#888" size="small" />
+              </View>
+            }
           />
         )}
       </View>
