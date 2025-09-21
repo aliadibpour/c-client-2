@@ -185,8 +185,8 @@ export default function HomeScreen() {
       try {
         setInitialLoading(true);
         const uuid: any = await AsyncStorage.getItem("userId-corner");
-        //const res = await fetch(`http://192.168.1.102:9000/feed-message?team=perspolis&uuid=${JSON.parse(uuid || '{}').uuid}`);
-        const res = await fetch(`http://10.226.97.115:9000/messages?team=perspolis`);
+        const res = await fetch(`http://192.168.1.102:9000/feed-message?team=perspolis&uuid=${JSON.parse(uuid || '{}').uuid}`);
+        //const res = await fetch(`http://192.168.1.102:9000/messages?team=perspolis`);
         const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
         // sort by messageId desc and keep a reasonable cap
         const datas = datass.sort((a, b) => +b.messageId - +a.messageId).slice(0, 200);
@@ -341,50 +341,62 @@ export default function HomeScreen() {
   // ---------- infinite scroll / onEndReached handling ----------
   const isLoadingMoreRef = useRef(false);
 
-  const loadMore = useCallback(async () => {
-    if (isLoadingMoreRef.current || !hasMore) return;
-    isLoadingMoreRef.current = true;
-    setLoadingMore(true);
+const loadMore = useCallback(async () => {
+  if (isLoadingMoreRef.current) return;
+  isLoadingMoreRef.current = true;
+  setLoadingMore(true);
 
-    const nextBatchIdx = currentBatchIdx + 1;
-    // if next batch start index >= datas length -> no more
-    const start = nextBatchIdx * BATCH_SIZE;
-    if (start >= datasRef.current.length) {
-      setHasMore(false);
-      setLoadingMore(false);
-      isLoadingMoreRef.current = false;
-      return;
-    }
+  const nextBatchIdx = currentBatchIdx + 1;
+  const start = nextBatchIdx * BATCH_SIZE;
 
+  // ✅ اگر رسیدیم به انتهای لیست محلی، از سرور بخونیم
+  if (start >= datasRef.current.length) {
     try {
-      // use prefetch if exists
-      const pref = prefetchRef.current.get(nextBatchIdx);
-      if (pref) {
-        setMessages((prev) => [...prev, ...pref]);
-        prefetchRef.current.delete(nextBatchIdx);
+      const lastMessageId = datasRef.current[datasRef.current.length - 1]?.messageId;
+      const uuid: any = await AsyncStorage.getItem("userId-corner");
+      const res = await fetch(`http://192.168.1.102:9000/feed-message?team=perspolis&uuid=${JSON.parse(uuid || '{}').uuid}`);
+      const newDatas: { chatId: string; messageId: string; channel: string }[] = await res.json();
+
+      if (newDatas.length === 0) {
+        setHasMore(false);
       } else {
-        const appendedCount = await appendNextBatch(nextBatchIdx);
-        if (appendedCount === 0) {
-          // nothing appended
-        }
+        datasRef.current = [...datasRef.current, ...newDatas];
+        // بعد از آپدیت دوباره appendNextBatch بزنیم
+        await appendNextBatch(nextBatchIdx);
+        setCurrentBatchIdx(nextBatchIdx);
+        prefetchNextBatches(nextBatchIdx);
       }
-
-      // update currentBatchIdx
-      setCurrentBatchIdx(nextBatchIdx);
-
-      // prefetch next
-      prefetchNextBatches(nextBatchIdx);
-
-      // determine hasMore
-      const newStart = (nextBatchIdx + 1) * BATCH_SIZE;
-      if (newStart >= datasRef.current.length) setHasMore(false);
     } catch (err) {
-      console.log("❌ loadMore error:", err);
+      console.log("❌ loadMore server fetch error:", err);
     } finally {
       setLoadingMore(false);
       isLoadingMoreRef.current = false;
     }
-  }, [appendNextBatch, currentBatchIdx, hasMore, prefetchNextBatches]);
+    return;
+  }
+
+  // ✅ اگر هنوز دیتا توی cache هست
+  try {
+    const pref = prefetchRef.current.get(nextBatchIdx);
+    if (pref) {
+      setMessages((prev) => [...prev, ...pref]);
+      prefetchRef.current.delete(nextBatchIdx);
+    } else {
+      await appendNextBatch(nextBatchIdx);
+    }
+
+    setCurrentBatchIdx(nextBatchIdx);
+    prefetchNextBatches(nextBatchIdx);
+
+    const newStart = (nextBatchIdx + 1) * BATCH_SIZE;
+    if (newStart >= datasRef.current.length) setHasMore(false);
+  } catch (err) {
+    console.log("❌ loadMore error:", err);
+  } finally {
+    setLoadingMore(false);
+    isLoadingMoreRef.current = false;
+  }
+}, [appendNextBatch, currentBatchIdx, prefetchNextBatches]);
 
   // onEndReached from FlatList (use threshold to avoid too early triggering)
   const onEndReached = useCallback(() => {
@@ -514,7 +526,7 @@ useEffect(() => {
           <ActivityIndicator size={"large"} color={"#ddd"} style={{ marginTop: 120 }} />
         ) : (
           <FlatList
-            style={{ paddingHorizontal: 15 }}
+            style={{ paddingHorizontal: 12.5 }}
             data={messages}
             keyExtractor={(item, index) => `${item?.chatId || 'c'}-${item?.id || index}`}
             renderItem={({ item }: any) =>
