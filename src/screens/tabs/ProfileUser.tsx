@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -30,82 +30,178 @@ type Profile = {
 };
 
 export default function ProfileScreen() {
-  const [profile, setProfile] = useState<any>(null);
-  const [photos, setPhotos] = useState<string[]>([]);
-  const [loadingPhotos, setLoadingPhotos] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [profile, setProfile] = useState<Profile | any>(null);
 
-  const flatListRef = useRef<FlatList<string>>(null);
-  const route = useRoute()
+  // uris array will contain either string (file://...) or null if not downloaded yet
+  const [uris, setUris] = useState<(string | null)[]>([]);
+  const [metaPhotos, setMetaPhotos] = useState<any[]>([]);
+  const [loadingInitial, setLoadingInitial] = useState(false);
+
+  const downloadingRef = useRef<Set<number>>(new Set());
+  const highestDownloadedRef = useRef<number>(-1);
+
+  const flatListRef = useRef<FlatList<string | null> | null>(null);
+  const route = useRoute();
   const { data }: any = route.params || {};
+
+  const CHUNK_SIZE = 3;
+  const PREFETCH_THRESHOLD = 1;
 
   useEffect(() => {
     (async () => {
       try {
+        if (!data) return;
         setProfile(data);
+        setLoadingInitial(true);
+
         const userId = data.id;
-        setLoadingPhotos(true);
         const photoListRaw = await TdLib.getUserProfilePhotos(userId, 0, 100);
         const parsedPhotos = JSON.parse(photoListRaw);
-        console.log(data, userId)
-        console.log(parsedPhotos, "d")
-        const uris: string[] = [];
+        const photosArray = parsedPhotos.photos || [];
 
-        for (let photo of parsedPhotos.photos || []) {
-          const biggest = photo.sizes[photo.sizes.length - 1];
-          const result: any = await TdLib.downloadFile(biggest.photo.id);
-          const file = JSON.parse(result.raw);
+        setMetaPhotos(photosArray);
+        setUris(new Array(photosArray.length).fill(null));
 
-          if (file.local?.isDownloadingCompleted && file.local.path) {
-            uris.push(`file://${file.local.path}`);
-          }
+        if (photosArray.length > 0) {
+          await loadChunk(0, CHUNK_SIZE, photosArray);
         }
 
-        setPhotos(uris);
-        setLoadingPhotos(false);
+        setLoadingInitial(false);
       } catch (e) {
         console.error("❌ Error loading profile or photos", e);
-        setLoadingPhotos(false);
+        setLoadingInitial(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  const onMomentumScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const offsetX = event.nativeEvent.contentOffset.x;
-    const index = Math.round(offsetX / SCREEN_WIDTH);
-    setCurrentIndex(index);
-  };
+  const loadChunk = useCallback(
+    async (startIndex: number, size = CHUNK_SIZE, photosList = metaPhotos) => {
+      if (!photosList || photosList.length === 0) return;
+      const end = Math.min(startIndex + size - 1, photosList.length - 1);
+
+      const indicesToDownload: number[] = [];
+      for (let i = startIndex; i <= end; i++) {
+        if (uris[i] === undefined) continue;
+        if (uris[i] === null && !downloadingRef.current.has(i)) {
+          indicesToDownload.push(i);
+          downloadingRef.current.add(i);
+        }
+      }
+
+      if (indicesToDownload.length === 0) return;
+
+      await Promise.all(
+        indicesToDownload.map(async (idx) => {
+          try {
+            const photo = photosList[idx];
+            const biggest = photo.sizes[photo.sizes.length - 1];
+            const result: any = await TdLib.downloadFile(biggest.photo.id);
+            const file = JSON.parse(result.raw);
+
+            if (file.local?.isDownloadingCompleted && file.local.path) {
+              const uri = `file://${file.local.path}`;
+              setUris((prev) => {
+                const copy = [...prev];
+                copy[idx] = uri;
+                return copy;
+              });
+              highestDownloadedRef.current = Math.max(highestDownloadedRef.current, idx);
+            } else {
+              setUris((prev) => {
+                const copy = [...prev];
+                copy[idx] = null;
+                return copy;
+              });
+            }
+          } catch (err) {
+            console.warn("download failed for index", idx, err);
+            setUris((prev) => {
+              const copy = [...prev];
+              copy[idx] = null;
+              return copy;
+            });
+          } finally {
+            downloadingRef.current.delete(idx);
+          }
+        })
+      );
+    },
+    [metaPhotos, uris]
+  );
+
+  const onMomentumScrollEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetX = event.nativeEvent.contentOffset.x;
+      const index = Math.round(offsetX / SCREEN_WIDTH);
+
+      const nextChunkStart = highestDownloadedRef.current + 1;
+      const shouldPrefetch =
+        index + PREFETCH_THRESHOLD >= highestDownloadedRef.current &&
+        nextChunkStart < metaPhotos.length &&
+        !downloadingRef.current.has(nextChunkStart);
+
+      if (shouldPrefetch) {
+        loadChunk(nextChunkStart, CHUNK_SIZE);
+      }
+    },
+    [loadChunk, metaPhotos.length]
+  );
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems && viewableItems.length > 0) {
+      const first = viewableItems[0].index ?? 0;
+      setCurrentIndex(first);
+      const nextChunkStart = highestDownloadedRef.current + 1;
+      if (
+        first + PREFETCH_THRESHOLD >= highestDownloadedRef.current &&
+        nextChunkStart < metaPhotos.length &&
+        !downloadingRef.current.has(nextChunkStart)
+      ) {
+        loadChunk(nextChunkStart, CHUNK_SIZE);
+      }
+    }
+  }).current;
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 50,
+  }).current;
+
+  const scrollToIndexSafe = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= uris.length) return;
+      flatListRef.current?.scrollToIndex({ index, animated: true });
+      const chunkStart = Math.floor(index / CHUNK_SIZE) * CHUNK_SIZE;
+      loadChunk(chunkStart, CHUNK_SIZE);
+    },
+    [uris.length, loadChunk]
+  );
 
   const renderFallback = () => {
     if (profile?.profilePhoto?.minithumbnail?.data) {
       const base64 = fromByteArray(profile.profilePhoto.minithumbnail.data as any);
-      return (
-        <Image
-          source={{ uri: `data:image/jpeg;base64,${base64}` }}
-          style={styles.image}
-        />
-      );
+      return <Image source={{ uri: `data:image/jpeg;base64,${base64}` }} style={styles.image} />;
     }
 
     return (
       <View style={styles.placeholder}>
-        <Text style={styles.initial}>
-          {profile?.firstName?.[0]?.toUpperCase() || "?"}
-        </Text>
+        <Text style={styles.initial}>{profile?.firstName?.[0]?.toUpperCase() || "?"}</Text>
       </View>
     );
   };
 
   const renderLineIndicator = () => {
-    if (photos.length <= 1) return null;
-    const width:number = 100 / photos.length;
+    if (uris.length <= 1) return null;
+    const width: number = 100 / uris.length;
     return (
       <View style={styles.indicatorContainer}>
-        {photos.map((_, i) => (
+        {uris.map((_, i) => (
           <View
             key={i}
             style={[
-              {width: `${width}%`},
+              { width: `${width}%` },
               styles.indicator,
               currentIndex === i && styles.indicatorActive,
             ]}
@@ -115,91 +211,124 @@ export default function ProfileScreen() {
     );
   };
 
-  const goPrevious = () => {
-    if (currentIndex > 0) {
-      flatListRef.current?.scrollToIndex({ index: currentIndex - 1, animated: false });
-      setCurrentIndex(currentIndex - 1);
-    }
+  const renderItem = ({ index }: { item: string | null; index: number }) => {
+    // read directly from uris to make sure we use latest value
+    const uri = uris[index];
+    const isDownloading = downloadingRef.current.has(index);
+
+    return (
+      <View style={{ width: SCREEN_WIDTH, height: 370 }}>
+        {uri ? (
+          // key changes when URI changes so Image remounts immediately
+          <Image key={uri} source={{ uri }} style={styles.image} />
+        ) : isDownloading ? (
+          <View style={styles.centered}>
+            <ActivityIndicator size="large" />
+          </View>
+        ) : profile?.profilePhoto?.minithumbnail?.data ? (
+          <Image
+            key={`thumb-${index}`}
+            source={{
+              uri: `data:image/jpeg;base64,${fromByteArray(profile.profilePhoto.minithumbnail.data as any)}`,
+            }}
+            style={styles.image}
+          />
+        ) : (
+          <View style={styles.placeholder}>
+            <Text style={styles.initial}>{profile?.firstName?.[0]?.toUpperCase() || "?"}</Text>
+          </View>
+        )}
+
+        <TouchableWithoutFeedback
+          onPress={() => {
+            const nextIndex = Math.min(index + 1, uris.length - 1);
+            scrollToIndexSafe(nextIndex);
+          }}
+        >
+          <View style={styles.touchRight} />
+        </TouchableWithoutFeedback>
+
+        <TouchableWithoutFeedback
+          onPress={() => {
+            const prevIndex = Math.max(index - 1, 0);
+            scrollToIndexSafe(prevIndex);
+          }}
+        >
+          <View style={styles.touchLeft} />
+        </TouchableWithoutFeedback>
+
+        <Text style={styles.nameText}>
+          {profile?.firstName} {profile?.lastName}
+        </Text>
+      </View>
+    );
   };
 
-  const goNext = () => {
-    if (currentIndex < photos.length - 1) {
-      flatListRef.current?.scrollToIndex({ index: currentIndex + 1, animated: false });
-      setCurrentIndex(currentIndex + 1);
-    }
-  };
+  if (loadingInitial) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <StatusBar backgroundColor="#000" barStyle="light-content" />
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="#000" barStyle="light-content" />
-      {loadingPhotos ? (
-        renderFallback()
-      ) : photos.length > 0 ? (
+      {uris.length > 0 ? (
         <View>
           <FlatList
             ref={flatListRef}
-            data={photos}
+            data={uris}
+            extraData={uris} // <-- ensure FlatList re-renders when uris changes
             horizontal
             pagingEnabled
             scrollEnabled
-            keyExtractor={(_, index) => index.toString()}
-            renderItem={({ item }) => (
-              <View style={{ width: SCREEN_WIDTH, height: 370 }}>
-                <Image source={{ uri: item }} style={styles.image} />
-
-                {/* نیمه راست → عکس بعدی */}
-                <TouchableWithoutFeedback onPress={goNext}>
-                  <View style={styles.touchRight} />
-                </TouchableWithoutFeedback>
-
-                {/* نیمه چپ ← عکس قبلی */}
-                <TouchableWithoutFeedback onPress={goPrevious}>
-                  <View style={styles.touchLeft} />
-                </TouchableWithoutFeedback>
-
-
-                  <Text style={styles.nameText}>
-                    {profile?.firstName} {profile?.lastName}
-                  </Text>
-              </View>
-            )}
+            keyExtractor={(item:any, index) => item + index}
+            renderItem={renderItem}
             onMomentumScrollEnd={onMomentumScrollEnd}
             showsHorizontalScrollIndicator={false}
+            viewabilityConfig={viewabilityConfig}
+            onViewableItemsChanged={onViewableItemsChanged}
+            initialNumToRender={3}
+            windowSize={5}
+            removeClippedSubviews={true}
+            getItemLayout={(_, index) => ({
+              length: SCREEN_WIDTH,
+              offset: SCREEN_WIDTH * index,
+              index,
+            })}
           />
           {renderLineIndicator()}
         </View>
-      ): renderFallback()}
+      ) : (
+        renderFallback()
+      )}
 
       <View style={styles.informationBox}>
-        {
-          profile?.phoneNumber && (
-            <View style={{flexDirection: "row", gap:5, alignItems: "flex-start"}}>
-              <Phone color={"#999"} width={15} />
-              <View>
-                <Text style={styles.infoValue}>
-                  {profile.phoneNumber.startsWith("+") ? profile.phoneNumber : `${profile.phoneNumber}+`}
-                </Text>
-                <Text style={styles.infoLabel}>شماره تماس</Text>
-              </View>
+        {profile?.phoneNumber && (
+          <View style={{ flexDirection: "row", gap: 5, alignItems: "flex-start" }}>
+            <Phone color={"#999"} width={15} />
+            <View>
+              <Text style={styles.infoValue}>
+                {profile.phoneNumber.startsWith("+") ? profile.phoneNumber : `${profile.phoneNumber}+`}
+              </Text>
+              <Text style={styles.infoLabel}>شماره تماس</Text>
             </View>
-          )
-        }
+          </View>
+        )}
 
-        {
-          profile?.usernames?.activeUsernames[0] && (
-            <View style={{flexDirection: "row", gap:5, alignItems: "flex-start"}}>
-              <User color={"#999"} width={15} />
-              <View>
-                <Text style={styles.infoValue}>
-                  @{profile.usernames.activeUsernames[0]}
-                </Text>
-                <Text style={styles.infoLabel}>نام کاربری</Text>
-              </View>
+        {profile?.usernames?.activeUsernames?.[0] && (
+          <View style={{ flexDirection: "row", gap: 5, alignItems: "flex-start" }}>
+            <User color={"#999"} width={15} />
+            <View>
+              <Text style={styles.infoValue}>@{profile.usernames.activeUsernames[0]}</Text>
+              <Text style={styles.infoLabel}>نام کاربری</Text>
             </View>
-          )
-        }
+          </View>
+        )}
       </View>
-
     </View>
   );
 }
@@ -245,8 +374,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 7,
     position: "absolute",
-    top:5,
-    paddingHorizontal:20
+    top: 5,
+    paddingHorizontal: 20,
   },
   indicator: {
     height: 2.3,
@@ -270,12 +399,12 @@ const styles = StyleSheet.create({
     width: SCREEN_WIDTH / 3,
     height: "100%",
   },
-    informationBox: {
-    paddingHorizontal:10,
+  informationBox: {
+    paddingHorizontal: 10,
     paddingVertical: 16,
     alignItems: "flex-start",
-    gap:20,
-    backgroundColor: "#111"
+    gap: 20,
+    backgroundColor: "#111",
   },
   infoValue: {
     color: "#ccc",
@@ -290,5 +419,4 @@ const styles = StyleSheet.create({
     fontFamily: "SFArabic-Light",
     marginTop: 1,
   },
-
 });
