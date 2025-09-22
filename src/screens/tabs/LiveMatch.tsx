@@ -5,13 +5,14 @@ import {
   Dimensions,
   View,
   I18nManager,
-  StyleSheet
+  StyleSheet,
+  StatusBar,
+  FlatList
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import io from "socket.io-client";
 import DaySelector from "../../components/tabs/liveMatch/DaySelector";
 import MatchList from "../../components/tabs/liveMatch/MatchList";
-import { text } from "node:stream/consumers";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -34,7 +35,7 @@ export default function LiveMatchScreen() {
   const scrollViewRef = useRef<Animated.FlatList>(null);
 
   useEffect(() => {
-    socketRef.current = io("http://192.168.1.103:3100", {
+    socketRef.current = io("http://10.99.19.115:9000", {
       transports: ["websocket"],
     });
 
@@ -48,12 +49,16 @@ export default function LiveMatchScreen() {
   }, []);
 
   const fetchMatchesOnce = (dayId: number) => {
+    console.log("try t get")
     if (matchCache[dayId]) return;
     setLoadingDays((prev) => ({ ...prev, [dayId]: true }));
-    socketRef.current.emit("matchesResult", dayId, (res: any) => {
+    socketRef.current.emit("live-match", dayId, (res: any) => {
+      console.log("server response:", res);
+
       setLoadingDays((prev) => ({ ...prev, [dayId]: false }));
-      if (res.matchResultExist) {
-        setMatchCache((prev) => ({ ...prev, [dayId]: res.matchesResult }));
+
+      if (res.matchList && res.matchList.length > 0) {
+        setMatchCache((prev) => ({ ...prev, [dayId]: res.matchList }));
       } else {
         setMatchCache((prev) => ({ ...prev, [dayId]: [] }));
       }
@@ -70,9 +75,20 @@ export default function LiveMatchScreen() {
     }
   };
 
+  // داخل LiveMatchScreen
+  const listRefs = useRef<{ [key: number]: FlatList<any> | null }>({});
+
   const onDaySelect = (index: number) => {
     setSelectedDayIndex(index);
     fetchMatchesOnce(dayList[index].id);
+
+    // وقتی روز عوض شد، اسکرول اون لیست رو ببریم بالا
+    const dayId = dayList[index].id;
+    const ref = listRefs.current[dayId];
+    if (ref) {
+      ref.scrollToOffset({ offset: 0, animated: false });
+    }
+
     const ltrIndex = dayList.length - 1 - index;
     scrollViewRef.current?.scrollToOffset({
       offset: ltrIndex * SCREEN_WIDTH,
@@ -81,7 +97,8 @@ export default function LiveMatchScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#0c0c0c" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#000" }}>
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
       <DaySelector
         days={dayList}
         selectedIndex={selectedDayIndex}

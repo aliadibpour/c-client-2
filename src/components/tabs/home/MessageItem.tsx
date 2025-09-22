@@ -87,7 +87,7 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
 
   return (
     <TouchableOpacity onPress={handlePress} activeOpacity={0.9} style={{
-      borderBottomColor: "#222",
+      borderBottomColor: "#111",
       borderBottomWidth: 1,
       paddingVertical: 15,
     }}>

@@ -38,14 +38,13 @@ const DaySelector: React.FC<Props> = ({ days, selectedIndex, onSelect, scrollX }
 
   const renderItem = ({ item, index }: { item: Day; index: number }) => (
     <Pressable
-      onPress={() => onSelect(index)}
+      onPress={() => onSelect(days.length - 1 - index)}
       style={{
         width: ITEM_WIDTH,
         alignItems: "center",
         justifyContent: "center",
         height: 50,
-        marginBottom:18,
-        borderBottomColor: "#222",
+        borderBottomColor: "#000",
         borderBottomWidth:1
       }}
     >
