@@ -18,6 +18,7 @@ import { fromByteArray } from "base64-js";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { teamImages } from "../setup/PickTeams";
 import { Edit2, Heart, LogOut, Phone, User } from "lucide-react-native";
+import { HeartIcon, LogoutIcon, PhoneIcon, UserIcon } from "../../assets/icons";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -140,8 +141,8 @@ export default function ProfileScreen({ navigation }: any) {
     <View style={styles.informationBox}>
       {
         profile?.phoneNumber && (
-          <View style={{flexDirection: "row", gap:5, alignItems: "flex-start"}}>
-            <Phone color={"#999"} width={15} />
+          <View style={{flexDirection: "row", gap:3, alignItems: "flex-start"}}>
+            <PhoneIcon color={"#999"} />
             <View>
               <Text style={styles.infoValue}>
                 {profile.phoneNumber.startsWith("+") ? profile.phoneNumber : `${profile.phoneNumber}+`}
@@ -154,8 +155,8 @@ export default function ProfileScreen({ navigation }: any) {
 
       {
         profile?.usernames.activeUsernames[0] && (
-          <View style={{flexDirection: "row", gap:5, alignItems: "flex-start"}}>
-            <User color={"#999"} width={15} />
+          <View style={{flexDirection: "row", gap:3, alignItems: "flex-start"}}>
+            <UserIcon color={"#999"}/>
             <View>
               <Text style={styles.infoValue}>
                 @{profile.usernames.activeUsernames[0]}
@@ -211,8 +212,8 @@ export default function ProfileScreen({ navigation }: any) {
 
     return (
       <View style={styles.favoritesBox}>
-        <View style={{flexDirection: "row", gap:5}}>
-          <Heart color={"#999"} width={15}/>
+        <View style={{flexDirection: "row", gap:3, alignItems: "center" }}>
+          <HeartIcon color={"#999"}/>
           <Text style={styles.favoritesTitle}>تیم‌های مورد علاقه</Text>
         </View>
         <View style={styles.favoritesList}>
@@ -296,8 +297,8 @@ export default function ProfileScreen({ navigation }: any) {
 
 
       <View style={{backgroundColor: "#111", paddingVertical: 10, paddingHorizontal: 10, marginTop: 15}}>
-        <TouchableOpacity style={{gap :8, alignItems: "center", flexDirection:"row"}}>
-          <LogOut color={"#999"} width={15.6}/>
+        <TouchableOpacity style={{gap:3, alignItems: "center", flexDirection:"row"}}>
+          <LogoutIcon color={"#999"} />
           <Text style={{fontSize: 15, fontFamily: "SFArabic-Regular", color: "#ddd"}}>خروج از حساب کاربری</Text>
         </TouchableOpacity>
       </View>
@@ -405,13 +406,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical:12,
     backgroundColor: "#111",
-    marginTop: 15
+    marginTop: 15,
+    gap: 8,
   },
   favoritesTitle: {
     color: '#ddd',
     fontSize: 15,
     fontFamily: 'SFArabic-Regular',
-    marginBottom: 10,
   },
   favoritesList: {
     flexDirection: 'row',

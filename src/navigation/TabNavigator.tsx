@@ -103,7 +103,8 @@ const styles = StyleSheet.create({
     paddingBottom: 1,
     height: 50,
     borderTopWidth: 0.4,
-    borderColor: "#222"
+    borderBottomWidth: 0.4,
+    borderColor: "#161616ff"
   },
   iconContainer: {
     alignItems: "center",
