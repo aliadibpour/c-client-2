@@ -102,7 +102,7 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
         <Text style={{
           color: "#ccc",
           marginBottom: 10,
-          fontSize: 13.9,
+          fontSize: 13.6,
           fontFamily: "SFArabic-Regular",
           lineHeight: 25,
         }}>
@@ -114,7 +114,7 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
         <Text style={{
           color: "#ccc",
           marginBottom: 10,
-          fontSize: 13.9,
+          fontSize: 13.6,
           fontFamily: "SFArabic-Regular",
           lineHeight: 25,
         }}>
