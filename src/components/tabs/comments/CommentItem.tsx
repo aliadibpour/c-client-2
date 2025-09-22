@@ -77,15 +77,15 @@ export default function CommentItem({ item, index, comments, navigation, highlig
           </TouchableOpacity>
         ) : (
           <TouchableOpacity onPress={() => navigation.navigate("ProfileUser", { data: user })}>
-  <View style={[
-    styles.avatarPlaceholder,
-    { backgroundColor: getAvatarColor(user?.id ?? firstLetter) }
-  ]}>
-    <Text style={{ color: "#fff", fontWeight: "bold" }}>
-      {firstLetter}
-    </Text>
-  </View>
-</TouchableOpacity>
+            <View style={[
+              styles.avatarPlaceholder,
+              { backgroundColor: getAvatarColor(user?.id ?? firstLetter) }
+            ]}>
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                {firstLetter}
+              </Text>
+            </View>
+          </TouchableOpacity>
 
         )
       ) : (
@@ -111,6 +111,13 @@ export default function CommentItem({ item, index, comments, navigation, highlig
           {item?.content?.text?.text || "بدون متن"}
         </Text>
 
+        <Text style={styles.timeText}>
+          {new Date(item.date * 1000).toLocaleTimeString("EN", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </Text>
+
         {item.interactionInfo?.reactions?.reactions?.length > 0 && (
           <MessageReactions
             reactions={item.interactionInfo.reactions.reactions}
@@ -120,7 +127,7 @@ export default function CommentItem({ item, index, comments, navigation, highlig
             customStyles={{
               container: {
                 justifyContent: "flex-start",
-                marginTop: 8,
+                marginTop: 0,
                 paddingHorizontal: 0,
                 marginBottom: 8,
               },
@@ -150,10 +157,11 @@ const styles = StyleSheet.create({
     maxWidth: "80%",
   },
   commentText: {
-    color: "#fff",
+    color: "#ccc",
     fontSize: 14,
     lineHeight: 22,
     fontFamily: "SFArabic-Regular",
+    marginBottom:8
   },
   avatar: {
     width: 37,
@@ -193,5 +201,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "SFArabic-Regular",
     textAlign: "left",
+  },
+  timeText: {
+    fontSize: 10,
+    color: "#aaa",
+    textAlign: "right",
+    marginTop: 6,
+    fontFamily: "SFArabic-Regular",
+    position: "absolute",
+    bottom: 4,
+    right: 8,
   },
 });
