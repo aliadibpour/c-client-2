@@ -42,6 +42,8 @@ export default function HomeScreen() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [initialError, setInitialError] = useState<boolean>(false);
+  const [loadMoreError, setLoadMoreError] = useState<boolean>(false);
 
   // prefetch store: batchIdx -> messages[]
   const prefetchRef = useRef<Map<number, any[]>>(new Map());
@@ -185,9 +187,10 @@ export default function HomeScreen() {
       try {
         setInitialLoading(true);
         const uuid: any = await AsyncStorage.getItem("userId-corner");
-        const res = await fetch(`http://192.168.1.102:9000/feed-message?team=perspolis&uuid=${JSON.parse(uuid || '{}').uuid}`);
-        //const res = await fetch(`http://192.168.1.102:9000/messages?team=perspolis`);
+        const res = await fetch(`http://10.99.19.115:9000/feed-message?team=perspolis&uuid=${JSON.parse(uuid || '{}').uuid}`);
+        //const res = await fetch(`http://10.99.19.115:9000/messages?team=perspolis`);
         const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
+        console.log(datass)
         // sort by messageId desc and keep a reasonable cap
         const datas = datass.sort((a, b) => +b.messageId - +a.messageId).slice(0, 200);
         datasRef.current = datas;
@@ -205,6 +208,7 @@ export default function HomeScreen() {
         setHasMore(datasRef.current.length > first.length);
       } catch (err) {
         console.error("❌ Failed to fetch messages metadata:", err);
+        setInitialError(true);
       } finally {
         if (mounted) setInitialLoading(false);
       }
@@ -354,7 +358,7 @@ const loadMore = useCallback(async () => {
     try {
       const lastMessageId = datasRef.current[datasRef.current.length - 1]?.messageId;
       const uuid: any = await AsyncStorage.getItem("userId-corner");
-      const res = await fetch(`http://192.168.1.102:9000/feed-message?team=perspolis&uuid=${JSON.parse(uuid || '{}').uuid}`);
+      const res = await fetch(`http://10.99.19.115:9000/feed-message?team=perspolis&uuid=${JSON.parse(uuid || '{}').uuid}`);
       const newDatas: { chatId: string; messageId: string; channel: string }[] = await res.json();
 
       if (newDatas.length === 0) {
@@ -368,6 +372,7 @@ const loadMore = useCallback(async () => {
       }
     } catch (err) {
       console.log("❌ loadMore server fetch error:", err);
+      setLoadMoreError(true)
     } finally {
       setLoadingMore(false);
       isLoadingMoreRef.current = false;
@@ -523,8 +528,20 @@ useEffect(() => {
 
       <View style={{ flex: 1 }}>
         {initialLoading ? (
-          <ActivityIndicator size={"large"} color={"#ddd"} style={{ marginTop: 120 }} />
-        ) : (
+        <ActivityIndicator size="large" color="#ddd" style={{ marginTop: 120 }} />
+          ) : initialError ? (
+            <View style={{ marginTop: 120, alignItems: "center" }}>
+              <Text style={{ color: "rgba(138, 138, 138, 1)", marginBottom: 10, fontFamily: "SFArabic-Regular" }}>از وصل بودن فیاترشکن و اینترنت اطمینان حاصل کنید</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setInitialError(false);
+                }}
+                style={{ paddingHorizontal: 20, paddingVertical: 10, backgroundColor: "#333", borderRadius: 8 }}
+              >
+                <Text style={{ color: "#fff", fontFamily: "SFArabic-Regular" }}>تلاش دوباره</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
           <FlatList
             style={{ paddingHorizontal: 12.5 }}
             data={messages}
