@@ -171,7 +171,7 @@ export default function Composer({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#111',
+    backgroundColor: '#000',
   },
   row: {
     flexDirection: 'row',
@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
   icon: { fontSize: 22 },
   input: {
     flex: 1,
-    fontSize: 14.6,
+    fontSize: 14,
     textAlignVertical: 'center',
     color: '#fff',
     textAlign: "right",
@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
   emojiPanel: {
     overflow: 'hidden',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#444',
+    borderTopColor: '#111',
     backgroundColor: '#222',
   },
   emojiInner: {
