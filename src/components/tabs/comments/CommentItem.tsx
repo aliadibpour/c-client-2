@@ -115,6 +115,7 @@ export default function CommentItem({ item, index, comments, navigation, highlig
           {new Date(item.date * 1000).toLocaleTimeString("EN", {
             hour: "2-digit",
             minute: "2-digit",
+            hour12: false,
           })}
         </Text>
 
@@ -147,7 +148,7 @@ const styles = StyleSheet.create({
   commentItem: {
     flexDirection: "row",
     alignItems: "flex-start",
-    marginVertical: 6,
+    marginVertical: 5,
     paddingHorizontal: 6,
   },
   bubble: {
@@ -158,10 +159,10 @@ const styles = StyleSheet.create({
   },
   commentText: {
     color: "#ccc",
-    fontSize: 14,
+    fontSize: 13.8,
     lineHeight: 22,
     fontFamily: "SFArabic-Regular",
-    marginBottom:8
+    marginBottom:8,
   },
   avatar: {
     width: 37,
@@ -177,12 +178,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#555",
     justifyContent: "center",
     alignItems: "center",
-    marginHorizontal: 8,
   },
   username: {
     color: "#aaa",
     fontSize: 12,
-    marginTop: 4,
+    marginTop: 3,
     fontFamily: "SFArabic-Regular",
     textAlign: "left",
   },
