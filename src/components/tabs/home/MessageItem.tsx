@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Text, View, TouchableOpacity } from "react-native";
+import { Text, View, TouchableOpacity, StyleSheet } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import MessageHeader from "./MessageHeader";
 import PhotoMessage from "./MessagePhoto";
 import VideoMessage from "./MessageVideo";
 import MessageReactions from "./MessageReaction";
 import { ArrowLeftIcon } from "../../../assets/icons";
+import { ReplyIcon } from "lucide-react-native";
 
 const cleanText = (text: string): string => {
   return text
@@ -91,6 +92,51 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
       borderBottomWidth: 1,
       paddingVertical: 15,
     }}>
+
+
+
+      {/* === نمایش ریپلای اگر وجود داشته باشد === */}
+      {message.replyToMessage && (
+        <TouchableOpacity
+          onPress={() =>
+            navigation.navigate("Channel", {
+              chatId: message.chatId,
+              focusMessageId: message.replyToMessage.id,
+            })
+          }
+          style={styles.replyBox}
+        >
+          <ReplyIcon width={16} height={16} color="#999" />
+          
+          {/* اگر عکس یا ویدیو هست، یه preview کوچیک */}
+          {message.replyToMessage.content?.photo && (
+            <PhotoMessage
+              photo={message.replyToMessage.content.photo}
+              activeDownload={false}
+              width={28}
+              height={20}
+            />
+          )}
+          {/* {message.replyToMessage.content?.video && (
+            <MessageVideo
+              video={message.replyToMessage.content.video}
+              isVisible={false}
+              width={28}
+              height={20}
+            />
+          )} */}
+
+          {/* متن کوتاه‌شده */}
+          <Text numberOfLines={1} style={styles.replyText}>
+            {message.replyToMessage.content?.text?.text?.slice(0, 30) ||
+              message.replyToMessage.content?.caption?.text?.slice(0, 30) ||
+              "پاسخ به پیام"}
+          </Text>
+        </TouchableOpacity>
+      )}
+
+
+
       <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
         <MessageHeader chatId={message.chatId} />
         <Text style={{ color: "#999", fontSize: 12.33, fontFamily: "SFArabic-Regular", marginBottom: 8 }}>
@@ -158,3 +204,24 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
     </TouchableOpacity>
   );
 }
+
+
+const styles = StyleSheet.create({
+    replyBox: {
+    backgroundColor: "rgba(111, 111, 111, 0.15)",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderLeftWidth: 2,
+    borderLeftColor: "#888",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 6,
+  },
+  replyText: {
+    color: "#ccc",
+    fontSize: 12,
+    fontFamily: "SFArabic-Regular",
+    flexShrink: 1,
+  },
+})
