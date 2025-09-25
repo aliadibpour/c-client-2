@@ -25,41 +25,63 @@ const teamImages: { [key: string]: any } = {
   'میلان': require('../../../assets/teams/milan.png'),
 };
 
+const teamRecord : { [key: string]: string } = {
+  'پرسپولیس': 'perspolis',
+  'استقلال': 'esteghlal',
+  'سپاهان': 'sepahan',
+  'تراکتور': 'tractor',
+  'بارسلونا': 'barcelona',
+  'رئال مادرید': 'realmadrid',
+  'آرسنال': 'arsenal',
+  'منچستر یونایتد': 'manchesterunited',
+  'لیورپول': 'liverpool',
+  'چلسی': 'chelsea',
+  'بایرن': 'bayern',
+  'اینتر': 'inter',
+  'میلان': 'milan',
+  'برای شما': "perspolis"
+}
+export const pepe = (team:string) => {
+  return teamRecord[team];
+}
 
-export default function HomeHeader() {
-  const [teams, setTeams] = useState<any>()
+export default function HomeHeader({ activeTab, setActiveTab }:any) {
+  const [teams, setTeams] = useState<any>([]);
+
   useEffect(() => {
     const getTeams = async () => {
-        const teams:any = await AsyncStorage.getItem("teams")
-        setTeams(teams ? JSON.parse(teams) : null)
-        setTeams(teams?.length > 1 ? ["برای شما", ...Object.values(JSON.parse(teams))] : ["برای شما"])
-        console.log(teams)
-    }
+      const teams: any = await AsyncStorage.getItem("teams");
+      const parsed = JSON.parse(teams);
+      if (!parsed) return;
 
-    getTeams()
-  },[])
+      // ✅ شرط: اگر فقط یک تیم بود، "برای شما" نشون داده نشه
+      const teamValues = Object.values(parsed);
+      if (teamValues.length > 1) {
+        setTeams(["برای شما", ...teamValues]);
+      } else {
+        setTeams(teamValues); // فقط همون یکی
+      }
+    };
 
-  const [activeTab, setActiveTab] = useState("برای شما");
+    getTeams();
+  }, []);
 
   return (
     <View style={styles.headerContainer}>
       <Image source={require("../../../assets/images/corner-logo.png")} style={styles.logo} />
 
-    <FlatList
+      <FlatList
         data={teams}
         horizontal
         showsHorizontalScrollIndicator={false}
-        keyExtractor={(item:any, index) => `${item}-${index}`}
+        keyExtractor={(item: any, index) => `${item}-${index}`}
         renderItem={({ item }) => {
-          const isActive = activeTab === item;
+          const isActive = activeTab === pepe(item);
           return (
-            <TouchableOpacity onPress={() => setActiveTab(item)} style={[styles.tabItem, isActive && styles.activeTab]}>
-              {/* {
-                teamImages[item] ? <Image source={teamImages[item]} style={{ width: 16, height: 16, marginBottom: -2, marginHorizontal: 6 }} /> : null
-              } */}
-                <Text style={[styles.tabText, isActive && styles.activeTabText]}>
-                  {item}
-                </Text>
+            <TouchableOpacity onPress={() => setActiveTab(pepe(item))} style={[styles.tabItem, isActive && styles.activeTab]}>
+              <Text style={[styles.tabText, isActive && styles.activeTabText]}>
+                {item}
+              </Text>
             </TouchableOpacity>
           );
         }}
@@ -68,11 +90,12 @@ export default function HomeHeader() {
   );
 }
 
+
 const styles = StyleSheet.create({
   headerContainer: {
-    borderColor: "#222",
+    borderColor: "#111",
     borderBottomWidth: .7,
-    gap: 9,
+    gap: 6,
     paddingHorizontal: 8,
     paddingTop: 5,
     backgroundColor: "#000000e8",

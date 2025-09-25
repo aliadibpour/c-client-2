@@ -18,7 +18,7 @@ import TdLib from "react-native-tdlib";
 import MessageItem from "../../components/tabs/home/MessageItem";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import HomeHeader from "../../components/tabs/home/HomeHeader";
+import HomeHeader, { pepe } from "../../components/tabs/home/HomeHeader";
 import changeNavigationBarColor from 'react-native-navigation-bar-color';
 
 // ---- CONFIG ----
@@ -30,6 +30,8 @@ const POLL_INTERVAL_MS = 3000; // polling برای visible messages
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
 
+
+  const [activeTab, setActiveTab] = useState(pepe("برای شما")); // ✅ تب انتخاب شده
   const [messages, setMessages] = useState<any[]>([]);
   const [visibleIds, setVisibleIds] = useState<number[]>([]);
   const alreadyViewed = useRef<Set<number>>(new Set());
@@ -181,43 +183,65 @@ export default function HomeScreen() {
   );
 
   // initial fetch: get metadata list from server, then load first batch(s)
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        setInitialLoading(true);
-        const uuid: any = await AsyncStorage.getItem("userId-corner");
-        const res = await fetch(`http://10.99.19.115:9000/feed-message?team=perspolis&uuid=${JSON.parse(uuid || '{}').uuid}`);
-        //const res = await fetch(`http://10.99.19.115:9000/messages?team=perspolis`);
-        const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
-        console.log(datass)
-        // sort by messageId desc and keep a reasonable cap
-        const datas = datass.sort((a, b) => +b.messageId - +a.messageId).slice(0, 200);
-        datasRef.current = datas;
+const teamMap: Record<string, string> = {
+  "پرسپولیس": "perspolis",
+  "رئال مادرید": "realmadrid",
+  "آرسنال": "arsenal",
+  // بقیه تیم‌ها...
+};
 
-        // load first two batches quickly (faster perceived load)
-        const first = await loadBatch(0);
-        if (!mounted) return;
-        setMessages(first);
-        setCurrentBatchIdx(0);
+useEffect(() => {
+  let mounted = true;
 
-        // prefetch next batch(s)
-        prefetchNextBatches(0);
+  (async () => {
+    try {
+      // اگه تب فعال انتخاب نشده، درخواست نزن
+      if (!activeTab) return;
 
-        // determine hasMore
-        setHasMore(datasRef.current.length > first.length);
-      } catch (err) {
-        console.error("❌ Failed to fetch messages metadata:", err);
-        setInitialError(true);
-      } finally {
-        if (mounted) setInitialLoading(false);
-      }
-    })();
+      setInitialLoading(true);
+      setInitialError(false);
+      
+      const uuid: any = await AsyncStorage.getItem("userId-corner");
+      const parsedUuid = JSON.parse(uuid || "{}").uuid;
+      
+      // ✅ تب فارسی → انگلیسی
+      const serverTab = teamMap[activeTab] || activeTab;
 
-    return () => {
-      mounted = false;
-    };
-  }, [loadBatch, prefetchNextBatches]);
+      const res = await fetch(
+        `http://10.183.236.115:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}`
+      );
+      console.log("activeTab changed, reloaded", `http://10.183.236.115:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}`);
+
+      const datass: { chatId: string; messageId: string; channel: string }[] =
+        await res.json();
+
+      if (!mounted) return;
+
+      // sort by messageId desc and cap to 200
+      const datas = datass.sort((a, b) => +b.messageId - +a.messageId).slice(0, 200);
+
+      datasRef.current = datas;
+
+      const first = await loadBatch(0);
+      if (!mounted) return;
+      setMessages(first);
+      setCurrentBatchIdx(0);
+
+      prefetchNextBatches(0);
+
+      setHasMore(datasRef.current.length > first.length);
+    } catch (err) {
+      console.error("❌ Failed to fetch messages metadata:", err);
+      setInitialError(true);
+    } finally {
+      if (mounted) setInitialLoading(false);
+    }
+  })();
+  return () => {
+    mounted = false;
+  };
+}, [activeTab, loadBatch, prefetchNextBatches]);
+
 
   // polling visible messages periodically to update interactionInfo / latest
   const pollVisibleMessages = useCallback(() => {
@@ -358,7 +382,8 @@ const loadMore = useCallback(async () => {
     try {
       const lastMessageId = datasRef.current[datasRef.current.length - 1]?.messageId;
       const uuid: any = await AsyncStorage.getItem("userId-corner");
-      const res = await fetch(`http://10.99.19.115:9000/feed-message?team=perspolis&uuid=${JSON.parse(uuid || '{}').uuid}`);
+      //05872d0f-129f-4b81-8d4f-6a8b4709c6cc
+      const res = await fetch(`http://10.183.236.115:9000/feed-message?team=${encodeURIComponent(activeTab)}&uuid=${JSON.parse(uuid || '{}').uuid}`);
       const newDatas: { chatId: string; messageId: string; channel: string }[] = await res.json();
 
       if (newDatas.length === 0) {
@@ -522,7 +547,7 @@ useEffect(() => {
         style={[styles.animatedHeader, { transform: [{ translateY }] }]}
       >
         <View style={{ flex: 1, backgroundColor: "transparent", overflow: "hidden" }} pointerEvents="box-none">
-          <HomeHeader />
+          <HomeHeader activeTab={activeTab} setActiveTab={setActiveTab} />
         </View>
       </Animated.View>
 
