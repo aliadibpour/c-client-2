@@ -1,3 +1,4 @@
+// ProfileScreen.tsx
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -17,23 +18,10 @@ import TdLib from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { teamImages } from "../setup/PickTeams";
-import { Edit2, Heart, LogOut, Phone, User } from "lucide-react-native";
+import { Edit2 } from "lucide-react-native";
 import { HeartIcon, LogoutIcon, PhoneIcon, UserIcon } from "../../assets/icons";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
-type Profile = {
-  id: number;
-  firstName: string;
-  lastName: string;
-  phoneNumber: string;
-  profilePhoto?: {
-    minithumbnail?: { data: number[] };
-  };
-  usernames: {
-    activeUsernames: string[];
-  };
-};
 
 export default function ProfileScreen({ navigation }: any) {
   const [profile, setProfile] = useState<any>(null);
@@ -66,7 +54,6 @@ export default function ProfileScreen({ navigation }: any) {
         setLoadingPhotos(true);
         const photoListRaw = await TdLib.getUserProfilePhotos(profile.id, 0, 10);
         const parsedPhotos = JSON.parse(photoListRaw);
-        console.log(parsedPhotos, "ali adib")
         const uris: string[] = [];
 
         for (let photo of parsedPhotos.photos || []) {
@@ -79,14 +66,17 @@ export default function ProfileScreen({ navigation }: any) {
           }
         }
 
+        // keep natural order and show first image (index 0) by default
         setPhotos(uris);
-        setCurrentIndex(uris.length - 1);
+        setCurrentIndex(0);
 
         setTimeout(() => {
-          flatListRef.current?.scrollToIndex({
-            index: uris.length - 1,
-            animated: false,
-          });
+          if (uris.length > 0) {
+            flatListRef.current?.scrollToIndex({
+              index: 0,
+              animated: false,
+            });
+          }
         }, 100);
       } catch (e) {
         console.error("❌ Error loading profile photos", e);
@@ -104,21 +94,23 @@ export default function ProfileScreen({ navigation }: any) {
 
   const goPrevious = () => {
     if (currentIndex > 0) {
-      flatListRef.current?.scrollToIndex({ index: currentIndex - 1, animated: false });
-      setCurrentIndex(currentIndex - 1);
+      const nextIndex = currentIndex - 1;
+      flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
+      setCurrentIndex(nextIndex);
     }
   };
 
   const goNext = () => {
     if (currentIndex < photos.length - 1) {
-      flatListRef.current?.scrollToIndex({ index: currentIndex + 1, animated: false });
-      setCurrentIndex(currentIndex + 1);
+      const nextIndex = currentIndex + 1;
+      flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
+      setCurrentIndex(nextIndex);
     }
   };
 
   const renderFallback = () => {
     if (profile?.profilePhoto?.minithumbnail?.data) {
-      const base64 = fromByteArray(profile?.profilePhoto?.minithumbnail?.data as any);
+      const base64 = fromByteArray(profile?.profilePhoto?.minithumbnail.data as any);
       return (
         <View>
           <Image
@@ -128,71 +120,71 @@ export default function ProfileScreen({ navigation }: any) {
         </View>
       );
     }
+
+    const firstLetter = profile?.firstName?.[0]?.toUpperCase();
+
+    // IMPORTANT: do NOT put ActivityIndicator inside <Text>
+    if (firstLetter) {
+      return (
+        <View style={styles.placeholder}>
+          <Text style={styles.initial}>{firstLetter}</Text>
+        </View>
+      );
+    }
+
     return (
       <View style={styles.placeholder}>
-        <Text style={styles.initial}>
-          {profile?.firstName?.[0]?.toUpperCase() || <ActivityIndicator color={"#999"} />}
-        </Text>
+        <ActivityIndicator color={"#999"} size="large" />
       </View>
     );
   };
 
   const renderInformation = () => (
     <View style={styles.informationBox}>
-      {
-        profile?.phoneNumber && (
-          <View style={{flexDirection: "row", gap:3, alignItems: "flex-start"}}>
-            <PhoneIcon color={"#999"} />
-            <View>
-              <Text style={styles.infoValue}>
-                {profile.phoneNumber.startsWith("+") ? profile.phoneNumber : `${profile.phoneNumber}+`}
-              </Text>
-              <Text style={styles.infoLabel}>شماره تماس</Text>
-            </View>
+      {profile?.phoneNumber && (
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+          <PhoneIcon color={"#999"} />
+          <View>
+            <Text style={styles.infoValue}>
+              {/* if phone doesn't start with +, prepend it */}
+              {String(profile.phoneNumber).startsWith("+") ? profile.phoneNumber : `+${profile.phoneNumber}`}
+            </Text>
+            <Text style={styles.infoLabel}>شماره تماس</Text>
           </View>
-        )
-      }
+        </View>
+      )}
 
-      {
-        profile?.usernames.activeUsernames[0] && (
-          <View style={{flexDirection: "row", gap:3, alignItems: "flex-start"}}>
-            <UserIcon color={"#999"}/>
-            <View>
-              <Text style={styles.infoValue}>
-                @{profile.usernames.activeUsernames[0]}
-              </Text>
-              <Text style={styles.infoLabel}>نام کاربری</Text>
-            </View>
+      {profile?.usernames?.activeUsernames?.[0] && (
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+          <UserIcon color={"#999"} />
+          <View>
+            <Text style={styles.infoValue}>@{profile.usernames.activeUsernames[0]}</Text>
+            <Text style={styles.infoLabel}>نام کاربری</Text>
           </View>
-        )
-      }
+        </View>
+      )}
     </View>
   );
-
 
   const renderLineIndicator = () => {
     if (photos.length <= 1) return null;
     const width = 100 / photos.length;
     return (
       <View style={styles.indicatorContainer}>
-        {[...photos].reverse().map((_, i) => {
-          const realIndex = photos.length - 1 - i;
-          return (
-            <View
-              key={i}
-              style={[
-                { width: `${width}%` },
-                styles.indicator,
-                currentIndex === realIndex && styles.indicatorActive,
-              ]}
-            />
-          );
-        })}
+        {photos.map((_, i) => (
+          <View
+            key={i}
+            style={[
+              { width: `${width}%` },
+              styles.indicator,
+              currentIndex === i && styles.indicatorActive,
+            ]}
+          />
+        ))}
       </View>
     );
   };
 
-  
   const [favoriteTeams, setFavoriteTeams] = useState<{team1?: string, team2?: string, team3?: string}>({});
   useEffect(() => {
     const loadFavorites = async () => {
@@ -206,14 +198,12 @@ export default function ProfileScreen({ navigation }: any) {
 
   const renderFavoriteTeams = () => {
     const teamsArray = [favoriteTeams.team1, favoriteTeams.team2, favoriteTeams.team3].filter(Boolean);
-
-    // "ویرایش" رو به اول لیست اضافه کن
     const items = ["edit", ...teamsArray];
 
     return (
       <View style={styles.favoritesBox}>
-        <View style={{flexDirection: "row", gap:3, alignItems: "center" }}>
-          <HeartIcon color={"#999"}/>
+        <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
+          <HeartIcon color={"#999"} />
           <Text style={styles.favoritesTitle}>تیم‌های مورد علاقه</Text>
         </View>
         <View style={styles.favoritesList}>
@@ -221,15 +211,19 @@ export default function ProfileScreen({ navigation }: any) {
             if (teamName === "edit") {
               return (
                 <TouchableOpacity key="edit" style={styles.teamItem} onPress={() => navigation.navigate("PickTeams")}>
-                  <Edit2 color={"#999"} width={16}/>
+                  <Edit2 color={"#999"} width={16} />
                   <Text style={styles.teamName}>ویرایش</Text>
                 </TouchableOpacity>
               );
             }
 
             return (
-              <View key={index} style={styles.teamItem}>
-                <Image source={teamImages[teamName!]} style={styles.teamLogo} />
+              <View key={String(index)} style={styles.teamItem}>
+                {teamImages[teamName!] ? (
+                  <Image source={teamImages[teamName!]} style={styles.teamLogo} />
+                ) : (
+                  <View style={{ width: 24, height: 24, backgroundColor: "#444", borderRadius: 6 }} />
+                )}
                 <Text style={styles.teamName}>{teamName}</Text>
               </View>
             );
@@ -238,7 +232,6 @@ export default function ProfileScreen({ navigation }: any) {
       </View>
     );
   };
-
 
   return (
     <View style={styles.container}>
@@ -257,13 +250,13 @@ export default function ProfileScreen({ navigation }: any) {
             pagingEnabled
             keyExtractor={(_, index) => index.toString()}
             renderItem={({ item }) => (
-              <View style={{ width: SCREEN_WIDTH, height: 370 }}> {/* 👈 Item ارتفاع داره */}
+              <View style={{ width: SCREEN_WIDTH, height: 370 }}>
                 <Image source={{ uri: item }} style={styles.image} />
                 <TouchableWithoutFeedback onPress={goNext}>
-                  <View style={styles.touchRight}></View>
+                  <View style={styles.touchRight} />
                 </TouchableWithoutFeedback>
                 <TouchableWithoutFeedback onPress={goPrevious}>
-                  <View style={styles.touchLeft}></View>
+                  <View style={styles.touchLeft} />
                 </TouchableWithoutFeedback>
               </View>
             )}
@@ -282,12 +275,11 @@ export default function ProfileScreen({ navigation }: any) {
           />
           {renderLineIndicator()}
         </View>
-
       ) : (
         renderFallback()
       )}
 
-      {/* اینجا ثابت میذاریم پایین عکس */}
+      {/* اسم کاربر - راست چین شده و روی عکس قرار گرفته */}
       <Text style={styles.nameText}>
         {profile?.firstName} {profile?.lastName}
       </Text>
@@ -295,18 +287,14 @@ export default function ProfileScreen({ navigation }: any) {
       {renderInformation()}
       {renderFavoriteTeams()}
 
-
-      <View style={{backgroundColor: "#111", paddingVertical: 10, paddingHorizontal: 10, marginTop: 15}}>
-        <TouchableOpacity style={{gap:3, alignItems: "center", flexDirection:"row"}}>
+      <View style={{ backgroundColor: "#111", paddingVertical: 10, paddingHorizontal: 10, marginTop: 15 }}>
+        <TouchableOpacity style={{ gap: 6, alignItems: "center", flexDirection: "row" }}>
           <LogoutIcon color={"#999"} />
-          <Text style={{fontSize: 15, fontFamily: "SFArabic-Regular", color: "#ddd"}}>خروج از حساب کاربری</Text>
+          <Text style={{ fontSize: 15, fontFamily: "SFArabic-Regular", color: "#ddd" }}>خروج از حساب کاربری</Text>
         </TouchableOpacity>
       </View>
-
-
     </View>
   );
-
 }
 
 const styles = StyleSheet.create({
@@ -335,7 +323,7 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 25,
     position: "absolute",
-    left: 20,
+    right: 20, // use right for RTL layout
     top: 325,
     fontFamily: "SFArabic-Heavy",
   },
@@ -351,7 +339,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   indicatorContainer: {
-    flexDirection: "row-reverse",
+    flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     gap: 6,
@@ -383,11 +371,11 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   informationBox: {
-    paddingHorizontal:10,
+    paddingHorizontal: 10,
     paddingVertical: 10,
     alignItems: "flex-start",
-    gap:20,
-    backgroundColor: "#111"
+    gap: 20,
+    backgroundColor: "#111",
   },
   infoValue: {
     color: "#ccc",
@@ -398,13 +386,13 @@ const styles = StyleSheet.create({
   infoLabel: {
     color: "#999",
     fontSize: 12,
-    textAlign: "left",
+    textAlign: "right",
     fontFamily: "SFArabic-Light",
     marginTop: 1,
   },
   favoritesBox: {
     paddingHorizontal: 10,
-    paddingVertical:12,
+    paddingVertical: 12,
     backgroundColor: "#111",
     marginTop: 15,
     gap: 8,
@@ -417,7 +405,7 @@ const styles = StyleSheet.create({
   favoritesList: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10, 
+    gap: 10,
   },
   teamItem: {
     alignItems: 'center',
@@ -425,7 +413,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(224, 222, 222, 0.12)',
     padding: 10,
     borderRadius: 10,
-    width: 70, 
+    width: 70,
     height: 70,
   },
   teamLogo: {
@@ -439,13 +427,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontFamily: 'SFArabic-Regular',
   },
-  editTeams: {
-    borderRadius: 10,
-  },
-  editTeamsText: {
-    color: "#ccc",
-    fontFamily: 'SFArabic-Regular',
-    fontSize: 13,
-  }
-
 });
