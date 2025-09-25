@@ -230,6 +230,7 @@ function useTdlibStream(fileId: number | undefined, externalActiveDownload?: any
 
 export default function MessageVideo({ video, isVisible, context = "channel", activeDownload }: Props) {
   const [playerKey, setPlayerKey] = useState<number>(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const thumbnailPath = video?.thumbnail?.file?.local?.path;
   const minithumbnailData = video?.minithumbnail?.data;
@@ -365,16 +366,17 @@ export default function MessageVideo({ video, isVisible, context = "channel", ac
   return (
     <View style={{ width: finalWidth, height: finalHeight, borderRadius, overflow: "hidden", backgroundColor: "#000" }}>
       <Video
-        key={playerKey}
         source={videoPath ? { uri: videoPath } : undefined}
         style={{ width: "100%", height: "100%" }}
-        resizeMode="contain"
+        resizeMode={isFullscreen ? "contain" : "cover"}
         controls
         paused={!isVisible}
-        repeat={false}
+        repeat={true}
         onError={(e) => console.warn("[MessageVideo] player error:", e)}
         onLoad={(m) => console.log("[MessageVideo] player onLoad:", m)}
         onBuffer={(b) => console.log("[MessageVideo] player onBuffer:", b)}
+        onFullscreenPlayerWillPresent={() => setIsFullscreen(true)}
+        onFullscreenPlayerWillDismiss={() => setIsFullscreen(false)}
       />
 
       {/* overlays during streaming */}
