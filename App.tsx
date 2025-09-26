@@ -6,6 +6,7 @@ import RootNavigator from './src/navigation/RootNavigatore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TelegramService } from './src/services/TelegramService';
 import { StatusBar } from "react-native";
+import changeNavigationBarColor from 'react-native-navigation-bar-color';
 
 function App(): React.JSX.Element {
   const MyDarkTheme = {
@@ -26,7 +27,11 @@ function App(): React.JSX.Element {
     }
     configTdlib()
   }, []);
-
+  
+  useEffect(() => {
+    // Set navigation bar to black and icons to light
+    changeNavigationBarColor('#000000', false, true);
+  }, []);
   return (
     <NavigationContainer>
       <ThemeProvider value={MyDarkTheme}>

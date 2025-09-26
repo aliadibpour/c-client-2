@@ -527,10 +527,7 @@ const loadMore = useCallback(async () => {
       </View>
     );
   };
-useEffect(() => {
-  // Set navigation bar to black and icons to light
-  changeNavigationBarColor('#000000', false, true);
-}, []);
+
 
   return (
     <SafeAreaView style={styles.container}>
