@@ -1,11 +1,11 @@
 import { fromByteArray } from "base64-js";
-import { Reply } from "lucide-react-native";
 import React, { useEffect, useRef } from "react";
 import { Animated, Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import MessageReactions from "../home/MessageReaction";
 import { Easing } from "react-native";
+import { Reply } from "../../../assets/icons";
 
-export default function CommentItem({ item, index, comments, navigation, highlightedId, handleReplyClick }: any) {
+export default function CommentItem({ item, index, comments, navigation, highlightedId, handleReplyClick, onReply }: any) {
   const user = item?.user;
   const name = `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim();
 
@@ -93,7 +93,7 @@ export default function CommentItem({ item, index, comments, navigation, highlig
       )}
 
       <Animated.View style={[styles.bubble, { backgroundColor: bgColor }]}>
-        {showAvatar && name ? <Text style={styles.username}>{name}</Text> : null}
+        {name ? <Text style={styles.username}>{name}</Text> : null}
 
         {item.replyInfo && (
           <TouchableOpacity
@@ -102,7 +102,7 @@ export default function CommentItem({ item, index, comments, navigation, highlig
           >
             <Reply width={19} color={"#999"} style={{ position: "relative", bottom: 3 }} />
             <Text numberOfLines={1} style={styles.replyText}>
-              {item.replyInfo?.content?.text?.text.slice(0, 30)}
+              {item.replyInfo?.content?.text?.text.trim()}
             </Text>
           </TouchableOpacity>
         )}
@@ -140,6 +140,13 @@ export default function CommentItem({ item, index, comments, navigation, highlig
           />
         )}
       </Animated.View>
+      <TouchableOpacity 
+        onPress={() => onReply(item)}
+        style={{ justifyContent: "flex-end", paddingBottom: 6 ,height: "100%", paddingLeft:3}}>
+        <View style={{backgroundColor: "#f5f5f523", borderRadius: "50%", padding: 3}}>
+          <Reply color={"#aaa"} width={20} height={20} />
+        </View>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -148,8 +155,8 @@ const styles = StyleSheet.create({
   commentItem: {
     flexDirection: "row",
     alignItems: "flex-start",
-    marginVertical: 5,
-    paddingHorizontal: 6,
+    marginVertical: 4,
+    paddingHorizontal: 2,
   },
   bubble: {
     borderRadius: 12,
@@ -168,12 +175,13 @@ const styles = StyleSheet.create({
     width: 37,
     height: 37,
     borderRadius: 18,
-    marginHorizontal: 8,
+    marginHorizontal: 4,
     backgroundColor: "#444",
   },
   avatarPlaceholder: {
     width: 37,
     height: 37,
+    marginHorizontal: 4,
     borderRadius: 18,
     backgroundColor: "#555",
     justifyContent: "center",
@@ -194,7 +202,7 @@ const styles = StyleSheet.create({
     marginVertical: 6,
     flexDirection: "row",
     alignContent: "center",
-    gap: 4,
+    gap: 1,
   },
   replyText: {
     color: "#ccc",

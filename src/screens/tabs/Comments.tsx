@@ -18,7 +18,6 @@ import {
   DeviceEventEmitter,
   InteractionManager,
   Keyboard,
-  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ArrowLeftIcon } from "../../assets/icons";
@@ -30,6 +29,7 @@ import MessageReactions from "../../components/tabs/home/MessageReaction";
 import { FlashList, FlashListRef } from "@shopify/flash-list";
 import Composer from "../../components/tabs/comments/CommentsKeyboard";
 import CommentItem from "../../components/tabs/comments/CommentItem";
+import   Animated,{ FadeInDown, FadeOutDown } from "react-native-reanimated";
 
 type commentStateType = {comments:any[], start: number, end: number}
 export default function Comments() {
@@ -371,10 +371,20 @@ export default function Comments() {
 
 
 
-  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const offsetY = event.nativeEvent.contentOffset.y;
-    setShowScrollToBottom(offsetY > 0);
-  };
+const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
+
+  // فاصله‌ی کاربر از پایین
+  const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+
+  if (distanceFromBottom < 50) {
+    // یعنی رسیدیم پایین → دکمه پنهان بشه
+    setShowScrollToBottom(false);
+  } else {
+    // یعنی کاربر اسکرول کرده بالاتر → دکمه نشون داده بشه
+    setShowScrollToBottom(true);
+  }
+};
   
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     console.log(comments, "state")
@@ -540,11 +550,37 @@ const handleInteractionUpdate = (data: any) => {
     console.log(a)
   }
 
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => setKeyboardVisible(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setKeyboardVisible(false)
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+
+
+  const [replyingTo, setReplyingTo] = useState<any | null>(null);
+  const onReply = (comment: any) => {
+    setReplyingTo(comment);
+  };
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0} // می‌تونی مقدار مناسب بدی
+      keyboardVerticalOffset={Platform.OS === 'android'&&keyboardVisible ? 40 : 0} // فقط وقتی کیبورد باز است
+      
     >
       <StatusBar backgroundColor="#000" barStyle="light-content" />
       <ImageBackground
@@ -579,6 +615,7 @@ const handleInteractionUpdate = (data: any) => {
                     navigation={navigation}
                     highlightedId={highlightedId}
                     handleReplyClick={handleReplyClick}
+                    onReply={onReply}
                   />
                 )}
                 onViewableItemsChanged={onViewableItemsChanged.current}
@@ -608,12 +645,38 @@ const handleInteractionUpdate = (data: any) => {
               />
             )}
 
+          {
+          replyingTo && (
+            <Animated.View 
+              entering={FadeInDown.duration(150).springify().damping(18)} 
+              exiting={FadeOutDown.duration(150)}
+              style={{
+                backgroundColor: "rgba(17, 17, 17, 1)",
+                padding: 8,
+                borderColor: "#333",
+                flexDirection: "row",
+                alignItems: "center"
+              }}
+            >
+              <Reply color="#aaa" width={18} />
+              <Text 
+                numberOfLines={1} 
+                style={{ color: "#aaa", marginLeft: 6, flex: 1, fontFamily: "SFArabic-Regular", fontSize: 12.7 }}
+              >
+                {replyingTo?.content?.text?.text || "بدون متن"}
+              </Text>
+              <TouchableOpacity onPress={() => setReplyingTo(null)}>
+                <Text style={{ color: "#aaa", padding: 6 }}>✕</Text>
+              </TouchableOpacity>
+            </Animated.View>
+            )}
+
             <Composer onSend={(text) => sendComment(text)} value={text} onChangeText={(e) => setText(e)}/>
           </View>
 
           {showScrollToBottom && (
             <TouchableOpacity
-              style={styles.scrollToBottomButton}
+              style={[styles.scrollToBottomButton, { bottom: replyingTo ? 100 : 55 }]}
               onPress={() => scrollBottom()}
             >
               {showScrollToBottom === "loading" ?
@@ -725,8 +788,7 @@ const styles = StyleSheet.create({
   },
   scrollToBottomButton: {
     position: "absolute",
-    bottom: 65,
-    right: 13,
+    right: 3,
     width: 38,
     height: 38,
     borderRadius: 20,
@@ -736,7 +798,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   arrowLeft: {
-    color: "#fff",
+    color: "#ddd",
     transform: [{ rotate: "-90deg" }],
     margin: "auto",
   },

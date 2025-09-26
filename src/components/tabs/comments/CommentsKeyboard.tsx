@@ -9,7 +9,7 @@ import {
   Animated,
   BackHandler,
 } from 'react-native';
-import { EmojiIcon, SendIcon } from '../../../assets/icons';
+import { Emoji, EmojiIcon, SendIcon } from '../../../assets/icons';
 
 // --- Tiny emoji set (extend as needed). You can swap with a full picker later.
 const EMOJI = (
@@ -26,11 +26,13 @@ export type ComposerProps = {
   disabled?: boolean;
   value?: string;
   onChangeText?: (t: string) => void;
+  replyTo?: any; // ← استیت ریپلای از پدر
+  clearReply?: () => void; // ← تابع برای پاک کردن ریپلای
 };
 
 export default function Composer({
   onSend,
-  placeholder = 'پیام خود را بنویسید…',
+  placeholder = 'نظر خود را بنویسید…',
   maxLength = 4000,
   disabled = false,
   value,
@@ -119,12 +121,12 @@ export default function Composer({
           style={styles.iconBtn}
         >
           {/* <Text style={styles.icon}>{emojiOpen ? '⌨️' : '😊'}</Text> */}
-          <EmojiIcon />
+          <Emoji color={"#999"} />
         </TouchableOpacity>
 
         <TextInput
           ref={inputRef}
-          style={[styles.input, { height: Math.max(40, Math.min(inputHeight, 120)) }]}
+          style={[styles.input, { height:40 }]}
           value={text}
           onChangeText={setText}
           placeholder={placeholder}
@@ -136,6 +138,7 @@ export default function Composer({
           returnKeyType="send"
           onSubmitEditing={doSend}
           blurOnSubmit={false}
+          scrollEnabled={true}
         />
 
         <TouchableOpacity
