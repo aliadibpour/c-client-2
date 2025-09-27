@@ -111,7 +111,7 @@ export default function CommentItem({ item, index, comments, navigation, highlig
           {item?.content?.text?.text || "بدون متن"}
         </Text>
 
-        <Text style={styles.timeText}>
+        <Text style={styles.timeText} numberOfLines={1}>
           {new Date(item.date * 1000).toLocaleTimeString("EN", {
             hour: "2-digit",
             minute: "2-digit",

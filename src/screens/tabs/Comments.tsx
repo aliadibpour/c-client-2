@@ -96,7 +96,8 @@ export default function Comments() {
 
 
 
-    // تابع fetchComments دیگه نیازی به دریافت threadData نداره
+  // تابع fetchComments دیگه نیازی به دریافت threadData نداره
+  // replace your existing fetchComments with this
   const fetchComments = async (
     fromMessageId: number,
     offset: number,
@@ -105,12 +106,13 @@ export default function Comments() {
     try {
       const threadChatId = threadInfo?.chatId;
       const threadMsg = threadInfo?.messages?.[0];
+      const threadRootMessageId = threadMsg?.id;
 
       if (!threadChatId || !threadMsg?.id) {
         return [];
       }
 
-      // 1. گرفتن تاریخچه
+      // 1) history
       const historyResponse: any = await TdLib.getMessageThreadHistory(
         chatId,
         messageId,
@@ -118,70 +120,85 @@ export default function Comments() {
         offset,
         limit
       );
-      const historyParsed = historyResponse?.raw
-        ? JSON.parse(historyResponse.raw)
-        : null;
+      const historyParsed = historyResponse?.raw ? JSON.parse(historyResponse.raw) : null;
+      if (!Array.isArray(historyParsed?.messages)) return [];
 
-      if (!Array.isArray(historyParsed?.messages)) {
-        return [];
-      }
-
-      // 2. ترتیب درست (قدیمی → جدید)
+      // 2) old -> new
       const messages = historyParsed.messages.slice().reverse();
 
-      // 3. جمع کردن یوزرها
+      // build quick lookup for messages in this batch
+      const messagesMap = (messages || []).reduce((acc: any, m: any) => {
+        const id = m.id ?? m.message_id ?? m.messageId;
+        if (id != null) acc[id] = m;
+        return acc;
+      }, {} as Record<string, any>);
+
+      // 3) users (as before)
       const userIds = [
         ...new Set(messages.map((m: any) => m?.senderId?.userId).filter(Boolean)),
       ];
-      const rawUsers = await TdLib.getUsersCompat(userIds);
-      const users = JSON.parse(rawUsers);
-
-      // تبدیل به map برای lookup سریع
+      const rawUsers = userIds.length ? await TdLib.getUsersCompat(userIds) : null;
+      const users = rawUsers ? JSON.parse(rawUsers) : [];
       const usersMap = (users || []).reduce((acc: any, u: any) => {
         acc[u.id] = u;
         return acc;
       }, {});
 
-      // 4. جمع کردن همه replyId هایی که نیاز داریم
-      const knownIds = new Set(comments.comments.map((c) => c.id));
-      const replyIds = messages
+      // 4) collect replyIds that we actually need to fetch:
+      const existingStateIds = new Set(comments.comments.map((c) => c.id));
+      let replyIds = messages
         .map((m: any) => m?.replyTo?.messageId)
         .filter(Boolean)
-        .filter((id: any) => !knownIds.has(id));
+        // if reply points to a message inside this batch, we don't need to fetch it
+        .filter((id: any) => !messagesMap[id])
+        // if it's already in existing state, don't fetch
+        .filter((id: any) => !existingStateIds.has(id))
+        // ignore replies that point to the thread root (your requirement)
+        .filter((id: any) => id !== threadRootMessageId);
 
+      replyIds = Array.from(new Set(replyIds)); // dedupe
+
+      // 5) batch fetch reply messages (chunk)
       let repliesMap: Record<string, any> = {};
       if (replyIds.length > 0) {
-        // chunk در صورتی که replyIds خیلی بزرگ باشه
         const chunkSize = 100;
         for (let i = 0; i < replyIds.length; i += chunkSize) {
           const chunk = replyIds.slice(i, i + chunkSize);
           try {
-            const repliesResponse = await TdLib.getMessagesCompat(chatId, chunk);
-            const repliesParsed = JSON.parse(repliesResponse.raw);
-            (repliesParsed.messages || []).forEach((r: any) => {
-              repliesMap[r.id] = r;
+            // IMPORTANT: use threadChatId (same chat)
+            const repliesResponse = await TdLib.getMessagesCompat(threadChatId, chunk);
+            const repliesParsed = repliesResponse?.raw ? JSON.parse(repliesResponse.raw) : null;
+            (repliesParsed?.messages || []).forEach((r: any) => {
+              const rid = r.id ?? r.message_id ?? r.messageId;
+              if (!rid) return;
+              // guard: if it's the root message, skip (we don't want to show replies to root)
+              if (rid === threadRootMessageId) return;
+              repliesMap[rid] = r;
             });
-          } catch {
-            // skip errors
+          } catch (err) {
+            console.warn("getMessagesCompat chunk error", err);
           }
         }
       }
 
-      // 5. ساخت لیست پیام‌ها
+      // 6) merge: for each message, prefer reply info from:
+      //    a) messagesMap (current batch), b) existing state, c) repliesMap
       const merged = messages.map((msg: any) => {
         const userId = msg?.senderId?.userId;
         let replyInfo = null;
 
-        if (msg?.replyTo?.messageId) {
-          // اول از cache (کامنت‌های موجود)
-          const existing = comments.comments.find(
-            (c) => c.id === msg.replyTo.messageId
-          );
-          if (existing) {
-            replyInfo = existing;
+        const rid = msg?.replyTo?.messageId;
+        if (rid) {
+          // ignore replies to thread root
+          if (rid === threadRootMessageId) {
+            replyInfo = null;
+          } else if (messagesMap[rid]) {
+            replyInfo = messagesMap[rid];
           } else {
-            // بعد از batch repliesMap
-            replyInfo = repliesMap[msg.replyTo.messageId] || null;
+            const existing = comments.comments.find((c) => c.id === rid);
+            if (existing) replyInfo = existing;
+            else if (repliesMap[rid]) replyInfo = repliesMap[rid];
+            else replyInfo = null; // not available (too old/removed)
           }
         }
 
@@ -194,6 +211,7 @@ export default function Comments() {
 
       return merged;
     } catch (err: any) {
+      console.warn("fetchComments error:", err);
       return [];
     } finally {
       setLoading(false);
@@ -278,6 +296,8 @@ export default function Comments() {
 
 
   const handleReplyClick = async (messageId: number) => {
+    if (!threadInfo) return;
+
     const existIndex = comments.comments.findIndex(i => i.id === messageId);
 
     if (existIndex !== -1) {
@@ -291,47 +311,59 @@ export default function Comments() {
       });
       setHighlightedId(messageId);
       setTimeout(() => setHighlightedId(null), 2000);
-    } else {
-      // پیام موجود نیست → لود کن
-      const getComments = await fetchComments(messageId, -PAGE_SIZE, PAGE_SIZE);
+      return;
+    }
 
-      // مرتب‌سازی
-      const sortedComments = [...getComments].sort((a, b) => a.id - b.id);
+    // پیام موجود نیست → لود کن
+    const PAGE_FETCH = PAGE_SIZE; // ثابت برای fetch
+    const getComments: any = await fetchComments(messageId, -PAGE_FETCH, PAGE_FETCH);
 
-      // گرفتن پوزیشن‌ها
-      const startPos = await TdLib.getChatMessagePosition(
-        threadInfo.chatId,
-        sortedComments[sortedComments.length - 1].id,
-        threadInfo.messageThreadId
-      );
-      const endPos = await TdLib.getChatMessagePosition(
+    if (getComments.length === 0) {
+      // هیچ پیامی پیدا نشد → می‌تونیم یک alert یا log بزنیم
+      console.warn("پیام پیدا نشد یا قدیمی‌تر از دسترس خارج شده");
+      return;
+    }
+
+    // مرتب‌سازی قدیمی → جدید
+    const sortedComments = [...getComments].sort((a, b) => a.id - b.id);
+
+    // آپدیت start و end بر اساس پیام‌های جدید
+    let startPos:any = 0;
+    let endPos:any = 0;
+    try {
+      startPos = await TdLib.getChatMessagePosition(
         threadInfo.chatId,
         sortedComments[0].id,
         threadInfo.messageThreadId
       );
+      endPos = await TdLib.getChatMessagePosition(
+        threadInfo.chatId,
+        sortedComments[sortedComments.length - 1].id,
+        threadInfo.messageThreadId
+      );
+    } catch (err) {
+      console.warn("خطا در گرفتن پوزیشن پیام‌ها:", err);
+    }
 
-      // آپدیت استیت
-      setComments({
-        comments: sortedComments,
-        start: startPos.count,
-        end: endPos.count,
-      });
+    // آپدیت state
+    setComments({
+      comments: sortedComments,
+      start: startPos.count || 0,
+      end: endPos.count || 0,
+    });
 
-      // ایندکس پیام هدف
-      const targetIndex = sortedComments.findIndex(i => i.id === messageId);
-
-      // اسکرول
-      if (targetIndex !== -1) {
-        InteractionManager.runAfterInteractions(() => {
-          listRef.current?.scrollToIndex({
-            index: targetIndex,
-            animated: true,
-            viewPosition: 0.5,
-          });
+    // ایندکس پیام هدف
+    const targetIndex = sortedComments.findIndex(i => i.id === messageId);
+    if (targetIndex !== -1) {
+      InteractionManager.runAfterInteractions(() => {
+        listRef.current?.scrollToIndex({
+          index: targetIndex,
+          animated: true,
+          viewPosition: 0.5,
         });
-        setHighlightedId(messageId);
-        setTimeout(() => setHighlightedId(null), 2000);
-      }
+      });
+      setHighlightedId(messageId);
+      setTimeout(() => setHighlightedId(null), 2000);
     }
   };
 
