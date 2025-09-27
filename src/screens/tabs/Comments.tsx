@@ -18,6 +18,7 @@ import {
   DeviceEventEmitter,
   InteractionManager,
   Keyboard,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ArrowLeftIcon } from "../../assets/icons";
@@ -392,6 +393,7 @@ export default function Comments() {
           end: 1,
         }
       );
+      await new Promise(r => setTimeout(r, 100));
 
 
       InteractionManager.runAfterInteractions(() => {
@@ -483,7 +485,53 @@ const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
 
   };
 
-  // handle updates
+const pendingSignaturesRef = useRef(new Map<string, string>()); // signature -> tempId
+const currentUserIdRef = useRef<number | string | null>(null); // اختیاری: اگه id کاربر رو داری بذار
+const [isSending, setIsSending] = useState(false);
+
+// ===== helper ها =====
+const makeSignature = (
+  chatId: any,
+  threadId: any,
+  replyToId: any,
+  text: string,
+  whenSec?: number
+) => {
+  const t = (text || "").toString().trim().slice(0, 200).replace(/\s+/g, " ");
+  const ts = Math.floor((whenSec ?? Math.floor(Date.now() / 1000)) / 5); // bucket هر 5 ثانیه
+  return `${chatId}|${threadId}|${replyToId ?? 0}|${t}|${ts}`;
+};
+
+function safeParse(raw: any) {
+  try {
+    if (!raw) return raw;
+    if (typeof raw === "string") return JSON.parse(raw);
+    if (typeof raw === "object" && raw.raw) {
+      try { return JSON.parse(raw.raw); } catch { return raw.raw; }
+    }
+    return raw;
+  } catch (e) {
+    console.warn("safeParse error:", e, raw);
+    return raw;
+  }
+}
+
+function extractMessageObject(parsed: any) {
+  if (!parsed) return null;
+
+  // direct shapes
+  if (parsed.id || parsed.messageId || parsed.message_id) return parsed;
+  // tdlib-like wrapper shapes
+  if (parsed.message && (parsed.message.id || parsed.message.message_id)) return parsed.message;
+  if (parsed.result && (parsed.result.id || parsed.result.message_id)) return parsed.result;
+  if (parsed.payload && (parsed.payload.id || parsed.payload.message_id)) return parsed.payload;
+  // sometimes nested raw
+  if (parsed["@type"] === "message") return parsed;
+
+  return null;
+}
+
+// ===== DeviceEventEmitter handler (update dedupe + replace temp) =====
 useEffect(() => {
   const subscription = DeviceEventEmitter.addListener("tdlib-update", async (event) => {
     try {
@@ -492,61 +540,126 @@ useEffect(() => {
 
       if (!data || data.chatId !== chatId) return;
 
-      switch (type) {
-        case "UpdateNewMessage":
-          handleNewComment(data);
-          break;
+      // normalize msg object if wrapped
+      const parsed = safeParse(data);
+      const incomingMsg = extractMessageObject(parsed) || parsed;
 
+      // helper to pull content text / replyTo / date
+      const getTextFromMsg = (m: any) =>
+        m?.content?.text?.text ?? m?.message?.content?.text?.text ?? m?.content?.text ?? "";
+      const getReplyToFromMsg = (m: any) =>
+        (m?.replyTo && (m.replyTo.messageId || m.replyTo.message_id)) ||
+        m?.reply_to_message_id ||
+        m?.replyToMessageId ||
+        0;
+      const getDateFromMsg = (m: any) => m?.date ?? m?.message?.date ?? Math.floor(Date.now() / 1000);
+      const getThreadIdFromMsg = (m: any) => m?.messageThreadId ?? m?.message_thread_id ?? threadInfo?.messageThreadId ?? 0;
+
+      if (type === "UpdateNewMessage") {
+        const msg = incomingMsg;
+        const text = getTextFromMsg(msg);
+        const replyTo = getReplyToFromMsg(msg);
+        const date = getDateFromMsg(msg);
+        const threadIdFromMsg = getThreadIdFromMsg(msg);
+
+        const sig = makeSignature(msg.chatId ?? chatId, threadIdFromMsg, replyTo, text, date);
+
+        if (pendingSignaturesRef.current.has(sig)) {
+          // Found matching pending temp -> replace it
+          const tempId = pendingSignaturesRef.current.get(sig);
+          pendingSignaturesRef.current.delete(sig);
+
+          setComments(prev => {
+            // if server message already exists, just remove temp
+            const serverId = msg.id ?? msg.messageId ?? msg.message_id;
+            const existsServer = prev.comments.some(c => c.id === serverId);
+
+            let updated = prev.comments.map(c => {
+              if (c.id === tempId) {
+                // try to keep local user object if existed
+                const user = c.user ?? null;
+                return {
+                  ...(msg),
+                  user,
+                };
+              }
+              return c;
+            });
+
+            if (existsServer) {
+              // remove the temp only
+              updated = updated.filter(c => c.id !== tempId);
+            } else {
+              // ensure server message present (if not already present)
+              if (!updated.some(c => c.id === serverId)) {
+                updated = updated.map(c => c.id === tempId ? { ...(msg), user: updated.find(x=>x.id===tempId)?.user ?? null } : c);
+              }
+            }
+
+            return { ...prev, comments: updated };
+          });
+
+          // We handled it — don't call generic handleNewComment
+          return;
+        }
+
+        // No pending mapping -> fall back to normal handler
+        handleNewComment(msg);
+        return;
+      }
+
+      // other updates => reuse existing handlers
+      switch (type) {
         case "UpdateDeleteMessages":
           handleDeleteComments(data);
           break;
-
         case "UpdateMessageInteractionInfo":
-          console.log(data)
           handleInteractionUpdate(data);
           break;
-
         case "UpdateChatLastMessage":
           if (data?.lastMessage?.id === threadInfo?.replyInfo?.lastMessageId) {
             handleNewComment(data.lastMessage);
           }
           break;
-
         default:
-          return;
+          break;
       }
     } catch (err) {
-      console.warn("Invalid tdlib update:", event);
+      console.warn("Invalid tdlib update:", event, err);
     }
   });
 
   return () => subscription.remove();
 }, [chatId, messageId, threadInfo]);
 
+// ===== existing handlers (kept but slightly hardened) =====
 const handleNewComment = (message: any) => {
+  if (!message) return;
+  const id = message.id ?? message.messageId ?? message.message_id;
+  if (!id) return;
+
   setComments((prev) => {
-    const exists = prev.comments.some((msg) => msg.id === message.id);
+    const exists = prev.comments.some((msg) => msg.id === id);
     if (exists) return prev;
 
     const updatedComments = [...prev.comments, message];
 
-    setCommentsCount((c:any) => c + 1);
+    setCommentsCount((c:any) => (typeof c === "number" ? c + 1 : c));
 
     return {
       ...prev,
       comments: updatedComments,
-      end: prev.end + 1, // اگر end نمایانگر تعداد کل است
+      end: prev.end + 1,
     };
   });
 };
 
 const handleDeleteComments = (data: any) => {
-  const { messageIds } = data;
-
+  const messageIds = data?.messageIds ?? data?.message_ids ?? data?.deletedMessageIds ?? [];
   setComments((prev) => {
     const updatedComments = prev.comments.filter((msg) => !messageIds.includes(msg.id));
 
-    setCommentsCount((c:any) => c - messageIds.length);
+    setCommentsCount((c:any) => (typeof c === "number" ? c - messageIds.length : c));
 
     return {
       ...prev,
@@ -558,7 +671,6 @@ const handleDeleteComments = (data: any) => {
 
 const handleInteractionUpdate = (data: any) => {
   const { messageId, interactionInfo } = data;
-
   setComments((prev) => ({
     ...prev,
     comments: prev.comments.map((msg) => {
@@ -576,12 +688,122 @@ const handleInteractionUpdate = (data: any) => {
   }));
 };
 
-
-  const sendComment = async (text: string) => {
-    const a = await TdLib.addComment(threadInfo.chatId, threadInfo.messageThreadId, text)
-    console.log(a)
+// ===== sendComment (optimistic + pending signature) =====
+const sendComment = async (text: string) => {
+  if (!threadInfo?.chatId || !threadInfo?.messageThreadId) {
+    return { success: false, error: "Thread info not ready" };
   }
+  if (!text || !text.trim()) return { success: false, error: "Empty text" };
 
+  const nowSec = Math.floor(Date.now() / 1000);
+  const tempId = `temp_${nowSec}_${Math.random().toString(36).slice(2, 9)}`;
+  const replyToId = replyingTo?.id ? Number(replyingTo.id) : 0;
+  const sig = makeSignature(threadInfo.chatId, threadInfo.messageThreadId, replyToId, text, nowSec);
+
+  // create temp optimistic message
+  const tempMsg: any = {
+    id: tempId,
+    temp: true,
+    content: { text },
+    date: nowSec,
+    senderId: { userId: currentUserIdRef.current ?? "me" },
+    user: { /* optional: your local user object if available */ },
+    chatId: threadInfo.chatId,
+    messageThreadId: threadInfo.messageThreadId,
+    status: "sending",
+    replyTo: replyToId ? { messageId: replyToId } : undefined,
+  };
+
+  // register pending signature -> tempId
+  pendingSignaturesRef.current.set(sig, tempId);
+
+  // optimistic add
+  setComments(prev => ({ ...prev, comments: [...prev.comments, tempMsg] }));
+  setIsSending(true);
+
+  try {
+    const res: any = await TdLib.addComment(
+      Number(threadInfo.chatId),
+      Number(threadInfo.messageThreadId),
+      Number(replyToId),
+      String(text)
+    );
+
+    const parsed = safeParse(res);
+    const realMsg = extractMessageObject(parsed);
+
+    if (realMsg && (realMsg.id || realMsg.messageId || realMsg.message_id)) {
+      // success: remove pending, replace temp
+      pendingSignaturesRef.current.delete(sig);
+
+      const serverId = realMsg.id ?? realMsg.messageId ?? realMsg.message_id;
+
+      setComments(prev => {
+        // if server message already present -> remove temp only
+        const alreadyHas = prev.comments.some(c => c.id === serverId);
+
+        let updated = prev.comments.map(c => {
+          if (c.id === tempId) {
+            return { ...(realMsg), user: c.user ?? realMsg.user ?? null };
+          }
+          return c;
+        });
+
+        if (alreadyHas) {
+          // remove duplicate temp
+          updated = updated.filter(c => c.id !== tempId);
+        }
+
+        return { ...prev, comments: updated };
+      });
+
+      setCommentsCount((c: any) => (typeof c === "number" ? c + 1 : c));
+      setText("");
+      setReplyingTo(null);
+
+      InteractionManager.runAfterInteractions(() => {
+        try { listRef.current?.scrollToEnd?.({ animated: true }); } catch (e) {}
+      });
+
+      setIsSending(false);
+      return { success: true, data: realMsg };
+    }
+
+    // no message returned -> mark failed
+    pendingSignaturesRef.current.delete(sig);
+    setComments(prev => ({ ...prev, comments: prev.comments.map(c => c.id === tempId ? { ...c, status: "failed" } : c) }));
+    setIsSending(false);
+
+    const errMsg = parsed?.description || parsed?.message || JSON.stringify(parsed) || "Failed to send comment";
+    return { success: false, error: errMsg, raw: parsed };
+  } catch (err: any) {
+    console.warn("sendComment error:", err);
+    pendingSignaturesRef.current.delete(sig);
+    setComments(prev => ({ ...prev, comments: prev.comments.map(c => c.id === tempId ? { ...c, status: "failed" } : c) }));
+    setIsSending(false);
+
+    const parsedErr = safeParse(err);
+    const errText = parsedErr?.message || parsedErr || err?.message || "Unknown native error";
+    Alert.alert("ارسال ناموفق", typeof errText === "string" ? errText : JSON.stringify(errText));
+    return { success: false, error: errText };
+  }
+};
+
+// ===== handleSend wrapper to avoid double sends =====
+const handleSend = async (textToSend: string) => {
+  if (!textToSend || !textToSend.trim()) return;
+  if (isSending) return; // prevent double-clicks
+
+  const result = await sendComment(textToSend);
+
+  if (result.success) {
+    console.log("✅ Comment sent", result.data);
+  } else {
+    console.log("❌ Failed:", result.error, result.raw ?? "");
+    // optional: show toast / alert
+    Alert.alert("خطا", typeof result.error === "string" ? result.error : JSON.stringify(result.error));
+  }
+};
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   useEffect(() => {
@@ -703,7 +925,12 @@ const handleInteractionUpdate = (data: any) => {
             </Animated.View>
             )}
 
-            <Composer onSend={(text) => sendComment(text)} value={text} onChangeText={(e) => setText(e)}/>
+            <Composer
+              onSend={(text) => handleSend(text)}
+              value={text}
+              onChangeText={(e) => setText(e)}
+              disabled={isSending}
+            />
           </View>
 
           {showScrollToBottom && (
