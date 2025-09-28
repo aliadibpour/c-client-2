@@ -10,38 +10,18 @@ import { ReplyIcon } from "lucide-react-native";
 
 const cleanText = (text: string): string => {
   return text
-    // پاک کردن لینک‌های تلگرام (مثلاً t.me یا telegram.me)
     .replace(/https?:\/\/t\.me\/[^\s]+/gi, "")
     .replace(/https?:\/\/telegram\.me\/[^\s]+/gi, "")
-
-    // پاک کردن mention ها (@username) مخصوصاً در انتهای متن
     .replace(/\n*@\w+[^\n]*$/gm, "")
-
-    // پاک کردن pattern های "| کانال" در انتها
     .replace(/\|\s*[^\n]+$/gm, "")
-
-    // حذف هشتگ‌ها (انگلیسی و فارسی)
     .replace(/#[\p{L}0-9_]+/gu, "")
-
-    // حذف ایموجی‌ها (مخصوصاً آخر متن)
     .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]+/gu, "")
-
-    // حذف خط‌های خالی اضافی قبل از mention یا هشتگ یا ایموجی در انتهای متن
     .replace(/(\n\s*)+(?=(?:@|#|[\p{Emoji_Presentation}\p{Extended_Pictographic}]))/gu, "\n")
-
-    // حذف خط‌های خالی در انتهای متن (اما وسط متن نگه می‌داره)
     .replace(/(\n\s*)+$/g, "")
-
-    // حذف خطوطی که فقط کاراکترهای بی‌معنی مثل - _ . هستند
     .replace(/^[\s\-_.]+$/gm, "")
-
-    // جمع کردن خط‌های خالی پشت سر هم (بیشتر از 2 → فقط 1)
     .replace(/\n{3,}/g, "\n\n")
-
     .trim();
 };
-
-
 
 const getRelativeTime = (unixTimestamp: number): string => {
   const now = Date.now();
@@ -59,10 +39,8 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
   const navigation: any = useNavigation();
   const [message, setMessage] = useState(data);
 
-  // همگام‌سازی prop با state داخلی
   useEffect(() => {
     setMessage(data);
-    // console.log("new data come")
   }, [data]);
 
   const content = message?.content;
@@ -87,127 +65,147 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
   const viewCount = formatNumber(message?.interactionInfo?.viewCount || 0);
 
   return (
-    <TouchableOpacity onPress={handlePress} activeOpacity={0.9} style={{
-      borderBottomColor: "#111",
-      borderBottomWidth: 1,
-      paddingVertical: 15,
-    }}>
+    <View
+      style={{
+        borderBottomColor: "#111",
+        borderBottomWidth: 1,
+        paddingVertical: 15,
+      }}
+    >
+      {/* متن، هدر، کپشن و غیره → قابل کلیک */}
+      <TouchableOpacity onPress={handlePress} activeOpacity={0.9}>
+        {message.replyToMessage && (
+          <TouchableOpacity
+            onPress={() =>
+              navigation.navigate("Channel", {
+                chatId: message.chatId,
+                focusMessageId: message.replyToMessage.id,
+              })
+            }
+            style={styles.replyBox}
+          >
+            <ReplyIcon width={16} height={16} color="#999" />
+            {message.replyToMessage.content?.photo && (
+              <PhotoMessage
+                photo={message.replyToMessage.content.photo}
+                activeDownload={false}
+                width={28}
+                height={20}
+              />
+            )}
+            <Text numberOfLines={1} style={styles.replyText}>
+              {message.replyToMessage.content?.text?.text?.slice(0, 30) ||
+                message.replyToMessage.content?.caption?.text?.slice(0, 30) ||
+                "پاسخ به پیام"}
+            </Text>
+          </TouchableOpacity>
+        )}
 
-
-
-      {/* === نمایش ریپلای اگر وجود داشته باشد === */}
-      {message.replyToMessage && (
-        <TouchableOpacity
-          onPress={() =>
-            navigation.navigate("Channel", {
-              chatId: message.chatId,
-              focusMessageId: message.replyToMessage.id,
-            })
-          }
-          style={styles.replyBox}
-        >
-          <ReplyIcon width={16} height={16} color="#999" />
-          
-          {/* اگر عکس یا ویدیو هست، یه preview کوچیک */}
-          {message.replyToMessage.content?.photo && (
-            <PhotoMessage
-              photo={message.replyToMessage.content.photo}
-              activeDownload={false}
-              width={28}
-              height={20}
-            />
-          )}
-          {/* {message.replyToMessage.content?.video && (
-            <MessageVideo
-              video={message.replyToMessage.content.video}
-              isVisible={false}
-              width={28}
-              height={20}
-            />
-          )} */}
-
-          {/* متن کوتاه‌شده */}
-          <Text numberOfLines={1} style={styles.replyText}>
-            {message.replyToMessage.content?.text?.text?.slice(0, 30) ||
-              message.replyToMessage.content?.caption?.text?.slice(0, 30) ||
-              "پاسخ به پیام"}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          <MessageHeader chatId={message.chatId} />
+          <Text
+            style={{
+              color: "#999",
+              fontSize: 12.33,
+              fontFamily: "SFArabic-Regular",
+              marginBottom: 8,
+            }}
+          >
+            {getRelativeTime(message.date)}
           </Text>
-        </TouchableOpacity>
+        </View>
+
+        {!!cleanedCaption && (
+          <Text
+            style={{
+              color: "#ccc",
+              marginBottom: 10,
+              fontSize: 13.5,
+              fontFamily: "SFArabic-Regular",
+              lineHeight: 25,
+            }}
+          >
+            {cleanedCaption}
+          </Text>
+        )}
+
+        {!!cleanedText && (
+          <Text
+            style={{
+              color: "#ccc",
+              marginBottom: 10,
+              fontSize: 13.5,
+              fontFamily: "SFArabic-Regular",
+              lineHeight: 25,
+            }}
+          >
+            {cleanedText}
+          </Text>
+        )}
+
+        {content?.photo && (
+          <PhotoMessage photo={content.photo} activeDownload={activeDownload} context="explore" />
+        )}
+      </TouchableOpacity>
+
+      {/* ویدیو جدا از Touchable → دیگه کلیک وسط ویدیو کاربر رو نمی‌بره صفحه Channel */}
+      {content?.video && (
+        <VideoMessage video={content.video} isVisible={isVisible} activeDownload={activeDownload} />
       )}
-
-
-
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-        <MessageHeader chatId={message.chatId} />
-        <Text style={{ color: "#999", fontSize: 12.33, fontFamily: "SFArabic-Regular", marginBottom: 8 }}>
-          {getRelativeTime(message.date)}
-        </Text>
-      </View>
-
-      {!!cleanedCaption && (
-        <Text style={{
-          color: "#ccc",
-          marginBottom: 10,
-          fontSize: 13.6,
-          fontFamily: "SFArabic-Regular",
-          lineHeight: 25,
-        }}>
-          {cleanedCaption}
-        </Text>
-      )}
-
-      {!!cleanedText && (
-        <Text style={{
-          color: "#ccc",
-          marginBottom: 10,
-          fontSize: 13.6,
-          fontFamily: "SFArabic-Regular",
-          lineHeight: 25,
-        }}>
-          {cleanedText}
-        </Text>
-      )}
-
-      {content?.photo && <PhotoMessage photo={content.photo} activeDownload={activeDownload} context="explore" />}
-      {content?.video && <VideoMessage video={content.video} isVisible={isVisible} activeDownload={activeDownload} />}
 
       {message.interactionInfo?.reactions?.reactions?.length > 0 && (
-        <MessageReactions 
-        reactions={message.interactionInfo.reactions.reactions} 
-        chatId={message.chatId}
-        messageId={message.id}
-        onReact={(emoji:any) => console.log("🧡", emoji)}
-        customStyles={
-          { container: { paddingBottom: 6 },
-          emoji:{ fontSize: 13 },
-          count: { fontSize: 12 },
-          reactionBox: { paddingHorizontal: 6 }
-       }} />
+        <MessageReactions
+          reactions={message.interactionInfo.reactions.reactions}
+          chatId={message.chatId}
+          messageId={message.id}
+          onReact={(emoji: any) => console.log("🧡", emoji)}
+          customStyles={{
+            container: { paddingBottom: 6 },
+            emoji: { fontSize: 13 },
+            count: { fontSize: 12 },
+            reactionBox: { paddingHorizontal: 6 },
+          }}
+        />
       )}
 
       {message.interactionInfo?.replyInfo?.replyCount > 0 && (
-        <TouchableOpacity onPress={() => navigation.navigate("Comments", {
-          chatId: message.chatId,
-          messageId: message.id,
-        })}>
-          <View style={{
-            flexDirection: "row", alignItems: "center",
-            marginTop: 15.4, marginLeft: 4.5, marginBottom: 5, gap: 2
-          }}>
-            <Text style={{ color: "#adadad", fontSize: 13.6, fontFamily: "SFArabic-Regular" }}>
+        <TouchableOpacity
+          onPress={() =>
+            navigation.navigate("Comments", {
+              chatId: message.chatId,
+              messageId: message.id,
+            })
+          }
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginTop: 15.4,
+              marginLeft: 4.5,
+              marginBottom: 5,
+              gap: 2,
+            }}
+          >
+            <Text
+              style={{
+                color: "#adadad",
+                fontSize: 13.6,
+                fontFamily: "SFArabic-Regular",
+              }}
+            >
               {message.interactionInfo.replyInfo.replyCount} کامنت
             </Text>
             <ArrowLeftIcon style={{ color: "#adadad" }} width={13.5} height={13.5} />
           </View>
         </TouchableOpacity>
       )}
-    </TouchableOpacity>
+    </View>
   );
 }
 
-
 const styles = StyleSheet.create({
-    replyBox: {
+  replyBox: {
     backgroundColor: "rgba(111, 111, 111, 0.15)",
     paddingVertical: 6,
     paddingHorizontal: 10,
@@ -224,4 +222,4 @@ const styles = StyleSheet.create({
     fontFamily: "SFArabic-Regular",
     flexShrink: 1,
   },
-})
+});
