@@ -203,6 +203,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignContent: "center",
     gap: 1,
+    overflow: "hidden"
   },
   replyText: {
     color: "#ccc",
