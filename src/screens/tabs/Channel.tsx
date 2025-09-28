@@ -476,30 +476,12 @@ export default function ChannelScreen({ route }: any) {
           scrollEventThrottle={16}
           ListFooterComponent={
             (
-              <View style={{ paddingVertical: 12 }}>
+              <View style={{ paddingVertical: 20 }}>
                 <ActivityIndicator color="#888" />
               </View>
             )
           }
 
-          // IMPORTANT: remove incorrect fixed getItemLayout; we're using variable heights so onContentSizeChange adjustment is used.
-          onContentSizeChange={(w, h) => {
-            // update content height
-            const prevH = prevContentHeight.current;
-            contentHeightRef.current = h;
-
-            if (pendingContentAdjustment.current) {
-              // diff positive means total content grew (e.g., prepend/append)
-              const diff = h - prevH;
-              // preserve user's visible offset by adding diff
-              try {
-                listRef.current?.scrollToOffset({ offset: scrollOffset.current + diff, animated: false });
-              } catch (e) {
-                // ignore
-              }
-              pendingContentAdjustment.current = false;
-            }
-          }}
         />
       </View>
 
