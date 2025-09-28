@@ -44,7 +44,7 @@ export default function ChannelHeader({ chatId, chatInfo, superGroupeInfo }: { c
         }
 
     }
-  }, [chatInfo]);
+  }, [chatInfo, superGroupeInfo]);
 
   useEffect(() => {
     let isMounted = true;
