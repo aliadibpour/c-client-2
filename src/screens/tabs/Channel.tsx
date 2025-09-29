@@ -86,12 +86,6 @@ export default function ChannelScreen({ route }: any) {
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 70 });
   const hasScrolledToBottom = useRef(false);
 
-  // new refs for scroll preservation
-  const scrollOffset = useRef(0); // current scroll offset
-  const contentHeightRef = useRef(0); // last known content height
-  const prevContentHeight = useRef(0); // previous content height before update
-  const pendingContentAdjustment = useRef(false); // flag: waiting to adjust after content size change
-
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     setViewableItems(viewableItems);
   });
@@ -191,29 +185,12 @@ export default function ChannelScreen({ route }: any) {
     return () => subscription.remove();
   }, [chatId]);
 
-  // **FIXED**: add new messages at start, preserve scroll position
   const handleNewMessage = (message: any) => {
-    // اگر پیام تکراری باشه کاری نکن
-    if (messagesRef.current.some((msg) => msg.id === message.id)) return;
-
-    // ذخیره ارتفاع فعلی قبل از تغییر
-    prevContentHeight.current = contentHeightRef.current;
-    pendingContentAdjustment.current = true;
-
-    // قرار دادن پیام جدید در ابتدای آرایه (جدیدترین اول)
     setMessages((prev) => {
-      return [message, ...prev];
+      const exists = prev.some((msg) => msg.id === message.id);
+      if (exists) return prev;
+      return [...prev, message];
     });
-
-    // اگر کاربر در حالت scrolled-to-bottom هست، بخوایم اتوماتیک به پایین (offset 0) برگردیم
-    if (hasScrolledToBottom.current) {
-      // اجازه بدید رندر تموم شه و بعد اسکرول بشه
-      requestAnimationFrame(() => {
-        listRef.current?.scrollToOffset({ offset: 0, animated: true });
-        // چون ما خودمون اسکرول کردیم دیگه نیازی به اصلاح از طریق onContentSizeChange نیست
-        pendingContentAdjustment.current = false;
-      });
-    }
   };
 
   const handleDeleteMessages = (data:any) => {
@@ -284,7 +261,6 @@ export default function ChannelScreen({ route }: any) {
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetY = event.nativeEvent.contentOffset.y;
-    scrollOffset.current = offsetY;
     setShowScrollToBottom(offsetY > 300);
   };
 
@@ -292,14 +268,7 @@ export default function ChannelScreen({ route }: any) {
     if (loadingMore || messages.length === 0) return;
     setLoadingMore(true);
     const last = messages[messages.length - 1];
-    const data = await getChatHistory(chatId, last.id);
-    // append older messages (since inverted, older are added at end of messages array)
-    if (data && data.length) {
-      // preserve prev content height and mark pending adjustment
-      prevContentHeight.current = contentHeightRef.current;
-      pendingContentAdjustment.current = true;
-      setMessages(prev => [...prev, ...data]);
-    }
+    await getChatHistory(chatId, last.id);
     setLoadingMore(false);
   };
 
@@ -362,7 +331,6 @@ export default function ChannelScreen({ route }: any) {
     setShowScrollToBottom(false)
   }
 
-
   const subscribe = async () => {
     if (isMember == "loading") return
 
@@ -385,21 +353,9 @@ export default function ChannelScreen({ route }: any) {
     
     if (msgIds.includes(messageId)) {
       const index = messages.findIndex(i => i.id == messageId)
-      // اگر از groupedMessages استفاده می‌کنید برای index-based scrolling بهتر است index از groupedMessages گرفته شود:
-      const groupedIndex = groupedMessages.findIndex((item) =>
-        (item.type === "single" && item.message?.id === messageId) ||
-        (item.type === "album" && item.messages.some((m: any) => m.id === messageId))
-      );
-      if (groupedIndex !== -1) {
-        listRef.current?.scrollToIndex({ index: groupedIndex, animated: true, viewPosition: .5 })
-      } else {
-        listRef.current?.scrollToIndex({ index, animated: true, viewPosition: .5 })
-      }
+      listRef.current?.scrollToIndex({ index, animated: true, viewPosition: .5 })
     } else {
       const getMessage: any = await getChatHistory(chatId, messageId, 20, -10)
-      // جایگزینی داده‌ها — بعد از این onContentSizeChange موقعیت اسکرول را اصلاح می‌کند
-      prevContentHeight.current = contentHeightRef.current;
-      pendingContentAdjustment.current = true;
       setMessages(getMessage)
       setPendingScrollId(messageId)
     }
@@ -409,17 +365,11 @@ export default function ChannelScreen({ route }: any) {
     if (pendingScrollId !== null) {
       const index = messages.findIndex(i => i.id == pendingScrollId)
       if (index !== -1) {
-        // بهتر است روی groupedMessages پیدا و scroll کنید تا viewable grouping هم صحیح باشه
-        const groupedIndex = groupedMessages.findIndex((item) =>
-          (item.type === "single" && item.message?.id === pendingScrollId) ||
-          (item.type === "album" && item.messages.some((m: any) => m.id === pendingScrollId))
-        );
-        const finalIndex = groupedIndex !== -1 ? groupedIndex : index;
-        listRef.current?.scrollToIndex({ index: finalIndex, animated: true, viewPosition: .5 })
+        listRef.current?.scrollToIndex({ index, animated: true, viewPosition: .5 })
         setPendingScrollId(null)
       }
     }
-  }, [messages, pendingScrollId, groupedMessages])
+  }, [messages, pendingScrollId])
 
 
   return (
