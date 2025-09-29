@@ -47,6 +47,17 @@ export default function ProfileScreen() {
   const CHUNK_SIZE = 3;
   const PREFETCH_THRESHOLD = 1;
 
+  // visibleVersion used to force re-render of FlatList when visible item updated
+  const [visibleVersion, setVisibleVersion] = useState(0);
+
+  // current index state + ref (ref used inside async callbacks to avoid stale closures)
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const currentIndexRef = useRef<number>(0);
+
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -82,11 +93,13 @@ export default function ProfileScreen() {
 
       const indicesToDownload: number[] = [];
       for (let i = startIndex; i <= end; i++) {
-        if (uris[i] === undefined) continue;
-        if (uris[i] === null && !downloadingRef.current.has(i)) {
-          indicesToDownload.push(i);
-          downloadingRef.current.add(i);
-        }
+        const val = uris[i];
+        // if already have a string uri, skip
+        if (typeof val === "string" && val.length > 0) continue;
+        if (downloadingRef.current.has(i)) continue;
+        // push for download (covers both null and undefined)
+        indicesToDownload.push(i);
+        downloadingRef.current.add(i);
       }
 
       if (indicesToDownload.length === 0) return;
@@ -106,8 +119,16 @@ export default function ProfileScreen() {
                 copy[idx] = uri;
                 return copy;
               });
+
+              // update highest downloaded index
               highestDownloadedRef.current = Math.max(highestDownloadedRef.current, idx);
+
+              // If the downloaded index is currently visible, bump visibleVersion so FlatList re-renders
+              if (idx === currentIndexRef.current) {
+                setVisibleVersion((v) => v + 1);
+              }
             } else {
+              // mark as null (failed or not available)
               setUris((prev) => {
                 const copy = [...prev];
                 copy[idx] = null;
@@ -127,6 +148,7 @@ export default function ProfileScreen() {
         })
       );
     },
+    // include uris and metaPhotos so we inspect latest values
     [metaPhotos, uris]
   );
 
@@ -148,12 +170,12 @@ export default function ProfileScreen() {
     [loadChunk, metaPhotos.length]
   );
 
-  const [currentIndex, setCurrentIndex] = useState(0);
-
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems && viewableItems.length > 0) {
       const first = viewableItems[0].index ?? 0;
       setCurrentIndex(first);
+      currentIndexRef.current = first;
+
       const nextChunkStart = highestDownloadedRef.current + 1;
       if (
         first + PREFETCH_THRESHOLD >= highestDownloadedRef.current &&
@@ -211,9 +233,9 @@ export default function ProfileScreen() {
     );
   };
 
-  const renderItem = ({ index }: { item: string | null; index: number }) => {
-    // read directly from uris to make sure we use latest value
-    const uri = uris[index];
+  const renderItem = ({ item, index }: { item: string | null; index: number }) => {
+    // use item (provided by FlatList) directly so updates to data trigger re-render
+    const uri = item;
     const isDownloading = downloadingRef.current.has(index);
 
     return (
@@ -281,11 +303,11 @@ export default function ProfileScreen() {
           <FlatList
             ref={flatListRef}
             data={uris}
-            extraData={uris} // <-- ensure FlatList re-renders when uris changes
+            extraData={[uris, visibleVersion]} // ensure FlatList re-renders when visible item updated
             horizontal
             pagingEnabled
             scrollEnabled
-            keyExtractor={(item:any, index) => item + index}
+            keyExtractor={(_, index) => index.toString()} // stable key based on index
             renderItem={renderItem}
             onMomentumScrollEnd={onMomentumScrollEnd}
             showsHorizontalScrollIndicator={false}
@@ -293,7 +315,7 @@ export default function ProfileScreen() {
             onViewableItemsChanged={onViewableItemsChanged}
             initialNumToRender={3}
             windowSize={5}
-            removeClippedSubviews={true}
+            removeClippedSubviews={false} // avoid clipping/mounting issues
             getItemLayout={(_, index) => ({
               length: SCREEN_WIDTH,
               offset: SCREEN_WIDTH * index,
@@ -372,10 +394,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    gap: 7,
+    gap: 3,
     position: "absolute",
     top: 5,
-    paddingHorizontal: 20,
+    paddingHorizontal: 5,
   },
   indicator: {
     height: 2.3,

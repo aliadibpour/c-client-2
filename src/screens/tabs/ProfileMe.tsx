@@ -77,7 +77,7 @@ export default function ProfileScreen({ navigation }: any) {
               animated: false,
             });
           }
-        }, 100);
+        }, 1);
       } catch (e) {
         console.error("❌ Error loading profile photos", e);
       } finally {
@@ -89,7 +89,8 @@ export default function ProfileScreen({ navigation }: any) {
   const onMomentumScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(offsetX / SCREEN_WIDTH);
-    setCurrentIndex(index);
+    const rtlIndex = photos.length - 1 - index;
+    setCurrentIndex(rtlIndex);
   };
 
   const goPrevious = () => {
@@ -147,7 +148,7 @@ export default function ProfileScreen({ navigation }: any) {
           <View>
             <Text style={styles.infoValue}>
               {/* if phone doesn't start with +, prepend it */}
-              {String(profile.phoneNumber).startsWith("+") ? profile.phoneNumber : `+${profile.phoneNumber}`}
+              {String(profile.phoneNumber).startsWith("+") ? profile.phoneNumber : `${profile.phoneNumber}+`}
             </Text>
             <Text style={styles.infoLabel}>شماره تماس</Text>
           </View>
@@ -270,7 +271,7 @@ export default function ProfileScreen({ navigation }: any) {
             onScrollToIndexFailed={(info) => {
               setTimeout(() => {
                 flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
-              }, 100);
+              }, 10);
             }}
           />
           {renderLineIndicator()}
@@ -323,7 +324,7 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 25,
     position: "absolute",
-    right: 20, // use right for RTL layout
+    left: 20, // use right for RTL layout
     top: 325,
     fontFamily: "SFArabic-Heavy",
   },
@@ -371,8 +372,8 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   informationBox: {
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 7.5,
     alignItems: "flex-start",
     gap: 20,
     backgroundColor: "#111",
@@ -380,13 +381,13 @@ const styles = StyleSheet.create({
   infoValue: {
     color: "#ccc",
     fontSize: 15,
-    textAlign: "right",
+    textAlign: "left",
     fontFamily: "SFArabic-Regular",
   },
   infoLabel: {
     color: "#999",
     fontSize: 12,
-    textAlign: "right",
+    textAlign: "left",
     fontFamily: "SFArabic-Light",
     marginTop: 1,
   },
