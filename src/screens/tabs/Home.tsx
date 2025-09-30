@@ -296,9 +296,14 @@ useEffect(() => {
   }, []);
 
   // ---------- visible handling (viewable items) ----------
+  const visibleIdsRef = useRef<number[]>([]);
+
+  // ---------- visible handling (viewable items) ----------
+  // پیدا کن این تابع onViewRef در کدت و خط setVisibleIds(ids) رو به شکل زیر تغییر بده:
   const onViewRef = useCallback(({ viewableItems }: any) => {
     const ids = viewableItems.map((vi: any) => vi.item.id);
     setVisibleIds(ids);
+    visibleIdsRef.current = ids; // <-- اضافه شد
 
     for (let vi of viewableItems) {
       const msg = vi.item;
@@ -313,6 +318,27 @@ useEffect(() => {
       }
     }
   }, []);
+
+  useFocusEffect(
+  useCallback(() => {
+    // on focus — کاری لازم نیست انجام بشه
+    return () => {
+      // on blur: خالی کن visible ids تا MessageItemها متوقف بشن
+      setVisibleIds([]);
+      // اگر می‌خوای مطمئن بشی ویدیوها قطع بشن، event broadcast کن
+      try {
+        visibleIdsRef.current.forEach((id) => {
+          DeviceEventEmitter.emit("pause-video", { messageId: id });
+        });
+      } catch (e) {
+        // ignore
+      }
+      visibleIdsRef.current = [];
+    };
+  }, [])
+);
+
+
 
   const viewConfigRef = useRef({ itemVisiblePercentThreshold: 60 });
 
