@@ -227,6 +227,8 @@ useEffect(() => {
       setMessages(first);
       setCurrentBatchIdx(0);
 
+      notifyServerBatchReached(0).catch(()=>{});
+
       prefetchNextBatches(0);
 
       setHasMore(datasRef.current.length > first.length);
@@ -393,6 +395,9 @@ const loadMore = useCallback(async () => {
         // بعد از آپدیت دوباره appendNextBatch بزنیم
         await appendNextBatch(nextBatchIdx);
         setCurrentBatchIdx(nextBatchIdx);
+
+        notifyServerBatchReached(nextBatchIdx).catch(()=>{});
+
         prefetchNextBatches(nextBatchIdx);
       }
     } catch (err) {
@@ -416,6 +421,7 @@ const loadMore = useCallback(async () => {
     }
 
     setCurrentBatchIdx(nextBatchIdx);
+    notifyServerBatchReached(nextBatchIdx).catch(() => {});
     prefetchNextBatches(nextBatchIdx);
 
     const newStart = (nextBatchIdx + 1) * BATCH_SIZE;
@@ -513,20 +519,44 @@ const loadMore = useCallback(async () => {
     }
   };
 
-  // ---------------- Footer component ----------------
-  const FooterLoading = ({ loading }: { loading: boolean }) => {
-    return (
-      <View style={{ padding: 16, alignItems: "center", justifyContent: "center" }}>
-        {loading ? (
-          <ActivityIndicator size="small" />
-        ) : hasMore ? (
-          <Text style={{ color: "#999" }}>Pull up to load more</Text>
-        ) : (
-          <Text style={{ color: "#666" }}>No more items</Text>
-        )}
-      </View>
-    );
-  };
+  // keep track of batches we already reported
+const sentBatchesRef = useRef<Set<number>>(new Set());
+
+const notifyServerBatchReached = async (batchIdx: number) => {
+  try {
+    if (sentBatchesRef.current.has(batchIdx)) return; // جلوگیری از ارسال دوباره
+    const start = batchIdx * BATCH_SIZE;
+    const metas = datasRef.current.slice(start, start + BATCH_SIZE);
+    if (!metas.length) return;
+
+    // سرور شما messageIds را به صورت query-array می‌پذیرد
+    const ids: string[] = metas.map((m) => `${m.messageId}`);
+
+    // get uuid from AsyncStorage (همان فرمت شما)
+    const uuidRaw: any = await AsyncStorage.getItem("userId-corner");
+    const parsedUuid = JSON.parse(uuidRaw || "{}").uuid;
+    if (!parsedUuid) return;
+
+    const params = new URLSearchParams();
+    params.append("uuid", parsedUuid);
+    ids.forEach((id) => params.append("messageIds", id));
+
+    await fetch(`http://10.183.236.115:9000/feed-message/seen-message?${params.toString()}`, {
+      method: "POST",
+      // body می‌فرستیم لازم نیست چون سرور از query می‌خواند
+      headers: { "Content-Type": "application/json" },
+    });
+
+    sentBatchesRef.current.add(batchIdx);
+    console.log(`✅ notified server seen batch ${batchIdx}`, ids);
+  } catch (err) {
+    console.log("❌ notifyServerBatchReached error:", err);
+  }
+};
+
+
+
+
 
 
   return (
