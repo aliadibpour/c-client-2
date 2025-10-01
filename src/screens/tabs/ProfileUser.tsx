@@ -245,7 +245,7 @@ export default function ProfileScreen() {
           <Image key={uri} source={{ uri }} style={styles.image} />
         ) : isDownloading ? (
           <View style={styles.centered}>
-            <ActivityIndicator size="large" />
+            <ActivityIndicator color={"#fff"}  size="large" />
           </View>
         ) : profile?.profilePhoto?.minithumbnail?.data ? (
           <Image
@@ -290,7 +290,7 @@ export default function ProfileScreen() {
     return (
       <View style={[styles.container, styles.centered]}>
         <StatusBar backgroundColor="#000" barStyle="light-content" />
-        <ActivityIndicator size="large" />
+        <ActivityIndicator color={"#fff"} size="large" />
       </View>
     );
   }
