@@ -1,19 +1,26 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
   Image,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
 } from "react-native";
 import TdLib from "react-native-tdlib";
 import { Buffer } from "buffer";
 import { useNavigation } from "@react-navigation/native";
 
-type ChannelProp = string | number | any; // username string, chatId number, or full chat object
+type ChannelProp = string | number | any;
 
-export default function ChannelItem({ channel, onPress }: { channel: ChannelProp; onPress?: (c: any) => void }) {
+export default function ChannelItem({
+  channel,
+  onPress,
+  onReady,
+}: {
+  channel: ChannelProp;
+  onPress?: (c: any) => void;
+  onReady?: (uniqueId: string | number | null | undefined) => void;
+}) {
   const navigation: any = useNavigation();
 
   const [title, setTitle] = useState<string>("");
@@ -25,16 +32,25 @@ export default function ChannelItem({ channel, onPress }: { channel: ChannelProp
   const [resolvedChatId, setResolvedChatId] = useState<number | string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // safe parse helper
+  const calledReadyRef = useRef(false);
+
   const safeParse = (maybe: any) => {
     if (!maybe) return null;
     if (typeof maybe === "object") return maybe;
     if (typeof maybe === "string") {
       const t = maybe.trim();
       if (t.startsWith("{") || t.startsWith("[")) {
-        try { return JSON.parse(t); } catch { return null; }
+        try {
+          return JSON.parse(t);
+        } catch {
+          return null;
+        }
       }
-      try { return JSON.parse(maybe); } catch { return null; }
+      try {
+        return JSON.parse(maybe);
+      } catch {
+        return null;
+      }
     }
     return null;
   };
@@ -52,7 +68,8 @@ export default function ChannelItem({ channel, onPress }: { channel: ChannelProp
     if (typeof content === "string") text = content;
     else if (content.text && typeof content.text === "string") text = content.text;
     else if (content.text && content.text.text) text = content.text.text;
-    else if (content.caption && typeof content.caption === "string") text = content.caption;
+    else if (content.caption && typeof content.caption === "string")
+      text = content.caption;
     else if (content.caption && content.caption.text) text = content.caption.text;
     else if (msg.content?.caption?.text) text = msg.content.caption.text;
     else if (msg.content?.text?.text) text = msg.content.text.text;
@@ -76,7 +93,9 @@ export default function ChannelItem({ channel, onPress }: { channel: ChannelProp
     if (text) {
       const cleaned = text.replace(/\s+/g, " ").trim();
       const max = 60;
-      setLastMessagePreview(cleaned.length > max ? cleaned.slice(0, max).trim() + "…" : cleaned);
+      setLastMessagePreview(
+        cleaned.length > max ? cleaned.slice(0, max).trim() + "…" : cleaned
+      );
     } else if (maybePhoto) {
       setLastMessagePreview("عکس/ویدیو");
     } else {
@@ -88,11 +107,9 @@ export default function ChannelItem({ channel, onPress }: { channel: ChannelProp
     if (!chatObj) return;
     if (chatObj.title) setTitle(chatObj.title);
 
-    // resolve chatId (اولویت chatId، بعد id)
     const chatIdVal = chatObj.chatId ?? chatObj.id ?? null;
     if (chatIdVal !== null && chatIdVal !== undefined) setResolvedChatId(chatIdVal);
 
-    // profile minithumbnail
     const mini = chatObj.photo?.minithumbnail?.data;
     if (mini) {
       try {
@@ -107,14 +124,10 @@ export default function ChannelItem({ channel, onPress }: { channel: ChannelProp
     const small = chatObj.photo?.small;
     if (small?.local?.isDownloadingCompleted && small?.local?.path) {
       setAvatarUri(`file://${small.local.path}`);
-    } else {
-      // اگر small.id هست، ما دانلود نمی‌کنیم؛ ولی می‌تونیم chatId رو نگه داریم تا صفحه‌ی Channel خودش دانلود کنه
     }
 
-    // extract last message preview/thumbnail
     extractPreviewAndThumb(chatObj);
 
-    // done loading
     setLoading(false);
   };
 
@@ -125,7 +138,6 @@ export default function ChannelItem({ channel, onPress }: { channel: ChannelProp
     const fetchInfo = async () => {
       if (typeof channel === "object" && channel !== null) {
         applyChatObj(channel);
-        // resolvedChatId fallback if channel object didn't contain id
         if ((!channel.chatId && !channel.id) && typeof channel.username === "string") {
           setResolvedChatId(channel.username);
         }
@@ -140,7 +152,6 @@ export default function ChannelItem({ channel, onPress }: { channel: ChannelProp
             applyChatObj(parsed);
             return;
           } else {
-            // fallback
             setTitle(String(channel));
             setResolvedChatId(channel);
             setLoading(false);
@@ -165,12 +176,11 @@ export default function ChannelItem({ channel, onPress }: { channel: ChannelProp
                 if (errMsg && String(errMsg).includes("USERNAME_NOT_OCCUPIED")) {
                   setIsUsernameNotOccupied(true);
                   setTitle(channel);
-                  setResolvedChatId(channel); // fallback to username
+                  setResolvedChatId(channel);
                   setLoading(false);
                   return;
                 }
               }
-              // fallback: show username as title
               setTitle(channel);
               setResolvedChatId(channel);
               setLoading(false);
@@ -207,33 +217,38 @@ export default function ChannelItem({ channel, onPress }: { channel: ChannelProp
     };
   }, [channel]);
 
+  useEffect(() => {
+    if (!loading && !calledReadyRef.current) {
+      onReady?.(resolvedChatId ?? channel);
+      calledReadyRef.current = true;
+    }
+  }, [loading, resolvedChatId, channel, onReady]);
+
   const handlePress = () => {
-    // اگر caller خواست خودش handle کنه، اول onPress اجرا شود
     if (onPress) {
       onPress({ channel, chatId: resolvedChatId });
       return;
     }
-    // در غیر اینصورت با navigation به صفحه Channel می‌ریم و chatId یا username را می‌فرستیم
     navigation.navigate("Channel", { chatId: resolvedChatId ?? channel });
   };
 
+  // ❌ هیچ placeholder — وقتی لودینگه، هیچی نشون نده
   if (loading) {
-    return (
-      <View style={[styles.container, { justifyContent: "center" }]}>
-        <ActivityIndicator color="#888" size="small" />
-        <Text style={{ color: "#888", marginLeft: 8 }}>در حال بارگذاری...</Text>
-      </View>
-    );
+    return null;
   }
 
   return (
     <TouchableOpacity style={styles.container} onPress={handlePress}>
-      <Image
-        source={avatarUri ? { uri: avatarUri } : miniAvatarUri ? { uri: miniAvatarUri } : undefined}
-        style={styles.avatar}
-      />
+      {avatarUri || miniAvatarUri ? (
+        <Image
+          source={{ uri: avatarUri || miniAvatarUri || '' }}
+          style={styles.avatar}
+        />
+      ) : null}
       <View style={{ flex: 1, marginRight: 8 }}>
-        <Text numberOfLines={1} style={styles.title}>{title || (typeof channel === "string" ? channel : "بدون عنوان")}</Text>
+        <Text numberOfLines={1} style={styles.title}>
+          {title || (typeof channel === "string" ? channel : "بدون عنوان")}
+        </Text>
         <View style={styles.lastRow}>
           <Text numberOfLines={1} style={styles.lastMessage}>
             {lastMessagePreview}
@@ -253,7 +268,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 10,
     paddingHorizontal: 6,
-    borderBottomWidth: .9,
+    borderBottomWidth: 0.9,
     borderColor: "#222222ac",
     backgroundColor: "#0e0e0eff",
   },
@@ -262,7 +277,6 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 25.5,
     marginRight: 8,
-    backgroundColor: "#666",
   },
   title: {
     fontSize: 15.5,
@@ -279,7 +293,6 @@ const styles = StyleSheet.create({
     color: "#aaa",
     marginTop: 2,
     flex: 1,
-    gap: 3,
     fontFamily: "SFArabic-Regular",
   },
   lastThumb: {
