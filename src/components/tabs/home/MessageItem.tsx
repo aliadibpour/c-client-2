@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+// MessageItem.tsx
+import React, { useEffect, useMemo } from "react";
 import { Text, View, TouchableOpacity, StyleSheet } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import MessageHeader from "./MessageHeader";
@@ -35,13 +36,16 @@ const getRelativeTime = (unixTimestamp: number): string => {
   return `${days}d`;
 };
 
-export default function MessageItem({ data, isVisible, activeDownload }: any) {
-  const navigation: any = useNavigation();
-  const [message, setMessage] = useState(data);
+type Props = {
+  data: any;
+  isVisible: boolean;
+  activeDownload: boolean;
+  chatInfo?: any;
+};
 
-  useEffect(() => {
-    setMessage(data);
-  }, [data]);
+function MessageItemComponent({ data, isVisible, activeDownload, chatInfo }: Props) {
+  const navigation: any = useNavigation();
+  const message = data;
 
   const content = message?.content;
   const captionText = content?.caption?.text || "";
@@ -65,13 +69,7 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
   const viewCount = formatNumber(message?.interactionInfo?.viewCount || 0);
 
   return (
-    <View
-      style={{
-        borderBottomColor: "#111",
-        borderBottomWidth: 1,
-        paddingVertical: 15,
-      }}
-    >
+    <View style={styles.container}>
       {/* متن، هدر، کپشن و غیره → قابل کلیک */}
       <TouchableOpacity onPress={handlePress} activeOpacity={0.9}>
         {message.replyToMessage && (
@@ -86,12 +84,7 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
           >
             <ReplyIcon width={16} height={16} color="#999" />
             {message.replyToMessage.content?.photo && (
-              <PhotoMessage
-                photo={message.replyToMessage.content.photo}
-                activeDownload={false}
-                width={28}
-                height={20}
-              />
+              <PhotoMessage photo={message.replyToMessage.content.photo} activeDownload={false} width={28} height={20} />
             )}
             <Text numberOfLines={1} style={styles.replyText}>
               {message.replyToMessage.content?.text?.text?.slice(0, 30) ||
@@ -101,57 +94,20 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
           </TouchableOpacity>
         )}
 
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-          <MessageHeader chatId={message.chatId} />
-          <Text
-            style={{
-              color: "#999",
-              fontSize: 12.33,
-              fontFamily: "SFArabic-Regular",
-              marginBottom: 8,
-            }}
-          >
-            {getRelativeTime(message.date)}
-          </Text>
+        <View style={styles.headerRow}>
+          <MessageHeader chatId={message.chatId} chatInfo={chatInfo} />
+          <Text style={styles.timeText}>{getRelativeTime(message.date)}</Text>
         </View>
 
-        {!!cleanedCaption && (
-          <Text
-            style={{
-              color: "#ccc",
-              marginBottom: 10,
-              fontSize: 13.5,
-              fontFamily: "SFArabic-Regular",
-              lineHeight: 25,
-            }}
-          >
-            {cleanedCaption}
-          </Text>
-        )}
+        {!!cleanedCaption && <Text style={styles.bodyText}>{cleanedCaption}</Text>}
 
-        {!!cleanedText && (
-          <Text
-            style={{
-              color: "#ccc",
-              marginBottom: 10,
-              fontSize: 13.5,
-              fontFamily: "SFArabic-Regular",
-              lineHeight: 25,
-            }}
-          >
-            {cleanedText}
-          </Text>
-        )}
+        {!!cleanedText && <Text style={styles.bodyText}>{cleanedText}</Text>}
 
-        {content?.photo && (
-          <PhotoMessage photo={content.photo} activeDownload={activeDownload} context="explore" />
-        )}
+        {content?.photo && <PhotoMessage photo={content.photo} activeDownload={activeDownload} context="explore" />}
       </TouchableOpacity>
 
       {/* ویدیو جدا از Touchable → دیگه کلیک وسط ویدیو کاربر رو نمی‌بره صفحه Channel */}
-      {content?.video && (
-        <VideoMessage video={content.video} isVisible={isVisible} activeDownload={activeDownload} />
-      )}
+      {content?.video && <VideoMessage video={content.video} isVisible={isVisible} activeDownload={activeDownload} />}
 
       {message.interactionInfo?.reactions?.reactions?.length > 0 && (
         <MessageReactions
@@ -177,25 +133,8 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
             })
           }
         >
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              marginTop: 15.4,
-              marginLeft: 4.5,
-              marginBottom: 5,
-              gap: 2,
-            }}
-          >
-            <Text
-              style={{
-                color: "#adadad",
-                fontSize: 13.6,
-                fontFamily: "SFArabic-Regular",
-              }}
-            >
-              {message.interactionInfo.replyInfo.replyCount} کامنت
-            </Text>
+          <View style={styles.commentsRow}>
+            <Text style={styles.commentsText}>{message.interactionInfo.replyInfo.replyCount} کامنت</Text>
             <ArrowLeftIcon style={{ color: "#adadad" }} width={13.5} height={13.5} />
           </View>
         </TouchableOpacity>
@@ -204,7 +143,36 @@ export default function MessageItem({ data, isVisible, activeDownload }: any) {
   );
 }
 
+// React.memo with custom comparator to avoid unnecessary re-renders
+export default React.memo(
+  MessageItemComponent,
+  (prev, next) => {
+    // re-render only when the essential props changed
+    if (prev.data?.id !== next.data?.id) return false;
+    if (prev.isVisible !== next.isVisible) return false;
+    if (prev.activeDownload !== next.activeDownload) return false;
+    // compare interactionInfo minimally (views/replies)
+    const prevView = prev.data?.interactionInfo?.viewCount || 0;
+    const nextView = next.data?.interactionInfo?.viewCount || 0;
+    if (prevView !== nextView) return false;
+
+    const prevReplies = prev.data?.interactionInfo?.replyInfo?.replyCount || 0;
+    const nextReplies = next.data?.interactionInfo?.replyInfo?.replyCount || 0;
+    if (prevReplies !== nextReplies) return false;
+
+    // chatInfo reference equality (if changed externally, re-render)
+    if (prev.chatInfo !== next.chatInfo) return false;
+
+    return true; // otherwise skip render
+  }
+);
+
 const styles = StyleSheet.create({
+  container: {
+    borderBottomColor: "#111",
+    borderBottomWidth: 1,
+    paddingVertical: 15,
+  },
   replyBox: {
     backgroundColor: "rgba(111, 111, 111, 0.15)",
     paddingVertical: 6,
@@ -221,5 +189,36 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "SFArabic-Regular",
     flexShrink: 1,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  timeText: {
+    color: "#999",
+    fontSize: 12.33,
+    fontFamily: "SFArabic-Regular",
+    marginBottom: 8,
+  },
+  bodyText: {
+    color: "#ccc",
+    marginBottom: 10,
+    fontSize: 13.5,
+    fontFamily: "SFArabic-Regular",
+    lineHeight: 25,
+  },
+  commentsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 15.4,
+    marginLeft: 4.5,
+    marginBottom: 5,
+    gap: 2,
+  },
+  commentsText: {
+    color: "#adadad",
+    fontSize: 13.6,
+    fontFamily: "SFArabic-Regular",
   },
 });

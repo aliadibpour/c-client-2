@@ -39,7 +39,7 @@ const teamRecord : { [key: string]: string } = {
   'بایرن': 'bayern',
   'اینتر': 'inter',
   'میلان': 'milan',
-  'برای شما': "perspolis"
+  'برای شما': "esteghlal"
 }
 export const pepe = (team:string) => {
   return teamRecord[team];
