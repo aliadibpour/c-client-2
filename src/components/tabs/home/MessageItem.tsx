@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
   container: {
     borderBottomColor: "#111",
     borderBottomWidth: 1,
-    paddingVertical: 15,
+    paddingVertical: 12.6,
   },
   replyBox: {
     backgroundColor: "rgba(111, 111, 111, 0.15)",
@@ -211,9 +211,8 @@ const styles = StyleSheet.create({
   commentsRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 15.4,
+    marginTop: 8.4,
     marginLeft: 4.5,
-    marginBottom: 5,
     gap: 2,
   },
   commentsText: {

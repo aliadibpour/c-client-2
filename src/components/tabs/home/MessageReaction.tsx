@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
   },
   emoji: {
     fontSize: 10,
-    marginRight: 5,
+    marginRight: 1.7,
   },
   count: {
     color: "white",
