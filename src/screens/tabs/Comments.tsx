@@ -69,6 +69,21 @@ export default function Comments() {
     };
 
     getThread();
+    
+    return () => {
+    (async () => {
+      try {
+        // Notify manager (HomeScreen) to un-reserve immediately (optional)
+        try { DeviceEventEmitter.emit("unreserve-chat", { chatId: Number(chatId) }); } catch (e) {}
+
+        // Close chat in TDLib (best-effort)
+        await TdLib.closeChat(Number(chatId));
+      } catch (err) {
+        console.warn("[Comments] closeChat failed:", err);
+      }
+    })();
+  };
+
   }, [chatId, messageId]);
 
 

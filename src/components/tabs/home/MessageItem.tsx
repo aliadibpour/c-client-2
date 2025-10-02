@@ -1,6 +1,6 @@
 // MessageItem.tsx
-import React, { useEffect, useMemo } from "react";
-import { Text, View, TouchableOpacity, StyleSheet } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { Text, View, TouchableOpacity, StyleSheet, DeviceEventEmitter, ActivityIndicator } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import MessageHeader from "./MessageHeader";
 import PhotoMessage from "./MessagePhoto";
@@ -8,6 +8,7 @@ import VideoMessage from "./MessageVideo";
 import MessageReactions from "./MessageReaction";
 import { ArrowLeftIcon } from "../../../assets/icons";
 import { ReplyIcon } from "lucide-react-native";
+import TdLib from "react-native-tdlib";
 
 const cleanText = (text: string): string => {
   return text
@@ -61,6 +62,80 @@ function MessageItemComponent({ data, isVisible, activeDownload, chatInfo }: Pro
     });
   };
 
+  // ------------ NEW: loading state for "open comments" ------------
+  // This local state is set when we ask to pre-open the chat/message for comments.
+  // We also listen to reserve/unreserve events so other parts can clear it (e.g. Comments emits unreserve).
+  const [openingComments, setOpeningComments] = useState(false);
+
+  useEffect(() => {
+    // Listen to reserve/unreserve events (global DeviceEventEmitter)
+    const reserveSub = DeviceEventEmitter.addListener("reserve-chat", (ev: any) => {
+      try {
+        if (!ev) return;
+        // ev may contain { chatId, messageId, ttl }
+        if (String(ev.chatId) === String(message.chatId) && (ev.messageId == null || String(ev.messageId) === String(message.id))) {
+          setOpeningComments(true);
+        }
+      } catch (e) {}
+    });
+    const unreserveSub = DeviceEventEmitter.addListener("unreserve-chat", (ev: any) => {
+      try {
+        if (!ev) return;
+        if (String(ev.chatId) === String(message.chatId) && (ev.messageId == null || String(ev.messageId) === String(message.id))) {
+          setOpeningComments(false);
+        }
+      } catch (e) {}
+    });
+
+    return () => {
+      reserveSub.remove();
+      unreserveSub.remove();
+    };
+  }, [message.chatId, message.id]);
+
+  // NEW: open comments handler — set loading, try to open chat/get message, emit reserve, then navigate
+  const handleOpenComments = async () => {
+    const chatId = message.chatId;
+    const messageId = message.id;
+    const RESERVE_TTL = 2 * 60 * 1000; // 2 minutes
+
+    // show loading immediately (so user sees spinner)
+    setOpeningComments(true);
+
+    try {
+      if (chatId) {
+        // best-effort open chat (may be no-op if already open)
+        await TdLib.openChat(Number(chatId)).catch((e: any) => {
+          console.warn("[MessageItem] openChat failed:", e);
+        });
+
+        // try to fetch message once to prime tdlib cache (best-effort)
+        try {
+          await TdLib.getMessage(Number(chatId), Number(messageId));
+        } catch (err) {
+          console.warn("[MessageItem] getMessage for comment prefetch failed:", err);
+        }
+
+        // tell HomeScreen/manager that we want this chat reserved for a bit
+        try {
+          DeviceEventEmitter.emit("reserve-chat", { chatId: Number(chatId), messageId: Number(messageId), ttl: RESERVE_TTL });
+        } catch (e) {
+          // ignore emitter errors
+        }
+      }
+    } catch (err) {
+      console.warn("[MessageItem] comment-open prefetch error:", err);
+    } finally {
+      // always navigate to comments even if prefetch had errors
+      navigation.navigate("Comments", {
+        chatId: message.chatId,
+        messageId: message.id,
+      });
+      // NOTE: we do NOT clear openingComments here — Comments/unreserve will clear it on close.
+    }
+  };
+
+  // ------------ UI ------------
   const formatNumber = (num: number): string => {
     if (num < 1000) return num.toString();
     if (num < 1_000_000) return (num / 1000).toFixed(1).replace(/\.0$/, "") + "k";
@@ -125,17 +200,17 @@ function MessageItemComponent({ data, isVisible, activeDownload, chatInfo }: Pro
       )}
 
       {message.interactionInfo?.replyInfo?.replyCount > 0 && (
-        <TouchableOpacity
-          onPress={() =>
-            navigation.navigate("Comments", {
-              chatId: message.chatId,
-              messageId: message.id,
-            })
-          }
-        >
+        <TouchableOpacity onPress={handleOpenComments}>
           <View style={styles.commentsRow}>
             <Text style={styles.commentsText}>{message.interactionInfo.replyInfo.replyCount} کامنت</Text>
-            <ArrowLeftIcon style={{ color: "#adadad" }} width={13.5} height={13.5} />
+
+            {/* ← show spinner while openingComments true, otherwise show arrow */}
+            {openingComments ? (
+              // small spinner similar size to arrow
+              <ActivityIndicator style={{ marginLeft: 3 }} size="small" color="#adadad" />
+            ) : (
+              <ArrowLeftIcon style={{ color: "#adadad", marginLeft: 3 }} width={13.5} height={13.5} />
+            )}
           </View>
         </TouchableOpacity>
       )}
@@ -171,7 +246,7 @@ const styles = StyleSheet.create({
   container: {
     borderBottomColor: "#111",
     borderBottomWidth: 1,
-    paddingVertical: 12.6,
+    paddingVertical: 13,
   },
   replyBox: {
     backgroundColor: "rgba(111, 111, 111, 0.15)",

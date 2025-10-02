@@ -190,48 +190,7 @@ export default function HomeScreen() {
       } else break;
     }
   }, [tdCall]);
-
-  // ensure chat open (LRU aware)
-  const ensureChatOpen = useCallback(
-    async (chatId?: number, channel?: string) => {
-      if (!chatId && !channel) throw new Error("no chatId or channel");
-      try {
-        if (chatId) {
-          if (!openedChats.current.has(chatId)) {
-            await tdCall("openChat", chatId);
-            openedChats.current.set(chatId, Date.now());
-          } else touchOpenedChat(chatId);
-          return chatId;
-        }
-        const res: any = await tdCall("searchPublicChat", channel);
-        const foundId = res?.id || res?.chat?.id || res?.chatId || +res;
-        if (!foundId) throw new Error("searchPublicChat returned no id");
-        if (!openedChats.current.has(foundId)) {
-          await tdCall("openChat", foundId);
-          openedChats.current.set(foundId, Date.now());
-        } else touchOpenedChat(foundId);
-        return foundId;
-      } catch (err) {
-        // fallback: try searchPublicChat again
-        if (channel) {
-          try {
-            const r: any = await tdCall("searchPublicChat", channel);
-            const fid = r?.id || r?.chat?.id || r?.chatId || +r;
-            if (fid && !openedChats.current.has(fid)) {
-              await tdCall("openChat", fid);
-              openedChats.current.set(fid, Date.now());
-            } else if (fid) touchOpenedChat(fid);
-            return fid;
-          } catch (e) {
-            throw e;
-          }
-        }
-        throw err;
-      }
-    },
-    [tdCall, touchOpenedChat]
-  );
-
+  
   // get and cache chat info
   const getAndCacheChatInfo = useCallback(
     async (chatId: number) => {
@@ -258,48 +217,6 @@ export default function HomeScreen() {
       }
     },
     [tdCall, persistCachesDebounced]
-  );
-
-  // fetch message (use cache aggressively)
-  const fetchMessageForMeta = useCallback(
-    async ({ chatId, messageId, channel }: any) => {
-      const key = mk(chatId ?? channel, messageId);
-      const cached = messageCacheRef.current.get(key);
-      if (cached) return cached;
-      try {
-        let cid:any = chatId ? +chatId : undefined;
-        if (!cid && channel) {
-          try {
-            const r: any = await tdCall("searchPublicChat", channel);
-            cid = r?.id || r?.chat?.id || r?.chatId || +r;
-            if (cid && !openedChats.current.has(cid)) {
-              await tdCall("openChat", cid);
-              openedChats.current.set(cid, Date.now());
-            }
-            if (cid) touchOpenedChat(cid);
-          } catch (e) {}
-        } else if (cid) {
-          if (!openedChats.current.has(cid)) {
-            try {
-              await tdCall("openChat", cid);
-              openedChats.current.set(cid, Date.now());
-            } catch (e) {}
-          } else touchOpenedChat(cid);
-        }
-
-        const raw: any = await tdCall("getMessage", +cid, +messageId);
-        const parsed = JSON.parse(raw.raw);
-        const k = mk(parsed.chatId || cid, parsed.id);
-        messageCacheRef.current.set(k, parsed);
-
-        persistCachesDebounced();
-        if (parsed.chatId) getAndCacheChatInfo(+parsed.chatId).catch(() => {});
-        return parsed;
-      } catch (err) {
-        return null;
-      }
-    },
-    [tdCall, touchOpenedChat, getAndCacheChatInfo, persistCachesDebounced]
   );
 
   // loadBatch: group by chat to reduce openChat churn
@@ -481,7 +398,7 @@ export default function HomeScreen() {
       const params = new URLSearchParams();
       params.append("uuid", parsedUuid);
       ids.forEach((id) => params.append("messageIds", id));
-      await fetch(`http://192.168.1.103:9000/feed-message/seen-message?${params.toString()}`, {
+      await fetch(`http://10.183.236.115:9000/feed-message/seen-message?${params.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -506,7 +423,7 @@ export default function HomeScreen() {
         const parsedUuid = JSON.parse(uuidRaw || "{}").uuid;
         const serverTab = activeTab;
 
-        const res = await fetch(`http://192.168.1.103:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}`);
+        const res = await fetch(`http://10.183.236.115:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}`);
         const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!mounted) return;
 
@@ -672,23 +589,63 @@ export default function HomeScreen() {
   }, [visibleIds, messages]);
 
   // ensure opened chats for activeDownloads (touch LRU; open minimal)
+// ← جایگزین کن این useEffect فعلی با این قطعه
   useEffect(() => {
+    // حداکثر تعداد چت‌هایی که بخاطر activeDownloads نگه می‌داریم
+    const ACTIVE_OPEN_LIMIT = 3;
+
     (async () => {
-      const currentChatIds = new Set<number>();
-      for (const id of activeDownloads) {
-        const msg = messages.find((m) => m.id === id);
-        if (!msg || !msg.chatId) continue;
-        const chatId = msg.chatId;
-        currentChatIds.add(chatId);
-        if (!openedChats.current.has(chatId)) {
+      try {
+        if (!activeDownloads || activeDownloads.length === 0) return;
+
+        // ساخت یک آرایه مرتب از chatId ها بر اساس ترتیب اولین مشاهده در activeDownloads
+        const seen = new Set<number>();
+        const orderedChatIds: number[] = [];
+        for (const msgId of activeDownloads) {
+          const msg = messages.find((m) => m.id === msgId);
+          if (!msg || !msg.chatId) continue;
+          const cid = Number(msg.chatId);
+          if (!seen.has(cid)) {
+            seen.add(cid);
+            orderedChatIds.push(cid);
+            if (orderedChatIds.length >= ACTIVE_OPEN_LIMIT) break;
+          }
+        }
+
+        if (orderedChatIds.length === 0) return;
+
+        // برای هر chatId منتخب: اگر باز نیست openChat کن، و همیشه touchOpenedChat بزن
+        for (const chatId of orderedChatIds) {
+          if (!openedChats.current.has(chatId)) {
+            try {
+              await tdCall("openChat", chatId);
+              openedChats.current.set(chatId, Date.now());
+            } catch (e) {
+              // اگر openChat خطا داد، نادیده بگیر — اما نباید دانلودها رو خراب کنه
+              console.warn("[Home] openChat(for active) failed:", chatId, e);
+            }
+          } else {
+            // promote در LRU تا از eviction جلوگیری کنیم
+            touchOpenedChat(chatId);
+          }
+
+          // هرچند viewMessages را به صورت fire-and-forget می‌زنیم تا interaction updates را دریافت کنیم
           try {
-            await tdCall("openChat", chatId);
-            openedChats.current.set(chatId, Date.now());
-          } catch (e) {}
-        } else touchOpenedChat(chatId);
-        tdCall("viewMessages", chatId, [msg.id], false).catch(() => {});
+            // پیدا کن یک message id نماینده متعلق به این chat که داخل activeDownloads هست
+            const repMsg = messages.find((m) => m.chatId === chatId && activeDownloads.includes(m.id));
+            if (repMsg && repMsg.id) {
+              tdCall("viewMessages", chatId, [repMsg.id], false).catch(() => {});
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        // نکته: ما اینجا فقط باز می‌کنیم / promote میکنیم — اجازه میدیم LRU cap (MAX_OPENED_CHATS) بوسیله‌ی touchOpenedChat مدیریت شود.
+        // این یعنی: بستن چت‌ها تنها زمانی اتفاق می‌افته که openedChats.size > MAX_OPENED_CHATS و قدیمی‌ها evict شوند.
+      } catch (err) {
+        console.warn("[Home] ensure-open-activeDownloads error:", err);
       }
-      // don't aggressively close here; LRU eviction will close if cap exceeded
     })();
   }, [activeDownloads, messages, tdCall, touchOpenedChat]);
 
@@ -729,7 +686,7 @@ export default function HomeScreen() {
       const start = nextBatchIdx * BATCH_SIZE;
       if (start >= datasRef.current.length) {
         const uuidRaw: any = await AsyncStorage.getItem("userId-corner");
-        const res = await fetch(`http://192.168.1.103:9000/feed-message?team=${encodeURIComponent(activeTab)}&uuid=${JSON.parse(uuidRaw || "{}").uuid}`);
+        const res = await fetch(`http://10.183.236.115:9000/feed-message?team=${encodeURIComponent(activeTab)}&uuid=${JSON.parse(uuidRaw || "{}").uuid}`);
         const newDatas: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!newDatas || newDatas.length === 0) {
           setLoadingMore(false);
