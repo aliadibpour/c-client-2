@@ -1,12 +1,11 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
   View,
-  ActivityIndicator,
   TouchableOpacity,
   Dimensions,
   StyleSheet,
 } from "react-native";
-import { useEffect, useMemo, useState } from "react";
 import TdLib from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
 import { useNavigation } from "@react-navigation/native";
@@ -15,22 +14,24 @@ import { cancelDownload } from "../../../hooks/useMediaDownloadManager";
 interface Props {
   photo: any;
   context?: "channel" | "explore";
-  activeDownload?:any;
+  activeDownload?: any;
   width?: number;
   height?: number;
 }
 
-export default function MessagePhoto({ photo, context = "channel", activeDownload , width, height}: Props) {
+export default function MessagePhoto({ photo, context = "channel", activeDownload, width, height }: Props) {
   const [photoPath, setPhotoPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const navigation: any = useNavigation();
+  const tokenRef = useRef<any>(null);
+  const mountedRef = useRef(true);
 
   const screenWidth = Dimensions.get("window").width;
 
   // سایز اصلی
   const sizes = photo?.sizes || [];
-  const biggest = sizes[sizes.length - 1];
-  const fileId = biggest?.photo?.id;
+  const biggest = sizes[sizes.length - 1] || {};
+  const fileId = biggest?.photo?.id || photo?.id;
   const originalWidth = biggest?.width || 320;
   const originalHeight = biggest?.height || 240;
 
@@ -61,45 +62,93 @@ export default function MessagePhoto({ photo, context = "channel", activeDownloa
     }
   }
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // تصویر کوچک base64
   const thumbnailBase64 = useMemo(() => {
     const mini = photo?.minithumbnail?.data;
     return mini ? fromByteArray(mini) : null;
   }, [photo]);
 
+  // detect existing local path on the photo object (if tdlib provided it earlier)
+  const existingLocalPath =
+    biggest?.photo?.local?.path ||
+    photo?.local?.path ||
+    (biggest?.photo?.local && biggest.photo.local.isDownloadingCompleted && biggest.photo.local.path) ||
+    null;
+
   useEffect(() => {
-    if (!fileId) return;
+    // reset per fileId
+    setPhotoPath(null);
+    setLoading(true);
 
-    const downloadPhoto = async () => {
+    const myToken = Symbol("dl");
+    tokenRef.current = myToken;
+
+    if (!fileId) {
+      setLoading(false);
+      return;
+    }
+
+    // if local already exists, use it immediately
+    if (existingLocalPath) {
+      if (mountedRef.current && tokenRef.current === myToken) {
+        setPhotoPath(`file://${existingLocalPath}`);
+        setLoading(false);
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    const startDownload = async () => {
       try {
-        const result: any = await TdLib.downloadFile(fileId);
-        const file = JSON.parse(result.raw);
+        const res: any = await TdLib.downloadFile(fileId);
+        let parsed: any = res;
+        try {
+          parsed = res?.raw ? JSON.parse(res.raw) : res;
+        } catch (e) {
+          parsed = res;
+        }
+        const localPath =
+          parsed?.local?.path ||
+          (parsed?.local && parsed.local.isDownloadingCompleted && parsed.local.path) ||
+          parsed?.file?.local?.path ||
+          null;
 
-        if (file.local?.isDownloadingCompleted && file.local.path) {
-          setPhotoPath(`file://${file.local.path}`);
+        if (!mountedRef.current || tokenRef.current !== myToken || cancelled) return;
+
+        if (localPath) {
+          setPhotoPath(`file://${localPath}`);
+          setLoading(false);
+        } else {
           setLoading(false);
         }
       } catch (err) {
-        console.error("Photo download error:", err);
+        if (mountedRef.current && tokenRef.current === myToken) setLoading(false);
       }
     };
 
-    const cancelPhoto = async () => {
+    const doCancel = async () => {
       try {
         await cancelDownload(fileId);
-        console.log("⛔️ Download canceled:", fileId);
-      } catch (err) {
-        console.error("Cancel download error:", err);
-      }
+      } catch (e) {}
     };
 
-    if (activeDownload) {
-      downloadPhoto();
-    } else {
-      cancelPhoto();
-    }
-  }, [fileId, activeDownload]);
+    if (activeDownload) startDownload();
+    else doCancel().catch(() => {});
 
+    return () => {
+      cancelled = true;
+      tokenRef.current = Symbol("cancelled");
+      doCancel().catch(() => {});
+    };
+  }, [fileId, activeDownload, existingLocalPath, photo]);
 
   const handleOpenFull = () => {
     if (photoPath) {
@@ -108,40 +157,29 @@ export default function MessagePhoto({ photo, context = "channel", activeDownloa
   };
 
   return (
-    <View
-      style={[
-        styles.container,
-      ]}
-    >
+    <View style={[styles.container]}>
       <TouchableOpacity onPress={handleOpenFull} disabled={loading}>
-      <View
-        style={{
-          width: width ? width : displayWidth < screenWidth * 0.72 ? screenWidth * 0.72 : displayWidth,
-          height: height ? height : displayHeight < 160 ? 160 : displayHeight, // حداقل ارتفاع
-          borderRadius: context !== "channel" ? 10 : '',
-          borderBottomLeftRadius: context === "channel" ? 3: "",
-          borderBottomRightRadius: context === "channel" ? 3 : "",
-          backgroundColor: "#111",
-          overflow: "hidden",
-        }}
-      >
-        <Image
-          source={{
-            uri:
-              loading && thumbnailBase64
-                ? `data:image/jpeg;base64,${thumbnailBase64}`
-                : photoPath || undefined,
-          }}
+        <View
           style={{
-            width: "100%",
-            height: "100%",
+            width: width ? width : displayWidth < screenWidth * 0.72 ? screenWidth * 0.72 : displayWidth,
+            height: height ? height : displayHeight < 160 ? 160 : displayHeight, // حداقل ارتفاع
+            borderRadius: context !== "channel" ? 10 : undefined,
+            borderBottomLeftRadius: context === "channel" ? 3 : undefined,
+            borderBottomRightRadius: context === "channel" ? 3 : undefined,
+            backgroundColor: "#111",
+            overflow: "hidden",
           }}
-          resizeMode="cover"
-        />
-      </View>
+        >
+          <Image
+            source={{
+              uri: photoPath ? photoPath : (thumbnailBase64 ? `data:image/jpeg;base64,${thumbnailBase64}` : undefined),
+            }}
+            style={{ width: "100%", height: "100%" }}
+            resizeMode="cover"
+          />
+        </View>
       </TouchableOpacity>
     </View>
-
   );
 }
 

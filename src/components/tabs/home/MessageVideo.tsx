@@ -1,3 +1,4 @@
+// MessageVideo.tsx
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -13,10 +14,9 @@ import Video from "react-native-video";
 import { Download, Pause, Play, X } from "lucide-react-native";
 import { startDownload, cancelDownload } from "../../../hooks/useMediaDownloadManager";
 
-// ---------- Config ----------
 const screenWidth = Dimensions.get("window").width;
-const START_THRESHOLD_BYTES = 120 * 1024; // وقتی این مقدار prefix دانلود شد می‌تونیم پخش را شروع کنیم
-const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024; // برای تصمیم‌گیری stream vs immediate
+const START_THRESHOLD_BYTES = 120 * 1024; // when prefix >= this, we can start streaming
+const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024;
 const STALL_TIMEOUT_MS = 8000;
 
 type DownloadStatus = "idle" | "downloading" | "paused" | "completed" | "error";
@@ -24,19 +24,15 @@ type DownloadStatus = "idle" | "downloading" | "paused" | "completed" | "error";
 interface Props {
   video: any;
   isVisible: boolean;
-  activeDownload?: any;
+  activeDownload?: any; // optional external status object or boolean
   context?: "channel" | "explore";
 }
 
 /**
- * useTdlibStream
- * - گوش می‌دهد به DeviceEventEmitter برای updateFile / downloadFile
- * - وضعیت دانلود و progress و مسیر لوکال را مدیریت می‌کند
- * - start/pause/cancel را exposes می‌کند
- *
- * طراحی شده تا برای فایل‌های بزرگ امکان "stream while downloading" فراهم کند:
- * وقتی TDLib یک local.path حتی با prefix ناقص بدهد و حداقل bytes دانلود شده باشد
- *، ما همان فایل را به Video می‌دهیم تا پخش تدریجی انجام شود.
+ * useTdlibStream (improved)
+ * - token-guarded DeviceEventEmitter updates
+ * - start/pause/cancel controlling via startDownload/cancelDownload
+ * - immediate local-path usage if present on `video`
  */
 function useTdlibStream(fileId: number | undefined, externalActiveDownload?: any) {
   const [status, setStatus] = useState<DownloadStatus>("idle");
@@ -45,10 +41,19 @@ function useTdlibStream(fileId: number | undefined, externalActiveDownload?: any
   const [totalBytes, setTotalBytes] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const tokenRef = useRef<symbol | null>(null);
   const lastPercentRef = useRef<number>(-1);
   const lastLocalPathRef = useRef<string | null>(null);
   const subRef = useRef<any>(null);
   const stallRef = useRef<any>(null);
+  const mountedRef = useRef<boolean>(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const clearStall = useCallback(() => {
     if (stallRef.current) {
@@ -60,8 +65,8 @@ function useTdlibStream(fileId: number | undefined, externalActiveDownload?: any
   const resetStall = useCallback(() => {
     clearStall();
     stallRef.current = setTimeout(() => {
-      console.log("[useTdlibStream] stall for file:", fileId);
-      // نمایش visual stalled را در اینجا اضافه نکردیم اما می‌توان اضافه کرد
+      // optional: set a stalled UI flag
+      // console.log("[useTdlibStream] stall for file:", fileId);
     }, STALL_TIMEOUT_MS);
   }, [fileId, clearStall]);
 
@@ -72,78 +77,66 @@ function useTdlibStream(fileId: number | undefined, externalActiveDownload?: any
         const ev = typeof raw === "string" ? JSON.parse(raw) : raw;
         const type = ev["@type"] ?? ev.type ?? null;
 
-        if (type === "updateFile" || type === "UpdateFile") {
-          const f = ev.file ?? ev.data?.file ?? ev.data;
-          if (!f) return;
+        // unify file payload extraction
+        const filePayload = ev.file ?? ev.data?.file ?? ev.data ?? ev;
 
-          const candidateId = f.id ?? f.file_id ?? (f.remote && f.remote.id);
-          if (!candidateId) return;
-          if (!(String(candidateId) === String(fileId))) return;
+        if (!filePayload) return;
+        const candidateId = filePayload.id ?? filePayload.file_id ?? (filePayload.remote && filePayload.remote.id);
+        if (!candidateId || String(candidateId) !== String(fileId)) return;
 
-          const local = f.local ?? {};
-          const localPath = local.path ?? null;
+        const local = filePayload.local ?? {};
+        const localPath = local.path ?? null;
 
-          const downloadedSize =
-            local.downloadedSize ?? local.downloaded_size ?? local.downloaded_prefix_size ?? f.downloadedSize ?? f.downloaded_size ?? 0;
-          const total = f.size ?? f.total ?? null;
-          if (total) setTotalBytes(total);
+        const downloadedSize =
+          local.downloadedSize ??
+          local.downloaded_size ??
+          local.downloaded_prefix_size ??
+          filePayload.downloadedSize ??
+          filePayload.downloaded_size ??
+          0;
 
-          // progress
-          const percent = total ? Math.floor((downloadedSize / Math.max(1, total)) * 100) : 0;
-          if (percent !== lastPercentRef.current) {
-            lastPercentRef.current = percent;
-            setProgress(percent);
-            resetStall();
-          }
+        const total = filePayload.size ?? filePayload.total ?? null;
+        if (total) setTotalBytes(total);
 
-          const completed = !!local.is_downloading_completed || !!local.isDownloadingCompleted || false;
+        const percent = total ? Math.floor((downloadedSize / Math.max(1, total)) * 100) : 0;
+        if (percent !== lastPercentRef.current) {
+          lastPercentRef.current = percent;
+          setProgress(percent);
+          resetStall();
+        }
 
-          // اگر localPath موجود است و یا فایل کامل شده، سعی کن videoPath رو ست کنی.
-          if (localPath) {
-            // اگر مسیر جدید است یا قبلا ست نشده بود
-            if (lastLocalPathRef.current !== localPath) {
-              lastLocalPathRef.current = localPath;
-              // فقط وقتی حداقل prefix دانلود شده باشه یا کامل شده
-              if (downloadedSize >= START_THRESHOLD_BYTES || completed) {
-                const uri = String(localPath).startsWith("file://") ? String(localPath) : "file://" + String(localPath);
-                setVideoPath(uri);
-                setStatus(completed ? "completed" : "downloading");
-              } else {
-                // هنوز prefix کم است؛ اما وضعیت دانلود را بروز کن
-                setStatus("downloading");
-              }
+        const completed = !!local.is_downloading_completed || !!local.isDownloadingCompleted || false;
+
+        if (localPath) {
+          // if path changed or first time
+          if (lastLocalPathRef.current !== localPath) {
+            lastLocalPathRef.current = localPath;
+            // only set video path if we've downloaded enough prefix or finished
+            if (downloadedSize >= START_THRESHOLD_BYTES || completed) {
+              const uri = String(localPath).startsWith("file://") ? String(localPath) : "file://" + String(localPath);
+              setVideoPath(uri);
+              setStatus(completed ? "completed" : "downloading");
             } else {
-              // مسیر تغییری نکرده — فقط وضعیت کامل شدن را بررسی کن
-              if (completed && status !== "completed") {
-                setStatus("completed");
-                setProgress(100);
-                const uri = String(localPath).startsWith("file://") ? String(localPath) : "file://" + String(localPath);
-                setVideoPath(uri);
-              } else {
-                if (status !== "downloading" && status !== "completed") setStatus("downloading");
-              }
+              // prefix too small — update status only
+              setStatus("downloading");
             }
           } else {
-            // localPath نداریم اما آپدیت progress داریم
-            setStatus("downloading");
-          }
-        }
-
-        if ((type === "downloadFile" || type === "DownloadFile") && ev.file) {
-          const ff = ev.file;
-          const candidateId = ff.id ?? ff.file_id ?? (ff.remote && ff.remote.id);
-          if (String(candidateId) === String(fileId)) {
-            if (ff.local?.path) {
-              const uri = String(ff.local.path).startsWith("file://") ? String(ff.local.path) : "file://" + String(ff.local.path);
-              lastLocalPathRef.current = ff.local.path;
-              setVideoPath(uri);
+            // path same: check completion
+            if (completed && status !== "completed") {
               setStatus("completed");
               setProgress(100);
+              const uri = String(localPath).startsWith("file://") ? String(localPath) : "file://" + String(localPath);
+              setVideoPath(uri);
+            } else {
+              if (status !== "downloading" && status !== "completed") setStatus("downloading");
             }
           }
+        } else {
+          // no local path — just mark downloading/progress
+          setStatus("downloading");
         }
       } catch (err) {
-        console.warn("[useTdlibStream] parse error:", err, rawEvent);
+        // parse error, ignore
       }
     },
     [fileId, resetStall, status]
@@ -152,50 +145,63 @@ function useTdlibStream(fileId: number | undefined, externalActiveDownload?: any
   useEffect(() => {
     if (!fileId) return;
 
-    // اگر activeDownload خارجی پاس شده باشه سعی کن وضعیت اولیه رو بارگیری کنی
-    if (externalActiveDownload) {
+    // new token on fileId change
+    tokenRef.current = Symbol("tdl");
+    lastPercentRef.current = -1;
+    lastLocalPathRef.current = null;
+    setProgress(0);
+    setError(null);
+
+    // if externalActiveDownload carries an initial snapshot, apply it
+    if (externalActiveDownload && typeof externalActiveDownload === "object") {
       try {
-        const ex = externalActiveDownload;
-        if (ex.path) setVideoPath(ex.path);
-        if (ex.progress != null) setProgress(Math.floor(ex.progress));
-        if (ex.status) setStatus(ex.status);
-      } catch (e) {
-        console.warn("[useTdlibStream] external read error:", e);
-      }
+        if (externalActiveDownload.path) setVideoPath(externalActiveDownload.path);
+        if (externalActiveDownload.progress != null) setProgress(Math.floor(externalActiveDownload.progress));
+        if (externalActiveDownload.status) setStatus(externalActiveDownload.status);
+      } catch (e) {}
     }
 
     const sub = DeviceEventEmitter.addListener("tdlib-update", handleUpdate);
     subRef.current = sub;
 
     return () => {
+      // cleanup listener + stall timer; token invalidated
       if (subRef.current) {
         subRef.current.remove();
         subRef.current = null;
       }
       clearStall();
+      tokenRef.current = null;
     };
   }, [fileId, externalActiveDownload, handleUpdate, clearStall]);
 
+  // start / pause / cancel with token-guard for callback
   const start = useCallback(() => {
     if (!fileId) return;
     setError(null);
     setStatus("downloading");
+    const myToken = tokenRef.current ?? Symbol("tdl");
     try {
-      startDownload(fileId, (maybePath: string | null | undefined) => {
-        try {
-          if (maybePath) {
-            const uri = String(maybePath).startsWith("file://") ? String(maybePath) : "file://" + String(maybePath);
-            lastLocalPathRef.current = String(maybePath);
-            setVideoPath(uri);
-            setStatus("completed");
-            setProgress(100);
+      startDownload(
+        fileId,
+        // callback maybePath invoked by download manager when local available
+        (maybePath: string | null | undefined) => {
+          try {
+            // only apply if token still matches
+            if (!mountedRef.current || tokenRef.current !== myToken) return;
+            if (maybePath) {
+              const uri = String(maybePath).startsWith("file://") ? String(maybePath) : "file://" + String(maybePath);
+              lastLocalPathRef.current = String(maybePath);
+              setVideoPath(uri);
+              setStatus("completed");
+              setProgress(100);
+            }
+          } catch (e) {
+            // swallow
           }
-        } catch (e) {
-          console.warn("[useTdlibStream] start cb err:", e);
         }
-      });
+      );
     } catch (e: any) {
-      console.warn("[useTdlibStream] startDownload threw:", e);
       setError(String(e?.message ?? e));
       setStatus("error");
     }
@@ -207,8 +213,8 @@ function useTdlibStream(fileId: number | undefined, externalActiveDownload?: any
       cancelDownload(fileId);
       setStatus("paused");
     } catch (e) {
-      console.warn("[useTdlibStream] pause err:", e);
       setError(String(e));
+      setStatus("error");
     }
   }, [fileId]);
 
@@ -221,7 +227,7 @@ function useTdlibStream(fileId: number | undefined, externalActiveDownload?: any
       setVideoPath(null);
       lastLocalPathRef.current = null;
     } catch (e) {
-      console.warn("[useTdlibStream] cancel err:", e);
+      // ignore
     }
   }, [fileId]);
 
@@ -232,6 +238,7 @@ export default function MessageVideo({ video, isVisible, context = "channel", ac
   const [playerKey, setPlayerKey] = useState<number>(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // thumbnail / minithumbnail
   const thumbnailPath = video?.thumbnail?.file?.local?.path;
   const minithumbnailData = video?.minithumbnail?.data;
   let thumbnailUri: string | null = null;
@@ -244,7 +251,7 @@ export default function MessageVideo({ video, isVisible, context = "channel", ac
       else if (typeof Buffer !== "undefined") base64 = Buffer.from(binary, "binary").toString("base64");
       if (base64) thumbnailUri = `data:image/jpeg;base64,${base64}`;
     } catch (e) {
-      console.warn("[MessageVideo] minithumbnail error:", e);
+      // ignore
     }
   }
 
@@ -272,41 +279,62 @@ export default function MessageVideo({ video, isVisible, context = "channel", ac
   const finalHeight = displayHeight < 160 ? 160 : displayHeight;
   const borderRadius = context === "channel" ? 8 : 12;
 
-  // تصمیم‌گیری برای استریم ترجیحی
   const preferStream = size >= LARGE_FILE_THRESHOLD || duration >= 120;
 
+  // improved hook usage
   const { status, progress, videoPath, start, pause, cancel } = useTdlibStream(fileId, activeDownload);
 
-  // وقتی ویدیوپث ست شد key پلیر را افزایش می‌دیم تا mount شود (فقط وقتی مسیر جدید یا اولین بار)
+  // restart player when videoPath changes (mount fresh instance)
   useEffect(() => {
     if (videoPath) setPlayerKey((k) => k + 1);
   }, [videoPath]);
 
-  // اگر فایل کاملاً دانلود شده بود — overlayها را مخفی کن
   const isCompleted = status === "completed" && videoPath;
 
-  // رفتار اتوماتیک: اگر فایل کوچک یا preferStream true، شروع کن (اگر هنوز idle)
+  // auto-start small files when idle (but wait for activeDownload for large files)
   useEffect(() => {
     if (!fileId) return;
     if (status === "idle") {
-      // برای فایل‌های کوچک دانلود اتوماتیک بدون نیاز به تپ کاربر
       if (!preferStream && size > 0 && size < LARGE_FILE_THRESHOLD) {
         start();
       }
-      // برای فایل‌های بزرگ ما دانلود خودکار انجام نمیدهیم تا کاربر کنترلی داشته باشه
-      // اما به دلخواه میشه auto-start رو فعال کرد
     }
   }, [fileId, preferStream, size, status, start]);
 
-  // پیش از mount پلیر: thumbnail + overlay (download button on top-left) — اما اگر file کاملا دانلود شده باشه، فقط پلیر نشان داده می‌شود
+  // react to activeDownload changes: start when becomes true, cancel when false (best-effort)
+  useEffect(() => {
+    if (!fileId) return;
+    if (activeDownload) {
+      // if idle or paused -> start
+      if (status === "idle" || status === "paused" || status === "error") {
+        start();
+      }
+    } else {
+      // when not active, we pause/cancel to save resources
+      if (status === "downloading") {
+        pause();
+      }
+    }
+  }, [activeDownload, fileId, status, start, pause]);
+
+  // render placeholder (thumbnail + overlays) when no videoPath yet
   if (!videoPath && !isCompleted) {
     return (
       <View
-        style={{ width: finalWidth, height: finalHeight, borderRadius, overflow: "hidden", backgroundColor: "#000", justifyContent: "center", alignItems: "center" }}
+        style={{
+          width: finalWidth,
+          height: finalHeight,
+          borderRadius,
+          overflow: "hidden",
+          backgroundColor: "#000",
+          justifyContent: "center",
+          alignItems: "center",
+        }}
       >
-        {thumbnailUri && <Image source={{ uri: thumbnailUri }} style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0 }} resizeMode="cover" />}
+        {thumbnailUri && (
+          <Image source={{ uri: thumbnailUri }} style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0 }} resizeMode="cover" />
+        )}
 
-        {/* top-left download/pause button (مثل تلگرام) */}
         <View style={styles.topLeftOverlay} pointerEvents="box-none">
           {status === "downloading" && (
             <View style={styles.topLeftRow}>
@@ -330,7 +358,6 @@ export default function MessageVideo({ video, isVisible, context = "channel", ac
               <TouchableOpacity style={styles.smallCircle} onPress={() => start()}>
                 <Download width={14} height={14} color="#fff" />
               </TouchableOpacity>
-              {/* نمایش سایز ویدیو */}
               <Text style={styles.sizeLabel}>{(size / (1024 * 1024)).toFixed(1)} MB</Text>
             </View>
           )}
@@ -342,7 +369,6 @@ export default function MessageVideo({ video, isVisible, context = "channel", ac
           )}
         </View>
 
-        {/* bottom progress bar (just percent and small bar) */}
         {status === "downloading" && (
           <View style={styles.bottomBar} pointerEvents="none">
             <View style={styles.progressBarBg}>
@@ -352,7 +378,6 @@ export default function MessageVideo({ video, isVisible, context = "channel", ac
           </View>
         )}
 
-        {/* spinner to indicate streaming/loading */}
         {status === "downloading" && (
           <View style={styles.loadingSpinner}>
             <ActivityIndicator color="#fff" />
@@ -362,10 +387,11 @@ export default function MessageVideo({ video, isVisible, context = "channel", ac
     );
   }
 
-  // player (streaming or completed)
+  // player when we have a path
   return (
     <View style={{ width: finalWidth, height: finalHeight, borderRadius, overflow: "hidden", backgroundColor: "#000" }}>
       <Video
+        key={playerKey}
         source={videoPath ? { uri: videoPath } : undefined}
         style={{ width: "100%", height: "100%" }}
         resizeMode={isFullscreen ? "contain" : "cover"}
@@ -373,13 +399,12 @@ export default function MessageVideo({ video, isVisible, context = "channel", ac
         paused={!isVisible}
         repeat={true}
         onError={(e) => console.warn("[MessageVideo] player error:", e)}
-        onLoad={(m) => console.log("[MessageVideo] player onLoad:", m)}
-        onBuffer={(b) => console.log("[MessageVideo] player onBuffer:", b)}
+        onLoad={(m) => {}}
+        onBuffer={(b) => {}}
         onFullscreenPlayerWillPresent={() => setIsFullscreen(true)}
         onFullscreenPlayerWillDismiss={() => setIsFullscreen(false)}
       />
 
-      {/* overlays during streaming */}
       {!isCompleted && (
         <View style={styles.cornerOverlay} pointerEvents="box-none">
           {status === "downloading" && (
@@ -476,10 +501,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   sizeLabel: {
-  color: "#fff",
-  fontSize: 12,
-  marginTop: 4,
-  textAlign: "center",
-},
-
+    color: "#fff",
+    fontSize: 12,
+    marginTop: 4,
+    textAlign: "center",
+  },
 });

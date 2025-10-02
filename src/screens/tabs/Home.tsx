@@ -1,4 +1,4 @@
-// HomeScreen.tsx
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Text,
@@ -21,18 +21,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import HomeHeader, { pepe } from "../../components/tabs/home/HomeHeader";
 import { Buffer } from "buffer";
 
-/**
- * Improvements in this file:
- * - semaphore to limit concurrent TdLib calls (prevents spikes / cache thrashing)
- * - message/chat/file caches persisted (AsyncStorage) so reopened items don't re-fetch
- * - grouped batch fetching (open chat once per group) to reduce openChat churn
- * - prefetch staggered + throttled
- * - removeClippedSubviews = false to avoid unmounting items during very fast scroll
- *
- * NOTE: MessageItem/MessageHeader/VideoMessage should check props.chatInfo and message._localFiles[fileId]
- * to prefer local files when present — otherwise TDLib may re-download.
- */
-
 // ---- CONFIG ----
 const BATCH_SIZE = 5;
 const MAX_PREFETCH_BATCHES = 2;
@@ -45,7 +33,6 @@ const MAX_OPENED_CHATS = 12; // LRU cap for opened chats
 const STORAGE_KEYS = {
   MESSAGE_CACHE: "home_message_cache_v1",
   CHATINFO_CACHE: "home_chatinfo_cache_v1",
-  FILE_CACHE: "home_file_cache_v1",
 };
 
 export default function HomeScreen() {
@@ -69,10 +56,6 @@ export default function HomeScreen() {
   // caches
   const messageCacheRef = useRef<Map<string, any>>(new Map()); // key: `${chatId}:${messageId}` or `${channel}:${messageId}`
   const chatInfoRef = useRef<Map<number, any>>(new Map());
-  const fileCacheRef = useRef<Map<number, any>>(new Map()); // fileId -> {status, localPath, promise}
-
-  // file -> messageKey map to update messages when file download completes
-  const fileToMessageKeysRef = useRef<Map<number, Set<string>>>(new Map());
 
   // prefetch
   const prefetchRef = useRef<Map<number, any[]>>(new Map());
@@ -168,13 +151,6 @@ export default function HomeScreen() {
         for (const [k, v] of chatInfoRef.current.entries()) chatObj[String(k)] = v;
         await AsyncStorage.setItem(STORAGE_KEYS.CHATINFO_CACHE, JSON.stringify(chatObj));
       } catch (e) {}
-      try {
-        const fileObj: Record<string, any> = {};
-        for (const [k, v] of fileCacheRef.current.entries()) {
-          if (v?.status === "complete" && v.localPath) fileObj[String(k)] = { localPath: v.localPath };
-        }
-        await AsyncStorage.setItem(STORAGE_KEYS.FILE_CACHE, JSON.stringify(fileObj));
-      } catch (e) {}
     }, 800);
   }, []);
 
@@ -192,13 +168,6 @@ export default function HomeScreen() {
       if (raw) {
         const o = JSON.parse(raw);
         for (const k of Object.keys(o)) chatInfoRef.current.set(+k, o[k]);
-      }
-    } catch (e) {}
-    try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEYS.FILE_CACHE);
-      if (raw) {
-        const o = JSON.parse(raw);
-        for (const k of Object.keys(o)) fileCacheRef.current.set(+k, { status: "complete", localPath: o[k].localPath });
       }
     } catch (e) {}
   }, []);
@@ -291,73 +260,6 @@ export default function HomeScreen() {
     [tdCall, persistCachesDebounced]
   );
 
-  // download file with de-dup and update mapping
-  const downloadFileWithCache = useCallback(
-    async (fileId: number, relatedMessageKey?: string) => {
-      if (!fileId) return null;
-      // add mapping
-      if (relatedMessageKey) {
-        let set = fileToMessageKeysRef.current.get(fileId);
-        if (!set) {
-          set = new Set();
-          fileToMessageKeysRef.current.set(fileId, set);
-        }
-        set.add(relatedMessageKey);
-      }
-
-      const existing = fileCacheRef.current.get(fileId);
-      if (existing) {
-        if (existing.status === "complete") return existing.localPath;
-        if (existing.promise) return existing.promise;
-      }
-
-      const p = (async () => {
-        try {
-          const res: any = await tdCall("downloadFile", fileId);
-          let parsed = null;
-          try {
-            parsed = res?.raw ? JSON.parse(res.raw) : res;
-          } catch (e) {
-            parsed = res;
-          }
-          const localPath =
-            parsed?.local?.path ||
-            (parsed?.local && parsed.local.isDownloadingCompleted && parsed.local.path) ||
-            parsed?.file?.local?.path ||
-            null;
-          if (localPath) {
-            fileCacheRef.current.set(fileId, { status: "complete", localPath });
-            // update messages referencing this file
-            const set = fileToMessageKeysRef.current.get(fileId);
-            if (set) {
-              for (const mkey of set) {
-                const cachedMsg = messageCacheRef.current.get(mkey);
-                if (cachedMsg) {
-                  if (!cachedMsg._localFiles) cachedMsg._localFiles = {};
-                  cachedMsg._localFiles[fileId] = localPath;
-                  messageCacheRef.current.set(mkey, cachedMsg);
-                }
-              }
-            }
-            persistCachesDebounced();
-            return localPath;
-          } else {
-            fileCacheRef.current.delete(fileId);
-            return null;
-          }
-        } catch (err) {
-          fileCacheRef.current.delete(fileId);
-          throw err;
-        }
-      })();
-
-      fileCacheRef.current.set(fileId, { status: "downloading", promise: p });
-      p.then(() => persistCachesDebounced()).catch(() => {});
-      return p;
-    },
-    [tdCall, persistCachesDebounced]
-  );
-
   // fetch message (use cache aggressively)
   const fetchMessageForMeta = useCallback(
     async ({ chatId, messageId, channel }: any) => {
@@ -365,7 +267,7 @@ export default function HomeScreen() {
       const cached = messageCacheRef.current.get(key);
       if (cached) return cached;
       try {
-        let cid = chatId ? +chatId : undefined;
+        let cid:any = chatId ? +chatId : undefined;
         if (!cid && channel) {
           try {
             const r: any = await tdCall("searchPublicChat", channel);
@@ -389,24 +291,6 @@ export default function HomeScreen() {
         const parsed = JSON.parse(raw.raw);
         const k = mk(parsed.chatId || cid, parsed.id);
         messageCacheRef.current.set(k, parsed);
-
-        // register file->message mapping for possible media
-        try {
-          const content = parsed?.content || parsed;
-          const maybeFileIds: number[] = [];
-          if (content?.video?.id) maybeFileIds.push(content.video.id);
-          if (content?.video?.video?.id) maybeFileIds.push(content.video.video.id);
-          if (content?.photo?.id) maybeFileIds.push(content.photo.id);
-          if (content?.document?.id) maybeFileIds.push(content.document.id);
-          for (const fid of maybeFileIds.filter(Boolean)) {
-            let set = fileToMessageKeysRef.current.get(fid);
-            if (!set) {
-              set = new Set();
-              fileToMessageKeysRef.current.set(fid, set);
-            }
-            set.add(k);
-          }
-        } catch (e) {}
 
         persistCachesDebounced();
         if (parsed.chatId) getAndCacheChatInfo(+parsed.chatId).catch(() => {});
@@ -486,22 +370,6 @@ export default function HomeScreen() {
                 const parsed = JSON.parse(r.raw);
                 const k2 = mk(parsed.chatId || cidToUse, parsed.id);
                 messageCacheRef.current.set(k2, parsed);
-                // register file->message
-                try {
-                  const content = parsed?.content || parsed;
-                  const fids: number[] = [];
-                  if (content?.video?.id) fids.push(content.video.id);
-                  if (content?.photo?.id) fids.push(content.photo.id);
-                  if (content?.document?.id) fids.push(content.document.id);
-                  for (const fid of fids.filter(Boolean)) {
-                    let set = fileToMessageKeysRef.current.get(fid);
-                    if (!set) {
-                      set = new Set();
-                      fileToMessageKeysRef.current.set(fid, set);
-                    }
-                    set.add(k2);
-                  }
-                } catch (e) {}
                 return parsed;
               } else {
                 // fallback: search per-meta
@@ -541,7 +409,7 @@ export default function HomeScreen() {
     [tdCall, touchOpenedChat, persistCachesDebounced]
   );
 
-  // prefetch next batches with stagger
+  // prefetch next batches with stagger (no download scheduling here)
   const prefetchNextBatches = useCallback(
     async (fromBatchIdx: number) => {
       for (let i = 1; i <= MAX_PREFETCH_BATCHES; i++) {
@@ -613,7 +481,7 @@ export default function HomeScreen() {
       const params = new URLSearchParams();
       params.append("uuid", parsedUuid);
       ids.forEach((id) => params.append("messageIds", id));
-      await fetch(`http://10.183.236.115:9000/feed-message/seen-message?${params.toString()}`, {
+      await fetch(`http://192.168.1.103:9000/feed-message/seen-message?${params.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -638,7 +506,7 @@ export default function HomeScreen() {
         const parsedUuid = JSON.parse(uuidRaw || "{}").uuid;
         const serverTab = activeTab;
 
-        const res = await fetch(`http://10.183.236.115:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}`);
+        const res = await fetch(`http://192.168.1.103:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}`);
         const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!mounted) return;
 
@@ -712,7 +580,7 @@ export default function HomeScreen() {
     };
   }, [isFocused, visibleIds, pollVisibleMessages]);
 
-  // DeviceEventEmitter updates (interactionInfo, message updates, file updates)
+  // DeviceEventEmitter updates (interactionInfo, message updates)
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener("tdlib-update", (event) => {
       try {
@@ -737,30 +605,6 @@ export default function HomeScreen() {
           messageCacheRef.current.set(key, msg);
           persistCachesDebounced();
         }
-
-        // file updates (various shapes) -> try to update file cache & messages
-        if (update.file || update.type?.toLowerCase()?.includes("file")) {
-          const data = update.file || update.data || update;
-          const fid = data?.id || data?.fileId || (update.data && update.data.fileId) || null;
-          const localPath = data?.local?.path || (data?.local && data.local.isDownloadingCompleted && data.local.path) || null;
-          if (fid) {
-            if (localPath) {
-              fileCacheRef.current.set(fid, { status: "complete", localPath });
-              const set = fileToMessageKeysRef.current.get(fid);
-              if (set) {
-                for (const mkey of set) {
-                  const cm = messageCacheRef.current.get(mkey);
-                  if (cm) {
-                    if (!cm._localFiles) cm._localFiles = {};
-                    cm._localFiles[fid] = localPath;
-                    messageCacheRef.current.set(mkey, cm);
-                  }
-                }
-              }
-              persistCachesDebounced();
-            }
-          }
-        }
       } catch (e) {
         // ignore malformed updates
       }
@@ -768,14 +612,24 @@ export default function HomeScreen() {
     return () => subscription.remove();
   }, [persistCachesDebounced]);
 
-  // onViewable changed
+  // onViewable changed — make deterministic and pick center item for activeDownloads
   const visibleIdsRef = useRef<number[]>([]);
   const onViewRef = useCallback(
     ({ viewableItems }: any) => {
-      const ids = viewableItems.map((vi: any) => vi.item.id);
+      if (!viewableItems || viewableItems.length === 0) {
+        setVisibleIds([]);
+        visibleIdsRef.current = [];
+        return;
+      }
+
+      // sort by index so order is deterministic
+      const sorted = [...viewableItems].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+      const ids = sorted.map((vi: any) => vi.item.id);
+
       setVisibleIds(ids);
       visibleIdsRef.current = ids;
-      for (const vi of viewableItems) {
+
+      for (const vi of sorted) {
         const msg = vi.item;
         if (msg.chatId && msg.id && !alreadyViewed.current.has(msg.id)) {
           tdCall("viewMessages", msg.chatId, [msg.id], false)
@@ -801,18 +655,19 @@ export default function HomeScreen() {
 
   const viewConfigRef = useRef({ itemVisiblePercentThreshold: 60 });
 
-  // activeDownloads: neighbors of first visible
+  // --- ACTIVE DOWNLOADS: compute neighbors (center visible + 2 up + 2 down) ---
   const activeDownloads = useMemo(() => {
     if (!visibleIds.length) return [];
-    const selected: number[] = [];
-    const currentMessageId = visibleIds[0];
+    const centerVisibleIndex = Math.floor(visibleIds.length / 2);
+    const currentMessageId = visibleIds[centerVisibleIndex];
     const currentIndex = messages.findIndex((msg) => msg.id === currentMessageId);
     if (currentIndex === -1) return [];
-    if (currentIndex - 2 >= 0) selected.push(messages[currentIndex - 2].id);
-    if (currentIndex - 1 >= 0) selected.push(messages[currentIndex - 1].id);
-    selected.push(messages[currentIndex].id);
-    if (currentIndex + 1 < messages.length) selected.push(messages[currentIndex + 1].id);
-    if (currentIndex + 2 < messages.length) selected.push(messages[currentIndex + 2].id);
+
+    const selected: number[] = [];
+    for (let offset = -2; offset <= 2; offset++) {
+      const idx = currentIndex + offset;
+      if (idx >= 0 && idx < messages.length) selected.push(messages[idx].id);
+    }
     return selected;
   }, [visibleIds, messages]);
 
@@ -874,7 +729,7 @@ export default function HomeScreen() {
       const start = nextBatchIdx * BATCH_SIZE;
       if (start >= datasRef.current.length) {
         const uuidRaw: any = await AsyncStorage.getItem("userId-corner");
-        const res = await fetch(`http://10.183.236.115:9000/feed-message?team=${encodeURIComponent(activeTab)}&uuid=${JSON.parse(uuidRaw || "{}").uuid}`);
+        const res = await fetch(`http://192.168.1.103:9000/feed-message?team=${encodeURIComponent(activeTab)}&uuid=${JSON.parse(uuidRaw || "{}").uuid}`);
         const newDatas: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!newDatas || newDatas.length === 0) {
           setLoadingMore(false);
@@ -913,12 +768,14 @@ export default function HomeScreen() {
     }, [tdCall])
   );
 
-  // renderItem (pass chatInfo)
+  // renderItem (pass chatInfo). NOTE: do NOT start downloads here; children handle downloads when they are visible.
   const renderItem = useCallback(
     ({ item }: any) => {
       if (!item?.chatId) return null;
       const chatInfo = chatInfoRef.current.get(item.chatId);
-      return <MessageItem data={item} isVisible={visibleIds.includes(item.id)} activeDownload={activeDownloads.includes(item.id)} chatInfo={chatInfo} />;
+      const isVisible = visibleIds.includes(item.id);
+      const isActiveDownload = activeDownloads.includes(item.id);
+      return <MessageItem data={item} isVisible={isVisible} activeDownload={isActiveDownload} chatInfo={chatInfo} />;
     },
     [visibleIds, activeDownloads]
   );
