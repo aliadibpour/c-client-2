@@ -1,6 +1,6 @@
-// MessageItem.tsx
-import React, { useEffect, useMemo, useState } from "react";
-import { Text, View, TouchableOpacity, StyleSheet, DeviceEventEmitter, ActivityIndicator } from "react-native";
+// MessageItem.tsx (reply preview styled like X — minimal other changes)
+import React, { useMemo } from "react";
+import { Text, View, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import MessageHeader from "./MessageHeader";
 import PhotoMessage from "./MessagePhoto";
@@ -8,9 +8,10 @@ import VideoMessage from "./MessageVideo";
 import MessageReactions from "./MessageReaction";
 import { ArrowLeftIcon } from "../../../assets/icons";
 import { ReplyIcon } from "lucide-react-native";
-import TdLib from "react-native-tdlib";
+import { normalizeReplyPreview } from "../../../hooks";
 
 const cleanText = (text: string): string => {
+  if (!text || typeof text !== "string") return "";
   return text
     .replace(/https?:\/\/t\.me\/[^\s]+/gi, "")
     .replace(/https?:\/\/telegram\.me\/[^\s]+/gi, "")
@@ -26,6 +27,7 @@ const cleanText = (text: string): string => {
 };
 
 const getRelativeTime = (unixTimestamp: number): string => {
+  if (!unixTimestamp) return "";
   const now = Date.now();
   const secondsDiff = Math.floor(now / 1000 - unixTimestamp);
   if (secondsDiff < 60) return `${secondsDiff}s`;
@@ -44,9 +46,21 @@ type Props = {
   chatInfo?: any;
 };
 
-function MessageItemComponent({ data, isVisible, activeDownload, chatInfo }: Props) {
+const getReplyPreviewText = (rm: any) => {
+  if (!rm) return "";
+  // return raw text (do NOT pre-slice it) — let normalizeReplyPreview handle truncation
+  return (
+    rm?.content?.text?.text ||
+    rm?.content?.caption?.text ||
+    rm?.text?.text ||
+    rm?.caption?.text ||
+    ""
+  );
+};
+
+function MessageItem({ data, isVisible, activeDownload, chatInfo }: Props) {
   const navigation: any = useNavigation();
-  const message = data;
+  const message = data ?? {};
 
   const content = message?.content;
   const captionText = content?.caption?.text || "";
@@ -55,133 +69,80 @@ function MessageItemComponent({ data, isVisible, activeDownload, chatInfo }: Pro
   const cleanedCaption = useMemo(() => cleanText(captionText), [captionText]);
   const cleanedText = useMemo(() => cleanText(messageText), [messageText]);
 
-  const handlePress = () => {
-    navigation.navigate("Channel", {
-      chatId: message.chatId,
-      focusMessageId: message.id,
-    });
+  const handleOpenChannel = (chatId: any, focusMessageId: any) => {
+    navigation.navigate("Channel", { chatId, focusMessageId });
   };
 
-  // ------------ NEW: loading state for "open comments" ------------
-  // This local state is set when we ask to pre-open the chat/message for comments.
-  // We also listen to reserve/unreserve events so other parts can clear it (e.g. Comments emits unreserve).
-  const [openingComments, setOpeningComments] = useState(false);
+  // IMPORTANT: MessageItem NO LONGER fetches reply message.
+  // It expects HomeScreen to attach full reply object as `replyToMessage`
+  // fallback to provided reply metadata (message.replyTo / message.replyToMessage)
+  const replyMsg = message.replyToMessage || message.replyTo || message.reply_to_message || null;
 
-  useEffect(() => {
-    // Listen to reserve/unreserve events (global DeviceEventEmitter)
-    const reserveSub = DeviceEventEmitter.addListener("reserve-chat", (ev: any) => {
-      try {
-        if (!ev) return;
-        // ev may contain { chatId, messageId, ttl }
-        if (String(ev.chatId) === String(message.chatId) && (ev.messageId == null || String(ev.messageId) === String(message.id))) {
-          setOpeningComments(true);
-        }
-      } catch (e) {}
-    });
-    const unreserveSub = DeviceEventEmitter.addListener("unreserve-chat", (ev: any) => {
-      try {
-        if (!ev) return;
-        if (String(ev.chatId) === String(message.chatId) && (ev.messageId == null || String(ev.messageId) === String(message.id))) {
-          setOpeningComments(false);
-        }
-      } catch (e) {}
-    });
+  const openingComments = message.__openingComments || false; // UI flag, controlled by events if needed
 
-    return () => {
-      reserveSub.remove();
-      unreserveSub.remove();
-    };
-  }, [message.chatId, message.id]);
-
-  // NEW: open comments handler — set loading, try to open chat/get message, emit reserve, then navigate
   const handleOpenComments = async () => {
-    const chatId = message.chatId;
-    const messageId = message.id;
-    const RESERVE_TTL = 2 * 60 * 1000; // 2 minutes
-
-    // show loading immediately (so user sees spinner)
-    setOpeningComments(true);
-
-    try {
-      if (chatId) {
-        // best-effort open chat (may be no-op if already open)
-        await TdLib.openChat(Number(chatId)).catch((e: any) => {
-          console.warn("[MessageItem] openChat failed:", e);
-        });
-
-        // try to fetch message once to prime tdlib cache (best-effort)
-        try {
-          await TdLib.getMessage(Number(chatId), Number(messageId));
-        } catch (err) {
-          console.warn("[MessageItem] getMessage for comment prefetch failed:", err);
-        }
-
-        // tell HomeScreen/manager that we want this chat reserved for a bit
-        try {
-          DeviceEventEmitter.emit("reserve-chat", { chatId: Number(chatId), messageId: Number(messageId), ttl: RESERVE_TTL });
-        } catch (e) {
-          // ignore emitter errors
-        }
-      }
-    } catch (err) {
-      console.warn("[MessageItem] comment-open prefetch error:", err);
-    } finally {
-      // always navigate to comments even if prefetch had errors
-      navigation.navigate("Comments", {
-        chatId: message.chatId,
-        messageId: message.id,
-      });
-      // NOTE: we do NOT clear openingComments here — Comments/unreserve will clear it on close.
-    }
+    navigation.navigate("Comments", { chatId: message.chatId, messageId: message.id });
   };
-
-  // ------------ UI ------------
-  const formatNumber = (num: number): string => {
-    if (num < 1000) return num.toString();
-    if (num < 1_000_000) return (num / 1000).toFixed(1).replace(/\.0$/, "") + "k";
-    return (num / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
-  };
-  const viewCount = formatNumber(message?.interactionInfo?.viewCount || 0);
 
   return (
     <View style={styles.container}>
-      {/* متن، هدر، کپشن و غیره → قابل کلیک */}
-      <TouchableOpacity onPress={handlePress} activeOpacity={0.9}>
-        {message.replyToMessage && (
-          <TouchableOpacity
-            onPress={() =>
-              navigation.navigate("Channel", {
-                chatId: message.chatId,
-                focusMessageId: message.replyToMessage.id,
-              })
-            }
-            style={styles.replyBox}
+      {/* header: name + time inline */}
+      <View style={styles.headerRow}>
+        <TouchableOpacity onPress={() => handleOpenChannel(message.chatId, message.id)} activeOpacity={0.85} style={{ flex: 1 }}>
+          <View style={styles.headerInner}>
+            <MessageHeader chatId={message.chatId} chatInfo={chatInfo} />
+            <Text style={styles.timeInline}>{getRelativeTime(message.date)}</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* reply preview (no heavy background; border + small thumb + small text) */}
+      {(message.replyTo || message.replyToMessage || message.reply_to_message) ? (
+        <TouchableOpacity
+          style={styles.replyBox}
+          onPress={() => {
+            const rid = replyMsg?.id ?? replyMsg?.messageId ?? replyMsg?.message_id ?? message.replyTo?.id ?? message.replyTo?.messageId ?? message.replyTo?.message_id;
+            const rchat = replyMsg?.chatId ?? message.replyTo?.chatId ?? message.chatId;
+            if (rid) handleOpenChannel(rchat, rid);
+            else handleOpenChannel(message.chatId, message.id);
+          }}
+          activeOpacity={0.85}
+        >
+          <ReplyIcon width={14} height={14} color="#999" />
+          {/* No live fetching here. If replyMsg is not present (only an id was available and Home couldn't fetch it), show fallback */}
+          { replyMsg?.content?.photo ? (
+            <View style={styles.replyThumbWrap}>
+              <PhotoMessage
+                photo={replyMsg?.content?.photo}
+                activeDownload={false}
+                width={44}
+                height={30}
+                context="channel"
+              />
+            </View>
+          ) : null }
+          <Text
+            numberOfLines={1}
+            ellipsizeMode="tail"   // keep end of text, trim start
+            style={styles.replyText}
           >
-            <ReplyIcon width={16} height={16} color="#999" />
-            {message.replyToMessage.content?.photo && (
-              <PhotoMessage photo={message.replyToMessage.content.photo} activeDownload={false} width={28} height={20} />
-            )}
-            <Text numberOfLines={1} style={styles.replyText}>
-              {message.replyToMessage.content?.text?.text?.slice(0, 30) ||
-                message.replyToMessage.content?.caption?.text?.slice(0, 30) ||
-                "پاسخ به پیام"}
-            </Text>
-          </TouchableOpacity>
-        )}
+            {normalizeReplyPreview(
+              getReplyPreviewText(replyMsg) || getReplyPreviewText(message.replyTo) || "",
+              { charLimit: 100 }
+            ) || "پاسخ به پیام"}
+          </Text>
+        </TouchableOpacity>
+      ) : null}
 
-        <View style={styles.headerRow}>
-          <MessageHeader chatId={message.chatId} chatInfo={chatInfo} />
-          <Text style={styles.timeText}>{getRelativeTime(message.date)}</Text>
-        </View>
-
+      {/* body */}
+      <TouchableOpacity onPress={() => handleOpenChannel(message.chatId, message.id)} activeOpacity={0.9}>
         {!!cleanedCaption && <Text style={styles.bodyText}>{cleanedCaption}</Text>}
-
         {!!cleanedText && <Text style={styles.bodyText}>{cleanedText}</Text>}
-
-        {content?.photo && <PhotoMessage photo={content.photo} activeDownload={activeDownload} context="explore" />}
+        {content?.photo && (
+          <PhotoMessage photo={content.photo} activeDownload={activeDownload} context="explore" />
+        )}
       </TouchableOpacity>
 
-      {/* ویدیو جدا از Touchable → دیگه کلیک وسط ویدیو کاربر رو نمی‌بره صفحه Channel */}
       {content?.video && <VideoMessage video={content.video} isVisible={isVisible} activeDownload={activeDownload} />}
 
       {message.interactionInfo?.reactions?.reactions?.length > 0 && (
@@ -203,13 +164,10 @@ function MessageItemComponent({ data, isVisible, activeDownload, chatInfo }: Pro
         <TouchableOpacity onPress={handleOpenComments}>
           <View style={styles.commentsRow}>
             <Text style={styles.commentsText}>{message.interactionInfo.replyInfo.replyCount} کامنت</Text>
-
-            {/* ← show spinner while openingComments true, otherwise show arrow */}
             {openingComments ? (
-              // small spinner similar size to arrow
               <ActivityIndicator style={{ marginLeft: 3 }} size="small" color="#adadad" />
             ) : (
-              <ArrowLeftIcon style={{ color: "#adadad", marginLeft: 3 }} width={13.5} height={13.5} />
+              <ArrowLeftIcon style={{ color: "#adadad", marginLeft: -3 }} width={13.5} height={13.5} />
             )}
           </View>
         </TouchableOpacity>
@@ -218,27 +176,20 @@ function MessageItemComponent({ data, isVisible, activeDownload, chatInfo }: Pro
   );
 }
 
-// React.memo with custom comparator to avoid unnecessary re-renders
 export default React.memo(
-  MessageItemComponent,
+  MessageItem,
   (prev, next) => {
-    // re-render only when the essential props changed
     if (prev.data?.id !== next.data?.id) return false;
     if (prev.isVisible !== next.isVisible) return false;
     if (prev.activeDownload !== next.activeDownload) return false;
-    // compare interactionInfo minimally (views/replies)
     const prevView = prev.data?.interactionInfo?.viewCount || 0;
     const nextView = next.data?.interactionInfo?.viewCount || 0;
     if (prevView !== nextView) return false;
-
     const prevReplies = prev.data?.interactionInfo?.replyInfo?.replyCount || 0;
     const nextReplies = next.data?.interactionInfo?.replyInfo?.replyCount || 0;
     if (prevReplies !== nextReplies) return false;
-
-    // chatInfo reference equality (if changed externally, re-render)
     if (prev.chatInfo !== next.chatInfo) return false;
-
-    return true; // otherwise skip render
+    return true;
   }
 );
 
@@ -248,27 +199,52 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     paddingVertical: 13,
   },
-  replyBox: {
-    backgroundColor: "rgba(111, 111, 111, 0.15)",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderLeftWidth: 2,
-    borderLeftColor: "#888",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 6,
-  },
-  replyText: {
-    color: "#ccc",
-    fontSize: 12,
-    fontFamily: "SFArabic-Regular",
-    flexShrink: 1,
-  },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    justifyContent: "space-between",
+  },
+  headerInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-start",
+  },
+  // time shown inline near name (subtle)
+  timeInline: {
+    color: "#999",
+    fontSize: 12,
+    fontFamily: "SFArabic-Regular",
+    marginLeft: 8,
+    alignSelf: "center",
+  },
+
+  // reply box: X-like preview (no heavy BG, border only, small thumb + small text)
+  replyBox: {
+    backgroundColor: "#111", // no solid bg
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: "rgba(219, 219, 219, 0.06)", // subtle border
+    borderRadius: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom:4,
+  },
+  replyThumbWrap: {
+    width: 44,
+    height: 30,
+    borderRadius: 6,
+    overflow: "hidden",
+    backgroundColor: "#111",
+  },
+  replyText: {
+    color: "#999",
+    fontSize: 12,
+    fontFamily: "SFArabic-Regular",
+    flexShrink: 1,        // allow shrinking
+    includeFontPadding: false,
+    lineHeight: 16,
   },
   timeText: {
     color: "#999",
@@ -288,7 +264,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 8.4,
     marginLeft: 4.5,
-    gap: 2,
+    gap: 6,
   },
   commentsText: {
     color: "#adadad",

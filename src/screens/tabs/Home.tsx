@@ -1,4 +1,3 @@
-
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Text,
@@ -190,7 +189,7 @@ export default function HomeScreen() {
       } else break;
     }
   }, [tdCall]);
-  
+
   // get and cache chat info
   const getAndCacheChatInfo = useCallback(
     async (chatId: number) => {
@@ -215,6 +214,88 @@ export default function HomeScreen() {
       } catch (err) {
         return null;
       }
+    },
+    [tdCall, persistCachesDebounced]
+  );
+
+  // -----------------------------
+  // ensureRepliesForMessages
+  // find reply targets for given messages, fetch missing ones (cached), and return enriched array
+  // -----------------------------
+  const ensureRepliesForMessages = useCallback(
+    async (msgs: any[]) => {
+      if (!msgs || msgs.length === 0) return msgs;
+      // collect unique reply targets
+      const toFetchMap = new Map<string, { chatId: number | string; messageId: number | string }>();
+      for (const m of msgs) {
+        // Detect possible reply metadata shapes:
+        // m.replyTo / m.replyToMessage / m.reply_to_message (normalized)
+        // sometimes the message contains reply_to_message_id or reply_to.message_id
+        const r = m.replyTo || m.replyToMessage || m.reply_to_message || null;
+        let rid = r?.id ?? r?.messageId ?? r?.message_id ?? null;
+        let chatId = r?.chatId ?? r?.chat?.id ?? r?.chat_id ?? null;
+
+        // fallback: TDLib sometimes stores reply_to_message_id on the parent message
+        if (!rid && (m.reply_to_message_id || m.replyToMessageId || m.replyTo?.message_id)) {
+          rid = m.reply_to_message_id || m.replyToMessageId || (m.replyTo && m.replyTo.message_id);
+        }
+
+        // If chatId missing, use message's chatId (most replies are within same chat)
+        if (!chatId) chatId = m.chatId ?? m.chat?.id ?? null;
+
+        if (!rid || !chatId) continue;
+
+        const key = mk(chatId, rid);
+        if (!messageCacheRef.current.has(key) && !toFetchMap.has(key)) {
+          toFetchMap.set(key, { chatId, messageId: rid });
+        }
+      }
+
+      const toFetch = Array.from(toFetchMap.values());
+      if (toFetch.length > 0) {
+        await limitConcurrency(
+          toFetch,
+          TD_CONCURRENCY,
+          async (t) => {
+            try {
+              const res: any = await tdCall("getMessage", Number(t.chatId), Number(t.messageId));
+              const parsed = JSON.parse(res.raw);
+              const k2 = mk(parsed.chatId ?? t.chatId, parsed.id);
+              // store parsed into cache
+              messageCacheRef.current.set(k2, parsed);
+              return parsed;
+            } catch (e) {
+              // ignore per-message errors
+              return null;
+            }
+          }
+        );
+        persistCachesDebounced();
+      }
+
+      // now enrich original msgs with replyToMessage if available in cache
+      const enriched = msgs.map((m) => {
+        const r = m.replyTo || m.replyToMessage || m.reply_to_message || null;
+        let rid = r?.id ?? r?.messageId ?? r?.message_id ?? null;
+        let chatId = r?.chatId ?? r?.chat?.id ?? r?.chat_id ?? null;
+
+        if (!rid && (m.reply_to_message_id || m.replyToMessageId || m.replyTo?.message_id)) {
+          rid = m.reply_to_message_id || m.replyToMessageId || (m.replyTo && m.replyTo.message_id);
+        }
+        if (!chatId) chatId = m.chatId ?? m.chat?.id ?? null;
+
+        if (rid && chatId) {
+          const key = mk(chatId, rid);
+          const cached = messageCacheRef.current.get(key);
+          if (cached) {
+            // attach in a consistent property
+            return { ...m, replyToMessage: cached };
+          }
+        }
+        return m;
+      });
+
+      return enriched;
     },
     [tdCall, persistCachesDebounced]
   );
@@ -326,7 +407,7 @@ export default function HomeScreen() {
     [tdCall, touchOpenedChat, persistCachesDebounced]
   );
 
-  // prefetch next batches with stagger (no download scheduling here)
+  // prefetch next batches with stagger (now ensures replies for prefetched)
   const prefetchNextBatches = useCallback(
     async (fromBatchIdx: number) => {
       for (let i = 1; i <= MAX_PREFETCH_BATCHES; i++) {
@@ -339,16 +420,19 @@ export default function HomeScreen() {
           await delay(waitMs);
           try {
             const msgs = await loadBatch(batchIndex);
-            if (msgs && msgs.length) prefetchRef.current.set(batchIndex, msgs);
+            if (msgs && msgs.length) {
+              const enriched = await ensureRepliesForMessages(msgs);
+              prefetchRef.current.set(batchIndex, enriched);
+            }
           } catch (e) {}
           prefetchInFlightRef.current.delete(batchIndex);
         })(idx, i * 300);
       }
     },
-    [loadBatch]
+    [loadBatch, ensureRepliesForMessages]
   );
 
-  // appendNextBatch (uses prefetch if available)
+  // appendNextBatch (uses prefetch if available) — ensures replies before appending
   const appendNextBatch = useCallback(
     async (nextBatchIdx: number) => {
       const pref = prefetchRef.current.get(nextBatchIdx);
@@ -361,10 +445,11 @@ export default function HomeScreen() {
         loaded = pref;
       } else {
         const newLoaded = await loadBatch(nextBatchIdx);
+        const enriched = await ensureRepliesForMessages(newLoaded);
         const exist = new Set(messages.map((m: any) => `${m.chatId}:${m.id}`));
-        const toAppend = newLoaded.filter((m) => !exist.has(`${m.chatId}:${m.id}`));
+        const toAppend = enriched.filter((m) => !exist.has(`${m.chatId}:${m.id}`));
         if (toAppend.length) setMessages((prev) => [...prev, ...toAppend]);
-        loaded = newLoaded;
+        loaded = enriched;
       }
 
       // warm chatInfo for appended messages
@@ -380,7 +465,7 @@ export default function HomeScreen() {
 
       return loaded.length;
     },
-    [loadBatch, messages, getAndCacheChatInfo]
+    [loadBatch, messages, getAndCacheChatInfo, ensureRepliesForMessages]
   );
 
   // notify server batch reached (keeps as in your original)
@@ -398,7 +483,7 @@ export default function HomeScreen() {
       const params = new URLSearchParams();
       params.append("uuid", parsedUuid);
       ids.forEach((id) => params.append("messageIds", id));
-      await fetch(`http://10.183.236.115:9000/feed-message/seen-message?${params.toString()}`, {
+      await fetch(`http://192.168.1.103:9000/feed-message/seen-message?${params.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -423,7 +508,7 @@ export default function HomeScreen() {
         const parsedUuid = JSON.parse(uuidRaw || "{}").uuid;
         const serverTab = activeTab;
 
-        const res = await fetch(`http://10.183.236.115:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}`);
+        const res = await fetch(`http://192.168.1.103:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}`);
         const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!mounted) return;
 
@@ -432,10 +517,15 @@ export default function HomeScreen() {
 
         const first = await loadBatch(0);
         if (!mounted) return;
-        setMessages(first);
+
+        // ensure replies for the first batch before setting state
+        const enrichedFirst = await ensureRepliesForMessages(first);
+        if (!mounted) return;
+
+        setMessages(enrichedFirst);
         setCurrentBatchIdx(0);
 
-        const chatIds = Array.from(new Set(first.map((m) => m.chatId).filter(Boolean)));
+        const chatIds = Array.from(new Set(enrichedFirst.map((m) => m.chatId).filter(Boolean)));
         await limitConcurrency(
           chatIds,
           2,
@@ -456,7 +546,7 @@ export default function HomeScreen() {
     return () => {
       mounted = false;
     };
-  }, [activeTab, loadBatch, getAndCacheChatInfo, prefetchNextBatches, loadPersistedCaches, notifyServerBatchReached]);
+  }, [activeTab, loadBatch, getAndCacheChatInfo, prefetchNextBatches, loadPersistedCaches, notifyServerBatchReached, ensureRepliesForMessages]);
 
   // poll visible messages (only when focused & visible)
   const pollVisibleMessages = useCallback(() => {
@@ -465,12 +555,16 @@ export default function HomeScreen() {
       const msg = messages.find((m) => m.id === id);
       if (!msg) continue;
       tdCall("getMessage", msg.chatId, msg.id)
-        .then((raw: any) => {
+        .then(async (raw: any) => {
           const full = JSON.parse(raw.raw);
+          // If the refreshed message contains a reply reference, ensure that reply is cached & attached
+          const enrichedArray = await ensureRepliesForMessages([full]);
+          const enrichedFull = enrichedArray[0] || full;
+
           setMessages((prev) => {
             const copy = [...prev];
             const idx = copy.findIndex((m) => m.id === id);
-            if (idx !== -1) copy[idx] = full;
+            if (idx !== -1) copy[idx] = enrichedFull;
             return copy;
           });
           const key = mk(full.chatId || msg.chatId, full.id);
@@ -479,7 +573,7 @@ export default function HomeScreen() {
         })
         .catch(() => {});
     }
-  }, [visibleIds, messages, tdCall, persistCachesDebounced]);
+  }, [visibleIds, messages, tdCall, persistCachesDebounced, ensureRepliesForMessages]);
 
   useEffect(() => {
     if (pollingIntervalRef.current) {
@@ -499,7 +593,7 @@ export default function HomeScreen() {
 
   // DeviceEventEmitter updates (interactionInfo, message updates)
   useEffect(() => {
-    const subscription = DeviceEventEmitter.addListener("tdlib-update", (event) => {
+    const subscription = DeviceEventEmitter.addListener("tdlib-update", async (event) => {
       try {
         const update = typeof event.raw === "string" ? JSON.parse(event.raw) : event.raw;
 
@@ -517,17 +611,23 @@ export default function HomeScreen() {
 
         if (update.message) {
           const msg = update.message;
-          setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m)));
+          // Update cache & messages list; but make sure to resolve any reply references for this msg
           const key = mk(msg.chatId || msg.chat?.id, msg.id);
           messageCacheRef.current.set(key, msg);
           persistCachesDebounced();
+
+          // enrich with reply if necessary and update UI list
+          const enrichedArr = await ensureRepliesForMessages([msg]);
+          const enriched = enrichedArr[0] || msg;
+
+          setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, ...enriched } : m)));
         }
       } catch (e) {
         // ignore malformed updates
       }
     });
     return () => subscription.remove();
-  }, [persistCachesDebounced]);
+  }, [persistCachesDebounced, ensureRepliesForMessages, tdCall]);
 
   // onViewable changed — make deterministic and pick center item for activeDownloads
   const visibleIdsRef = useRef<number[]>([]);
@@ -589,63 +689,23 @@ export default function HomeScreen() {
   }, [visibleIds, messages]);
 
   // ensure opened chats for activeDownloads (touch LRU; open minimal)
-// ← جایگزین کن این useEffect فعلی با این قطعه
   useEffect(() => {
-    // حداکثر تعداد چت‌هایی که بخاطر activeDownloads نگه می‌داریم
-    const ACTIVE_OPEN_LIMIT = 3;
-
     (async () => {
-      try {
-        if (!activeDownloads || activeDownloads.length === 0) return;
-
-        // ساخت یک آرایه مرتب از chatId ها بر اساس ترتیب اولین مشاهده در activeDownloads
-        const seen = new Set<number>();
-        const orderedChatIds: number[] = [];
-        for (const msgId of activeDownloads) {
-          const msg = messages.find((m) => m.id === msgId);
-          if (!msg || !msg.chatId) continue;
-          const cid = Number(msg.chatId);
-          if (!seen.has(cid)) {
-            seen.add(cid);
-            orderedChatIds.push(cid);
-            if (orderedChatIds.length >= ACTIVE_OPEN_LIMIT) break;
-          }
-        }
-
-        if (orderedChatIds.length === 0) return;
-
-        // برای هر chatId منتخب: اگر باز نیست openChat کن، و همیشه touchOpenedChat بزن
-        for (const chatId of orderedChatIds) {
-          if (!openedChats.current.has(chatId)) {
-            try {
-              await tdCall("openChat", chatId);
-              openedChats.current.set(chatId, Date.now());
-            } catch (e) {
-              // اگر openChat خطا داد، نادیده بگیر — اما نباید دانلودها رو خراب کنه
-              console.warn("[Home] openChat(for active) failed:", chatId, e);
-            }
-          } else {
-            // promote در LRU تا از eviction جلوگیری کنیم
-            touchOpenedChat(chatId);
-          }
-
-          // هرچند viewMessages را به صورت fire-and-forget می‌زنیم تا interaction updates را دریافت کنیم
+      const currentChatIds = new Set<number>();
+      for (const id of activeDownloads) {
+        const msg = messages.find((m) => m.id === id);
+        if (!msg || !msg.chatId) continue;
+        const chatId = msg.chatId;
+        currentChatIds.add(chatId);
+        if (!openedChats.current.has(chatId)) {
           try {
-            // پیدا کن یک message id نماینده متعلق به این chat که داخل activeDownloads هست
-            const repMsg = messages.find((m) => m.chatId === chatId && activeDownloads.includes(m.id));
-            if (repMsg && repMsg.id) {
-              tdCall("viewMessages", chatId, [repMsg.id], false).catch(() => {});
-            }
-          } catch (e) {
-            // ignore
-          }
-        }
-
-        // نکته: ما اینجا فقط باز می‌کنیم / promote میکنیم — اجازه میدیم LRU cap (MAX_OPENED_CHATS) بوسیله‌ی touchOpenedChat مدیریت شود.
-        // این یعنی: بستن چت‌ها تنها زمانی اتفاق می‌افته که openedChats.size > MAX_OPENED_CHATS و قدیمی‌ها evict شوند.
-      } catch (err) {
-        console.warn("[Home] ensure-open-activeDownloads error:", err);
+            await tdCall("openChat", chatId);
+            openedChats.current.set(chatId, Date.now());
+          } catch (e) {}
+        } else touchOpenedChat(chatId);
+        tdCall("viewMessages", chatId, [msg.id], false).catch(() => {});
       }
+      // don't aggressively close here; LRU eviction will close if cap exceeded
     })();
   }, [activeDownloads, messages, tdCall, touchOpenedChat]);
 
@@ -686,7 +746,7 @@ export default function HomeScreen() {
       const start = nextBatchIdx * BATCH_SIZE;
       if (start >= datasRef.current.length) {
         const uuidRaw: any = await AsyncStorage.getItem("userId-corner");
-        const res = await fetch(`http://10.183.236.115:9000/feed-message?team=${encodeURIComponent(activeTab)}&uuid=${JSON.parse(uuidRaw || "{}").uuid}`);
+        const res = await fetch(`http://192.168.1.103:9000/feed-message?team=${encodeURIComponent(activeTab)}&uuid=${JSON.parse(uuidRaw || "{}").uuid}`);
         const newDatas: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!newDatas || newDatas.length === 0) {
           setLoadingMore(false);
