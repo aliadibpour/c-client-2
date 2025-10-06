@@ -483,7 +483,7 @@ export default function HomeScreen() {
       const params = new URLSearchParams();
       params.append("uuid", parsedUuid);
       ids.forEach((id) => params.append("messageIds", id));
-      await fetch(`http://192.168.1.103:9000/feed-message/seen-message?${params.toString()}`, {
+      await fetch(`http://10.129.218.115:9000/feed-message/seen-message?${params.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -508,7 +508,7 @@ export default function HomeScreen() {
         const parsedUuid = JSON.parse(uuidRaw || "{}").uuid;
         const serverTab = activeTab;
 
-        const res = await fetch(`http://192.168.1.103:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}`);
+        const res = await fetch(`http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}`);
         const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!mounted) return;
 
@@ -746,7 +746,7 @@ export default function HomeScreen() {
       const start = nextBatchIdx * BATCH_SIZE;
       if (start >= datasRef.current.length) {
         const uuidRaw: any = await AsyncStorage.getItem("userId-corner");
-        const res = await fetch(`http://192.168.1.103:9000/feed-message?team=${encodeURIComponent(activeTab)}&uuid=${JSON.parse(uuidRaw || "{}").uuid}`);
+        const res = await fetch(`http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(activeTab)}&uuid=${JSON.parse(uuidRaw || "{}").uuid}`);
         const newDatas: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!newDatas || newDatas.length === 0) {
           setLoadingMore(false);

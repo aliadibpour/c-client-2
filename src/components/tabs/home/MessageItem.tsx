@@ -1,5 +1,5 @@
 // MessageItem.tsx (reply preview styled like X — minimal other changes)
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { Text, View, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import MessageHeader from "./MessageHeader";
@@ -61,6 +61,7 @@ const getReplyPreviewText = (rm: any) => {
 function MessageItem({ data, isVisible, activeDownload, chatInfo }: Props) {
   const navigation: any = useNavigation();
   const message = data ?? {};
+  console.log(data)
 
   const content = message?.content;
   const captionText = content?.caption?.text || "";
@@ -214,8 +215,9 @@ const styles = StyleSheet.create({
     color: "#999",
     fontSize: 12,
     fontFamily: "SFArabic-Regular",
-    marginLeft: 8,
+    marginLeft: 5,
     alignSelf: "center",
+    marginBottom:5
   },
 
   // reply box: X-like preview (no heavy BG, border only, small thumb + small text)
@@ -262,7 +264,7 @@ const styles = StyleSheet.create({
   commentsRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 8.4,
+    marginTop: 8,
     marginLeft: 4.5,
     gap: 6,
   },

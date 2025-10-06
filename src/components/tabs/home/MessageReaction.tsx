@@ -9,7 +9,7 @@ import {
   NativeModules,
 } from "react-native";
 
-const { TdLibModule } = NativeModules;
+import TdLib from "react-native-tdlib";
 
 interface Reaction {
   type: { emoji: string };
@@ -54,12 +54,12 @@ const handleReact = async (emoji: string) => {
 
   try {
     if (isRemoving) {
-      await TdLibModule.removeMessageReaction(chatId, messageId, emoji);
+      await TdLib.removeMessageReaction(chatId, messageId, emoji);
     } else {
       if (prevSelected) {
-        await TdLibModule.removeMessageReaction(chatId, messageId, prevSelected);
+        await TdLib.removeMessageReaction(chatId, messageId, prevSelected);
       }
-      await TdLibModule.addMessageReaction(chatId, messageId, emoji);
+      await TdLib.addMessageReaction(chatId, messageId, emoji);
     }
   } catch (err) {
     console.error("Reaction failed:", err);

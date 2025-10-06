@@ -1,11 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
   View,
+  ActivityIndicator,
   TouchableOpacity,
   Dimensions,
   StyleSheet,
 } from "react-native";
+import { useEffect, useMemo, useState } from "react";
 import TdLib from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
 import { useNavigation } from "@react-navigation/native";
@@ -14,63 +15,39 @@ import { cancelDownload } from "../../../hooks/useMediaDownloadManager";
 interface Props {
   photo: any;
   context?: "channel" | "explore";
-  activeDownload?: any;
+  activeDownload?:any;
   width?: number;
   height?: number;
-  fileIdProp?: string | number | null; // optional override to force key/remount
 }
 
-function safeParse(raw: any) {
-  try {
-    if (!raw) return raw;
-    if (typeof raw === "string") return JSON.parse(raw);
-    if (typeof raw === "object" && raw.raw) {
-      try { return JSON.parse(raw.raw); } catch { return raw.raw; }
-    }
-    return raw;
-  } catch (e) {
-    return raw;
-  }
-}
-
-export default function MessagePhoto({
-  photo,
-  context = "channel",
-  activeDownload,
-  width,
-  height,
-  fileIdProp = null,
-}: Props) {
+export default function MessagePhoto({ photo, context = "channel", activeDownload , width, height}: Props) {
   const [photoPath, setPhotoPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const navigation: any = useNavigation();
-  const tokenRef = useRef<symbol | null>(null);
-  const mountedRef = useRef(true);
 
   const screenWidth = Dimensions.get("window").width;
 
+  // const remoteId = photo.sizes[sizes.length - 1].photo.remote?.id;
+  // const uniqueId = photo.sizes[sizes.length - 1].photo.remote?.unique_id;
+
+  console.log("📷 photo prop:", photo);
+
+  // سایز اصلی
   const sizes = photo?.sizes || [];
-  const biggest = sizes[sizes.length - 1] || {};
-  // robust fileId extraction (try multiple possible shapes)
-  const detectedFileId =
-    fileIdProp ??
-    biggest?.photo?.id ??
-    biggest?.photo?.fileId ??
-    photo?.id ??
-    photo?.file?.id ??
-    (biggest?.photo && (biggest.photo.id || biggest.photo.file_id)) ??
-    null;
-
-  const fileId = detectedFileId;
-
+  const biggest = sizes[sizes.length - 1];
+  const fileId = biggest?.photo?.id;
+  const remoteId = photo.sizes[2]?.photo?.remote?.id;
   const originalWidth = biggest?.width || 320;
   const originalHeight = biggest?.height || 240;
+
   const aspectRatio = originalWidth / originalHeight;
 
+  // محدودیت‌ها
   const maxWidth = screenWidth * 0.85;
   const minWidth = screenWidth * 0.65;
   const maxHeight = 300;
 
+  // محاسبه عرض/ارتفاع نمایشی
   let displayWidth = Math.min(originalWidth, maxWidth);
   displayWidth = Math.max(displayWidth, minWidth);
 
@@ -80,6 +57,7 @@ export default function MessagePhoto({
     displayWidth = displayHeight * aspectRatio;
   }
 
+  // حالت مخصوص explore: عرض مشخص و border متفاوت
   if (context === "explore") {
     displayWidth = screenWidth * 0.9;
     displayHeight = displayWidth / aspectRatio;
@@ -89,98 +67,44 @@ export default function MessagePhoto({
     }
   }
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
+  // تصویر کوچک base64
   const thumbnailBase64 = useMemo(() => {
     const mini = photo?.minithumbnail?.data;
-    try {
-      if (!mini) return null;
-      // if mini is already base64 string, don't convert
-      if (typeof mini === "string" && mini.length > 0 && !Array.isArray(mini)) return mini;
-      return fromByteArray(mini);
-    } catch (e) {
-      return null;
-    }
+    return mini ? fromByteArray(mini) : null;
   }, [photo]);
 
-  // If tdlib has already local path in the shape, prefer it immediately
-  const existingLocalPath =
-    biggest?.photo?.local?.path ||
-    photo?.local?.path ||
-    (biggest?.photo?.local && biggest.photo.local.isDownloadingCompleted && biggest.photo.local.path) ||
-    null;
-
   useEffect(() => {
-    // reset on fileId changes
-    setPhotoPath(null);
-    setLoading(true);
-
-    const myToken = Symbol("dl");
-    tokenRef.current = myToken;
-
-    if (!fileId) {
-      setLoading(false);
-      return;
-    }
-
-    // immediate local path if exists
-    if (existingLocalPath) {
-      if (mountedRef.current && tokenRef.current === myToken) {
-        setPhotoPath(`file://${existingLocalPath}`);
-        setLoading(false);
-      }
-      return;
-    }
-
-    let cancelled = false;
-
-    const startDownload = async () => {
+    if (!remoteId) return;
+    const downloadPhoto = async () => {
       try {
-        const res: any = await TdLib.downloadFile(fileId);
-        const parsed = safeParse(res);
-        const localPath =
-          parsed?.local?.path ||
-          (parsed?.local && parsed.local.isDownloadingCompleted && parsed.local.path) ||
-          parsed?.file?.local?.path ||
-          parsed?.path ||
-          null;
+        const result: any = await TdLib.downloadFileByRemoteId(remoteId);
+        const file = JSON.parse(result.raw);
 
-        if (!mountedRef.current || tokenRef.current !== myToken || cancelled) return;
-
-        if (localPath) {
-          setPhotoPath(`file://${localPath}`);
-          setLoading(false);
-        } else {
-          // download started but not completed yet — keep spinner until subsequent updates
+        if (file.local?.isDownloadingCompleted && file.local.path) {
+          setPhotoPath(`file://${file.local.path}`);
           setLoading(false);
         }
       } catch (err) {
-        if (!mountedRef.current || tokenRef.current !== myToken || cancelled) return;
-        setLoading(false);
+        console.error("Photo download error:", err);
       }
     };
 
-    const doCancel = async () => {
+    const cancelPhoto = async () => {
       try {
-        // cancel only if we have a valid fileId
-        if (fileId) await cancelDownload(fileId);
-      } catch (e) {}
+        await cancelDownload(fileId);
+        console.log("⛔️ Download canceled:", fileId);
+      } catch (err) {
+        console.error("Cancel download error:", err);
+      }
     };
 
-    if (activeDownload) startDownload();
-    else doCancel().catch(() => {});
+    if (activeDownload) {
+      downloadPhoto();
+    } else {
+      cancelPhoto();
+    }
+  }, [fileId, activeDownload, remoteId]);
 
-    return () => {
-      cancelled = true;
-      tokenRef.current = Symbol("cancelled");
-      doCancel().catch(() => {});
-    };
-  }, [fileId, activeDownload, existingLocalPath, photo]);
 
   const handleOpenFull = () => {
     if (photoPath) {
@@ -189,31 +113,40 @@ export default function MessagePhoto({
   };
 
   return (
-    <View style={[styles.container]}>
+    <View
+      style={[
+        styles.container,
+      ]}
+    >
       <TouchableOpacity onPress={handleOpenFull} disabled={loading}>
-        <View
-          style={{
-            width: width ? width : displayWidth < screenWidth * 0.72 ? screenWidth * 0.72 : displayWidth,
-            height: height ? height : displayHeight < 160 ? 160 : displayHeight,
-            borderRadius: context !== "channel" ? 10 : undefined,
-            borderBottomLeftRadius: context === "channel" ? 3 : undefined,
-            borderBottomRightRadius: context === "channel" ? 3 : undefined,
-            backgroundColor: "#111",
-            overflow: "hidden",
+      <View
+        style={{
+          width: width ? width : displayWidth < screenWidth * 0.72 ? screenWidth * 0.72 : displayWidth,
+          height: height ? height : displayHeight < 160 ? 160 : displayHeight, // حداقل ارتفاع
+          borderRadius: context !== "channel" ? 10 : '',
+          borderBottomLeftRadius: context === "channel" ? 3: "",
+          borderBottomRightRadius: context === "channel" ? 3 : "",
+          backgroundColor: "#111",
+          overflow: "hidden",
+        }}
+      >
+        <Image
+          source={{
+            uri:
+              loading && thumbnailBase64
+                ? `data:image/jpeg;base64,${thumbnailBase64}`
+                : photoPath || undefined,
           }}
-        >
-          <Image
-            // force remount when fileId changes
-            key={String(fileId ?? Math.random())}
-            source={{
-              uri: photoPath ? photoPath : (thumbnailBase64 ? `data:image/jpeg;base64,${thumbnailBase64}` : undefined),
-            }}
-            style={{ width: "100%", height: "100%" }}
-            resizeMode="cover"
-          />
-        </View>
+          style={{
+            width: "100%",
+            height: "100%",
+          }}
+          resizeMode="cover"
+        />
+      </View>
       </TouchableOpacity>
     </View>
+
   );
 }
 
