@@ -153,7 +153,7 @@ export function startDownload(fileId: number, onComplete?: (path?: string | null
   // trigger TdLib.downloadFile
   const p = (async () => {
     try {
-      const res: any = await (TdLib as any).downloadFile(fileId);
+      const res: any = await (TdLib as any).downloadFileByRemoteId(fileId);
       // res may have .raw or direct
       let parsed = res;
       try {
@@ -196,26 +196,24 @@ export function startDownload(fileId: number, onComplete?: (path?: string | null
   return p;
 }
 
-export function cancelDownload(fileId: number) {
-  const entry = downloads.get(fileId);
+export function cancelDownload(remoteId: number) {
+  const entry = downloads.get(remoteId);
   if (!entry) {
     // still try to call TdLib cancel if available
     try {
-      if ((TdLib as any).cancelDownload) (TdLib as any).cancelDownload(fileId);
-      if ((TdLib as any).cancelDownloadFile) (TdLib as any).cancelDownloadFile(fileId);
+      TdLib.cancelDownloadByRemoteId(remoteId);
     } catch (e) {}
     return;
   }
   entry.cancelRequested = true;
   // try to call TdLib cancel API (best-effort)
   try {
-    if ((TdLib as any).cancelDownload) (TdLib as any).cancelDownload(fileId);
-    if ((TdLib as any).cancelDownloadFile) (TdLib as any).cancelDownloadFile(fileId);
+    TdLib.cancelDownloadByRemoteId(remoteId);
   } catch (e) {}
   entry.status = "paused";
   for (const sub of entry.subscribers) {
     try {
-      sub({ fileId, status: "paused", path: entry.path ?? null, progress: entry.progress ?? 0, total: entry.total ?? null });
+      sub({ remoteId, status: "paused", path: entry.path ?? null, progress: entry.progress ?? 0, total: entry.total ?? null });
     } catch (e) {}
   }
 }
