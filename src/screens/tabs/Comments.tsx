@@ -41,7 +41,7 @@ export default function Comments() {
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
   const [comments, setComments] = useState<commentStateType>({comments: [], start: 0, end:0});
   const [isFetching, setIsFetching] = useState(false);
-  const [commentsCount, setCommentsCount] = useState<any>();
+  const [commentsCount, setCommentsCount] = useState<number>();
   const [threadInfo, setThreadInfo] = useState<any>();
   const [loading, setLoading] = useState(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState<boolean | "loading">(false);
@@ -49,14 +49,32 @@ export default function Comments() {
   const listRef = useRef<FlashListRef<any>>(null);
   const [viewableItems, setViewableItems] = useState<ViewToken[]>([]);
   const PAGE_SIZE = 50;
+  const [userId, setUserId] = useState<any>(null);
+  const [user, setUser] = useState()
+  const [firstMessageId, setFirstMessageId] = useState<any>(null);
+  const [lastMessageId, setLastMessageId] = useState();
+
+  // ===== NEW refs for concurrency / latest state =====
+  const inFlightFetchRef = useRef(false);
+  const lastFetchSeqRef = useRef(0);
+  const serverLastMessageIdRef = useRef<number | null>(null);
+  const commentsRef = useRef<any[]>([]);
+  // keep commentsRef in sync whenever comments changes
+  useEffect(() => {
+    commentsRef.current = comments.comments;
+  }, [comments]);
 
   useEffect(() => {
     if (!chatId || !messageId) {
       setLoading(false);
       return;
     }
-
+    
     const getThread = async () => {
+      const getUser = await TdLib.getProfile()
+      const user = JSON.parse(getUser)
+      setUserId(user.id)
+      setUser(user)
       const threadResponse: any = await TdLib.getMessageThread(chatId, messageId);
       const threadParsed = threadResponse?.raw ? JSON.parse(threadResponse.raw) : null;
       console.log(threadParsed)
@@ -65,6 +83,8 @@ export default function Comments() {
         setThreadInfo(threadParsed);  // فقط اینجا Save می‌کنیم
         setCommentsCount(threadParsed.replyInfo.replyCount)
         await TdLib.openChat(threadParsed?.chatId)
+        // set initial server last message id
+        serverLastMessageIdRef.current = threadParsed?.replyInfo?.lastMessageId ?? null;
       }
     };
 
@@ -97,6 +117,8 @@ export default function Comments() {
         const getcommentStartPosition = await TdLib.getChatMessagePosition(threadInfo.chatId, getcomments[0].id, threadInfo.messageThreadId)
         const getcommentEndPosition = await TdLib.getChatMessagePosition(threadInfo.chatId, getcomments[getcomments.length -1].id, threadInfo.messageThreadId)
         console.log(getcommentStartPosition.count, getcommentEndPosition.count ,getcomments)
+        setFirstMessageId(getcomments[0].id || 0)
+        setLastMessageId(threadInfo.replyInfo.lastMessageId)
         setComments({
           comments: getcomments,
           start: getcommentStartPosition.count,
@@ -109,8 +131,6 @@ export default function Comments() {
     }
 
   }, [threadInfo]);
-
-
 
   // تابع fetchComments دیگه نیازی به دریافت threadData نداره
   // replace your existing fetchComments with this
@@ -222,6 +242,7 @@ export default function Comments() {
           ...msg,
           user: userId ? usersMap[userId] || null : null,
           replyInfo,
+          status: msg?.senderId?.userId === userId ? 'sent' : undefined,
         };
       });
 
@@ -234,12 +255,13 @@ export default function Comments() {
     }
   };
 
+  // ===== REPLACED handleEndReached (more robust) =====
   const handleEndReached = async () => {
     if (!comments || isFetching) return;
     if (comments.comments.length === 0) return;
-
     const lastItemId = comments.comments[comments.comments.length - 1].id;
-    if (lastItemId === threadInfo.replyInfo.lastMessageId) return;
+    if (lastItemId == lastMessageId) return;
+    //if (lastItemId === threadInfo.replyInfo.lastMessageId) return;
 
     setIsFetching(true);
     try {
@@ -266,7 +288,6 @@ export default function Comments() {
       setIsFetching(false);
     }
   };
-
 
   const handleStartReached = async () => {
     if (!comments || isFetching) return;
@@ -572,15 +593,22 @@ useEffect(() => {
 
       if (type === "UpdateNewMessage") {
         const msg = incomingMsg;
+
+        // update server last message id if this belongs to our thread
+        const threadIdFromMsg = getThreadIdFromMsg(msg);
+        if (threadIdFromMsg && threadInfo?.messageThreadId && threadIdFromMsg === threadInfo.messageThreadId) {
+          const serverId = msg.id ?? msg.messageId ?? msg.message_id;
+          if (serverId) serverLastMessageIdRef.current = serverId;
+        }
+
         const text = getTextFromMsg(msg);
         const replyTo = getReplyToFromMsg(msg);
         const date = getDateFromMsg(msg);
-        const threadIdFromMsg = getThreadIdFromMsg(msg);
 
         const sig = makeSignature(msg.chatId ?? chatId, threadIdFromMsg, replyTo, text, date);
 
+        // Fast path: match pending signature
         if (pendingSignaturesRef.current.has(sig)) {
-          // Found matching pending temp -> replace it
           const tempId = pendingSignaturesRef.current.get(sig);
           pendingSignaturesRef.current.delete(sig);
 
@@ -618,22 +646,78 @@ useEffect(() => {
           return;
         }
 
-        // No pending mapping -> fall back to normal handler
+        // Fallback: try to match a temp by text + time + replyTo (tolerance)
+        try {
+          const TOLERANCE = 8; // seconds
+          const msgText = text?.toString()?.trim?.() ?? "";
+          const msgDate = date;
+          const msgReplyTo = replyTo;
+
+          const localTemps = [...commentsRef.current].filter(c => c && c.temp);
+
+          let matchedTempId: string | null = null;
+          for (let i = localTemps.length - 1; i >= 0; i--) {
+            const c = localTemps[i];
+            const cText = (c?.content?.text || (c?.content?.text?.text ?? "")).toString().trim();
+            const timeDiff = Math.abs((c.date || 0) - (msgDate || 0));
+            const cReplyTo = (c?.replyTo && (c.replyTo.messageId || c.replyTo.message_id)) || 0;
+            if (cText && cText === msgText && timeDiff <= TOLERANCE && cReplyTo === (msgReplyTo || 0)) {
+              matchedTempId = c.id;
+              break;
+            }
+          }
+
+          if (matchedTempId) {
+            const tempId = matchedTempId;
+            pendingSignaturesRef.current.forEach((v,k) => {
+              if (v === tempId) pendingSignaturesRef.current.delete(k);
+            });
+
+            setComments(prev => {
+              const serverId = msg.id ?? msg.messageId ?? msg.message_id;
+              const existsServer = prev.comments.some(c => c.id === serverId);
+
+              let updated = prev.comments.map(c => c.id === tempId ? { ...(msg), user: c.user ?? msg.user ?? null } : c);
+              if (existsServer) updated = updated.filter(c => c.id !== tempId);
+              return { ...prev, comments: updated };
+            });
+
+            return;
+          }
+        } catch (e) {
+          // ignore fallback errors
+        }
+
+        // No pending mapping and no fallback match -> generic handler
         handleNewComment(msg);
         return;
       }
 
       // other updates => reuse existing handlers
       switch (type) {
-        case "UpdateDeleteMessages":
+        case "UpdateDeleteMessages": {
+          // if server last message deleted, clear ref
+          const messageIds = data?.messageIds ?? data?.message_ids ?? data?.deletedMessageIds ?? [];
+          if (Array.isArray(messageIds) && messageIds.length) {
+            const cur = serverLastMessageIdRef.current;
+            if (cur && messageIds.includes(cur)) {
+              serverLastMessageIdRef.current = null;
+            }
+          }
           handleDeleteComments(data);
           break;
+        }
         case "UpdateMessageInteractionInfo":
           handleInteractionUpdate(data);
           break;
         case "UpdateChatLastMessage":
-          if (data?.lastMessage?.id === threadInfo?.replyInfo?.lastMessageId) {
-            handleNewComment(data.lastMessage);
+          if (data?.lastMessage) {
+            const lm = data.lastMessage;
+            const serverId = lm.id ?? lm.messageId ?? lm.message_id;
+            if (serverId) serverLastMessageIdRef.current = serverId;
+            if (serverId === threadInfo?.replyInfo?.lastMessageId) {
+              handleNewComment(data.lastMessage);
+            }
           }
           break;
         default:
@@ -650,16 +734,20 @@ useEffect(() => {
 // ===== existing handlers (kept but slightly hardened) =====
 const handleNewComment = (message: any) => {
   if (!message) return;
+  // NOTE: removed early-return that skipped messages from current user,
+  // because we rely on dedupe logic elsewhere (pending signatures etc.)
   const id = message.id ?? message.messageId ?? message.message_id;
   if (!id) return;
-
+  if (message.senderId.userId == userId) return
+  setLastMessageId(id)
   setComments((prev) => {
     const exists = prev.comments.some((msg) => msg.id === id);
     if (exists) return prev;
 
     const updatedComments = [...prev.comments, message];
 
-    setCommentsCount((c:any) => (typeof c === "number" ? c + 1 : c));
+    // increment safely
+    setCommentsCount((c:any) => (typeof c === "number" ? c + 1 : (prev?.comments?.length ?? 0) + 1 ));
 
     return {
       ...prev,
@@ -674,7 +762,7 @@ const handleDeleteComments = (data: any) => {
   setComments((prev) => {
     const updatedComments = prev.comments.filter((msg) => !messageIds.includes(msg.id));
 
-    setCommentsCount((c:any) => (typeof c === "number" ? c - messageIds.length : c));
+    setCommentsCount((c:any) => (typeof c === "number" ? Math.max(0, c - messageIds.length) : Math.max(0, prev.comments.length - messageIds.length)));
 
     return {
       ...prev,
@@ -706,34 +794,52 @@ const handleInteractionUpdate = (data: any) => {
 // ===== sendComment (optimistic + pending signature) =====
 const sendComment = async (text: string) => {
   if (!threadInfo?.chatId || !threadInfo?.messageThreadId) {
+    console.warn("[sendComment] thread info not ready");
     return { success: false, error: "Thread info not ready" };
   }
-  if (!text || !text.trim()) return { success: false, error: "Empty text" };
+  if (!text || !text.trim()) {
+    console.warn("[sendComment] empty text");
+    return { success: false, error: "Empty text" };
+  }
+
+  console.log("[sendComment] start", { text });
 
   const nowSec = Math.floor(Date.now() / 1000);
   const tempId = `temp_${nowSec}_${Math.random().toString(36).slice(2, 9)}`;
   const replyToId = replyingTo?.id ? Number(replyingTo.id) : 0;
   const sig = makeSignature(threadInfo.chatId, threadInfo.messageThreadId, replyToId, text, nowSec);
 
-  // create temp optimistic message
+  // build optimistic full user object (use `user` from outer scope if available)
+  const optimisticUser = (typeof user !== "undefined" && user) ? user : { id: userId ?? null };
+
   const tempMsg: any = {
     id: tempId,
     temp: true,
     content: { text },
     date: nowSec,
-    senderId: { userId: currentUserIdRef.current ?? "me" },
-    user: { /* optional: your local user object if available */ },
+    senderId: { userId: optimisticUser?.id ?? userId },
+    user: optimisticUser, // full user object so UI can render avatar/name immediately
     chatId: threadInfo.chatId,
     messageThreadId: threadInfo.messageThreadId,
-    status: "sending",
+    status: "sending", // sending | failed | sent
     replyTo: replyToId ? { messageId: replyToId } : undefined,
   };
 
   // register pending signature -> tempId
   pendingSignaturesRef.current.set(sig, tempId);
 
-  // optimistic add
-  setComments(prev => ({ ...prev, comments: [...prev.comments, tempMsg] }));
+  // optimistic add to state + keep commentsRef in sync
+  setComments((prev) => {
+    const updated = { ...prev, comments: [...prev.comments, tempMsg] };
+    commentsRef.current = updated.comments;
+    return updated;
+  });
+
+  // make sure list scrolls to end (non-blocking)
+  InteractionManager.runAfterInteractions(() => {
+    try { listRef.current?.scrollToEnd?.({ animated: true }); } catch (e) { /* ignore */ }
+  });
+
   setIsSending(true);
 
   try {
@@ -747,60 +853,126 @@ const sendComment = async (text: string) => {
     const parsed = safeParse(res);
     const realMsg = extractMessageObject(parsed);
 
-    if (realMsg && (realMsg.id || realMsg.messageId || realMsg.message_id)) {
-      // success: remove pending, replace temp
-      pendingSignaturesRef.current.delete(sig);
+    console.log("[sendComment] tdlib response", parsed);
 
-      const serverId = realMsg.id ?? realMsg.messageId ?? realMsg.message_id;
+  if (realMsg && (realMsg.id || realMsg.messageId || realMsg.message_id)) {
+    pendingSignaturesRef.current.delete(sig);
 
-      setComments(prev => {
-        // if server message already present -> remove temp only
-        const alreadyHas = prev.comments.some(c => c.id === serverId);
+    const serverId: any = Number(realMsg.id ?? realMsg.messageId ?? realMsg.message_id);
+    const isFromOffline = !!realMsg.isFromOffline; // TDLib: queued while offline
 
-        let updated = prev.comments.map(c => {
+    serverLastMessageIdRef.current = serverId;
+    try { setLastMessageId(serverId); } catch(e){}
+
+    // === ensure we have replyInfo (from local state or fetch from TDLib) ===
+    let replyInfoForServer: any = null;
+    try {
+      const rid = replyToId; // replyToId was computed earlier in sendComment
+      if (rid) {
+        // try local first
+        replyInfoForServer = (commentsRef.current || []).find(c => Number(c.id) === Number(rid)) || null;
+
+        // if not found locally, fetch from native once
+        if (!replyInfoForServer && threadInfo?.chatId) {
+          try {
+            const fetchRes: any = await TdLib.getMessagesCompat(threadInfo.chatId, [Number(rid)]);
+            const parsedFetch = safeParse(fetchRes);
+            const fetchedMsg = (parsedFetch?.messages && parsedFetch.messages[0]) || null;
+            if (fetchedMsg) replyInfoForServer = fetchedMsg;
+          } catch (e) {
+            console.warn("[sendComment] fetch reply msg failed", e);
+            replyInfoForServer = null;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[sendComment] replyInfo resolution error", e);
+      replyInfoForServer = null;
+    }
+
+    let appendedNew = false;
+    setComments((prev) => {
+      const alreadyHas = prev.comments.some(c => Number(c.id) === serverId);
+      const hasTemp = prev.comments.some(c => c.id === tempId);
+      let updatedComments = prev.comments.slice();
+
+      if (alreadyHas) {
+        // server already delivered the message via updates — remove temp if present
+        updatedComments = updatedComments.filter(c => c.id !== tempId);
+      } else if (hasTemp) {
+        // replace temp with server message, preserving local user and replyInfo if available
+        updatedComments = updatedComments.map(c => {
           if (c.id === tempId) {
-            return { ...(realMsg), user: c.user ?? realMsg.user ?? null };
+            const preservedUser = c.user ?? realMsg.user ?? optimisticUser ?? null;
+            return {
+              ...realMsg,
+              user: preservedUser,
+              // attach replyInfo from local/fetched if available
+              replyInfo: c.replyInfo ?? replyInfoForServer ?? realMsg.replyInfo ?? null,
+              status: isFromOffline ? "sending" : "sent",
+              temp: false,
+              date: realMsg.date ?? c.date ?? nowSec,
+            };
           }
           return c;
         });
+      } else {
+        // neither present -> append server message and attach replyInfo if we have it
+        updatedComments = [
+          ...updatedComments,
+          {
+            ...realMsg,
+            user: realMsg.user ?? optimisticUser ?? null,
+            replyInfo: replyInfoForServer ?? realMsg.replyInfo ?? null,
+            status: isFromOffline ? "sending" : "sent",
+            temp: false,
+          },
+        ];
+        appendedNew = true;
+      }
 
-        if (alreadyHas) {
-          // remove duplicate temp
-          updated = updated.filter(c => c.id !== tempId);
-        }
+      commentsRef.current = updatedComments;
+      return { ...prev, comments: updatedComments };
+    });
 
-        return { ...prev, comments: updated };
-      });
+    // update commentsCount only when we actually appended a new server message
+    setCommentsCount((c: any) => {
+      if (typeof c === "number") return c + (appendedNew ? 1 : 0);
+      return (commentsRef.current?.length ?? 0);
+    });
 
-      setCommentsCount((c: any) => (typeof c === "number" ? c + 1 : c));
-      setText("");
-      setReplyingTo(null);
+    // clear composer
+    setText("");
+    setReplyingTo(null);
+    setIsSending(false);
+    return { success: true, data: realMsg };
+  }
 
-      InteractionManager.runAfterInteractions(() => {
-        try { listRef.current?.scrollToEnd?.({ animated: true }); } catch (e) {}
-      });
-
-      setIsSending(false);
-      return { success: true, data: realMsg };
-    }
-
-    // no message returned -> mark failed
+    // no message object returned -> mark temp as failed
     pendingSignaturesRef.current.delete(sig);
-    setComments(prev => ({ ...prev, comments: prev.comments.map(c => c.id === tempId ? { ...c, status: "failed" } : c) }));
+    setComments((prev) => {
+      const updated = prev.comments.map(c => c.id === tempId ? { ...c, status: "failed" } : c);
+      commentsRef.current = updated;
+      return { ...prev, comments: updated };
+    });
     setIsSending(false);
 
-    const errMsg = parsed?.description || parsed?.message || JSON.stringify(parsed) || "Failed to send comment";
-    return { success: false, error: errMsg, raw: parsed };
+    console.warn("[sendComment] no real message in response", parsed);
+    return { success: false, error: parsed || "Failed to send comment" };
   } catch (err: any) {
-    console.warn("sendComment error:", err);
+    // network/native error -> mark temp as failed (keep it in list so user can retry)
     pendingSignaturesRef.current.delete(sig);
-    setComments(prev => ({ ...prev, comments: prev.comments.map(c => c.id === tempId ? { ...c, status: "failed" } : c) }));
-    setIsSending(false);
 
-    const parsedErr = safeParse(err);
-    const errText = parsedErr?.message || parsedErr || err?.message || "Unknown native error";
-    Alert.alert("ارسال ناموفق", typeof errText === "string" ? errText : JSON.stringify(errText));
-    return { success: false, error: errText };
+    console.warn("[sendComment] error", err);
+
+    setComments((prev) => {
+      const updated = prev.comments.map(c => c.id === tempId ? { ...c, status: "failed" } : c);
+      commentsRef.current = updated;
+      return { ...prev, comments: updated };
+    });
+
+    setIsSending(false);
+    return { success: false, error: err };
   }
 };
 
@@ -809,7 +981,7 @@ const handleSend = async (textToSend: string) => {
   if (!textToSend || !textToSend.trim()) return;
   if (isSending) return; // prevent double-clicks
 
-  const result = await sendComment(textToSend);
+  const result:any = await sendComment(textToSend);
 
   if (result.success) {
     console.log("✅ Comment sent", result.data);
@@ -843,6 +1015,86 @@ const handleSend = async (textToSend: string) => {
   const onReply = (comment: any) => {
     setReplyingTo(comment);
   };
+
+  const onDelete = async (commentId: number | string) => {
+    console.log("delete")
+    if (!commentId) return { success: false, error: "no id" };
+    if (!threadInfo?.chatId) return { success: false, error: "thread not ready" };
+
+    // snapshot current list & find index
+    const prevList = commentsRef.current || [];
+    const idx = prevList.findIndex((c) => String(c.id) === String(commentId));
+    if (idx === -1) {
+      // nothing to remove (maybe already removed)
+      return { success: false, error: "not found" };
+    }
+    const removedItem = prevList[idx];
+
+    // optimistic remove locally
+    setComments((prev) => {
+      const updated = prev.comments.filter((c) => String(c.id) !== String(commentId));
+      return { ...prev, comments: updated };
+    });
+    // keep ref in sync
+    commentsRef.current = (commentsRef.current || []).filter((c) => String(c.id) !== String(commentId));
+
+    // decrement count safely
+    setCommentsCount((c: any) =>
+      typeof c === "number" ? Math.max(0, c - 1) : Math.max(0, (prevList?.length ?? 1) - 1)
+    );
+
+    // if it's a local temp message -> nothing to call on native
+    if (typeof commentId === "string" && commentId.startsWith("temp_")) {
+      return { success: true };
+    }
+
+    try {
+      // call native deleteComment method you provided
+      const res: any = await TdLib.deleteComment(Number(threadInfo.chatId), Number(commentId));
+      const parsed = safeParse(res);
+
+      // bridge resolves true on success in your Java code
+      const ok = parsed === true || (parsed && (parsed["@type"] === "ok" || parsed.ok === true));
+
+      if (!ok) throw parsed || new Error("delete returned non-ok");
+
+      // if we removed the server last message, clear that ref
+      if (serverLastMessageIdRef.current && Number(commentId) === serverLastMessageIdRef.current) {
+        serverLastMessageIdRef.current = null;
+      }
+
+      return { success: true, raw: parsed };
+    } catch (err) {
+      // rollback: restore the item at original index (if not present)
+      setComments((prev) => {
+        const cur = prev.comments.slice();
+        if (!cur.some((c) => String(c.id) === String(commentId))) {
+          // keep same order by inserting at original index if possible
+          const insertIndex = Math.min(Math.max(0, idx), cur.length);
+          cur.splice(insertIndex, 0, removedItem);
+        }
+        return { ...prev, comments: cur };
+      });
+
+      // restore ref
+      const curRef = commentsRef.current || [];
+      if (!curRef.some((c) => String(c.id) === String(commentId))) {
+        const insertIndex = Math.min(Math.max(0, idx), curRef.length);
+        curRef.splice(insertIndex, 0, removedItem);
+        commentsRef.current = curRef;
+      }
+
+      // restore count
+      setCommentsCount((c: any) =>
+        typeof c === "number" ? c + 1 : (commentsRef.current?.length ?? 0)
+      );
+
+      console.warn("delete comment failed:", err);
+      Alert.alert("حذف ناموفق", typeof err === "string" ? err : JSON.stringify(err));
+      return { success: false, error: err };
+    }
+  };
+
 
   return (
     <KeyboardAvoidingView
@@ -885,6 +1137,8 @@ const handleSend = async (textToSend: string) => {
                     highlightedId={highlightedId}
                     handleReplyClick={handleReplyClick}
                     onReply={onReply}
+                    isUser={item.senderId.userId == userId}
+                    onDelete={onDelete}
                   />
                 )}
                 onViewableItemsChanged={onViewableItemsChanged.current}
@@ -898,7 +1152,7 @@ const handleSend = async (textToSend: string) => {
 
                 // 🔽 دوباره اضافه کن
                 ListHeaderComponent={
-                  comments?.start !== commentsCount && comments.comments.length ? (
+                  comments?.comments[0].id !== firstMessageId && comments.comments.length ? (
                     <View style={{ justifyContent: "center", alignItems: "center", paddingVertical: 10 }}>
                       <ActivityIndicator color="#888" size="small" />
                     </View>

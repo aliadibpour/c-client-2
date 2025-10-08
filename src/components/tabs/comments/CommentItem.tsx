@@ -1,14 +1,16 @@
 import { fromByteArray } from "base64-js";
-import React, { useEffect, useRef } from "react";
-import { Animated, Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, DeviceEventEmitter, Image, StyleSheet, Text, TouchableOpacity, useAnimatedValue, View } from "react-native";
 import MessageReactions from "../home/MessageReaction";
 import { Easing } from "react-native";
 import { Reply } from "../../../assets/icons";
+import { interpolateColor, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import { Check, CheckCheck, Clock, Delete, Ticket, Trash } from "lucide-react-native";
+import { GestureResponderEvent } from "react-native-modal";
 
-export default function CommentItem({ item, index, comments, navigation, highlightedId, handleReplyClick, onReply }: any) {
+export default function CommentItem({ item, index, comments, navigation, highlightedId, handleReplyClick, onReply, isUser, onDelete }: any) {
   const user = item?.user;
   const name = `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim();
-
   const base64Thumb = user?.profilePhoto?.minithumbnail?.data
     ? `data:image/jpeg;base64,${fromByteArray(user.profilePhoto.minithumbnail.data)}`
     : null;
@@ -52,6 +54,62 @@ export default function CommentItem({ item, index, comments, navigation, highlig
     outputRange: ["rgba(31,29,29,1)", "rgba(120,120,120,0.6)"], 
     });
 
+    const [showDelete, setShowDelete] = useState(false);
+    const deleteAnim = useRef(new Animated.Value(0)).current; // 0:hidden, 1:visible
+
+    // وقتی showDelete تغییر می‌کنه انیمیشن رو اجرا کن
+    useEffect(() => {
+      Animated.timing(deleteAnim, {
+        toValue: showDelete ? 1 : 0,
+        duration: 200,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    }, [showDelete]);
+
+
+    useEffect(() => {
+      const sub = DeviceEventEmitter.addListener("commentDeleteToggle", (payload: any) => {
+        // payload === id یا null
+        if (payload === item.id) {
+          setShowDelete(true);
+        } else {
+          setShowDelete(false);
+        }
+      });
+
+      return () => {
+        sub.remove();
+      };
+    }, [item.id]);
+
+
+    function handleLongPress() {
+      if (!isUser) return; // فقط برای پیام‌های خود کاربر
+      // به همه اطلاع بده که باید حالت حذف برای این آیتم نمایش داده بشه
+      DeviceEventEmitter.emit("commentDeleteToggle", item.id);
+    }
+
+    // وقتی کاربر روی دکمه حذف زد
+    const handleDeletePress = (e?: GestureResponderEvent) => {
+      // call parent callback
+      onDelete(item.id)
+      // بعد از حذف، پنهان کن
+      DeviceEventEmitter.emit("commentDeleteToggle", null);
+    };
+
+      const deleteStyle = {
+      transform: [
+        {
+          scale: deleteAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.8, 1],
+          }),
+        },
+      ],
+      opacity: deleteAnim,
+    };
+
     // رنگ‌های پیشنهادی مثل تلگرام
     const avatarColors = [
     "#ff9857ff", // نارنجی
@@ -67,10 +125,12 @@ export default function CommentItem({ item, index, comments, navigation, highlig
     return avatarColors[index];
     }
 
-
   return (
-    <View style={styles.commentItem}>
-      {showAvatar ? (
+    <View style={[styles.commentItem, {flexDirection: isUser ? "row-reverse": "row", alignContent: isUser ? "flex-end" : "flex-start",
+      marginRight: isUser ? 8 : 0
+    }]}
+    >
+      {showAvatar && !isUser ? (
         avatarUri ? (
           <TouchableOpacity onPress={() => navigation.navigate("ProfileUser", { data: user })}>
             <Image source={{ uri: avatarUri }} style={styles.avatar} />
@@ -88,11 +148,16 @@ export default function CommentItem({ item, index, comments, navigation, highlig
           </TouchableOpacity>
 
         )
-      ) : (
+      ) : !isUser ? (
         <View style={{ width: 36, marginHorizontal: 8 }} />
-      )}
+      ): null
+      }
 
-      <Animated.View style={[styles.bubble, { backgroundColor: bgColor }]}>
+
+      <TouchableOpacity
+       style={[styles.bubble, { backgroundColor: isUser ? showDelete ? "rgba(57, 57, 57, 0.57)": "rgba(81, 0, 103, 0.73)" : bgColor }]}
+       onLongPress={handleLongPress}
+       onPress={() => setShowDelete(false)}>
         {name ? <Text style={styles.username}>{name}</Text> : null}
 
         {item.replyInfo && (
@@ -119,6 +184,13 @@ export default function CommentItem({ item, index, comments, navigation, highlig
           })}
         </Text>
 
+        {
+          isUser == true ? 
+          item.status == "sent" ? 
+          <CheckCheck color={"#aaa"} width={12} style={{position: "absolute", bottom: 0, left:8}} /> 
+          : <Clock color={"#6a6a6aff"} width={11} style={{position: "absolute", bottom: -1, left:4}} /> : 
+          null
+        }
         {item.interactionInfo?.reactions?.reactions?.length > 0 && (
           <MessageReactions
             reactions={item.interactionInfo.reactions.reactions}
@@ -139,21 +211,38 @@ export default function CommentItem({ item, index, comments, navigation, highlig
             }}
           />
         )}
-      </Animated.View>
-      <TouchableOpacity 
-        onPress={() => onReply(item)}
-        style={{ justifyContent: "flex-end", paddingBottom: 6 ,height: "100%", paddingLeft:3}}>
-        <View style={{backgroundColor: "#f5f5f523", borderRadius: "50%", padding: 3}}>
-          <Reply color={"#aaa"} width={20} height={20} />
-        </View>
       </TouchableOpacity>
+      {
+        !isUser &&
+          <TouchableOpacity 
+            onPress={() => onReply(item)}
+            style={{ justifyContent: "flex-end", paddingBottom: 6 ,height: "100%", paddingLeft: 3}}>
+            <View style={{backgroundColor: "#f5f5f523", borderRadius: "50%", padding: 3}}>
+              <Reply color={"#aaa"} width={20} height={20} />
+            </View>
+          </TouchableOpacity>
+      }
+      {isUser && (
+        <Animated.View style={[{ justifyContent: "flex-end", paddingBottom: 6, height: "100%", paddingRight: 6 }, deleteStyle]}>
+          {/** وقتی showDelete === true نمایش میدیم، در غیر این صورت فضای کم می‌کنه */}
+          {showDelete ? (
+            <TouchableOpacity onPress={handleDeletePress}>
+              <View>
+                <Text style={{ color: "#eaeaeaff", fontSize: 13, fontWeight: "700" }}>✕</Text>
+              </View>
+            </TouchableOpacity>
+          ) : (
+            // برای جلوگیری از تغییر چینش کامل، حجم کم رو نگه می‌داریم
+            <View style={{ width: 28 }} />
+          )}
+        </Animated.View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   commentItem: {
-    flexDirection: "row",
     alignItems: "flex-start",
     marginVertical: 4,
     paddingHorizontal: 2,
@@ -163,6 +252,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingHorizontal: 10,
     maxWidth: "80%",
+    minWidth: 60
   },
   commentText: {
     color: "#ccc",
