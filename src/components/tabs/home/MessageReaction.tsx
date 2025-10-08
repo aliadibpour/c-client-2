@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   StyleSheet,
   ViewStyle,
   TextStyle,
-  NativeModules,
 } from "react-native";
 
 import TdLib from "react-native-tdlib";
@@ -33,10 +32,28 @@ interface Props {
   customStyles?: CustomStyles;
 }
 
-export default function MessageReactions({ reactions, chatId, messageId, customStyles }: Props) {
+export default function MessageReactions({
+  reactions,
+  chatId,
+  messageId,
+  onReact,
+  customStyles,
+}: Props) {
+  // local selected emoji (string) for quick checks
   const [selected, setSelected] = useState<string | null>(
     reactions.find((r) => r.isChosen)?.type.emoji || null
   );
+
+  // local copy of reactions for optimistic updates
+  const [localReactions, setLocalReactions] = useState<Reaction[]>(
+    reactions.map((r) => ({ ...r }))
+  );
+
+  // sync when prop changes
+  useEffect(() => {
+    setSelected(reactions.find((r) => r.isChosen)?.type.emoji || null);
+    setLocalReactions(reactions.map((r) => ({ ...r })));
+  }, [reactions]);
 
   const formatCount = (count: number) => {
     if (count >= 1000) {
@@ -45,38 +62,81 @@ export default function MessageReactions({ reactions, chatId, messageId, customS
     return count?.toString();
   };
 
-const handleReact = async (emoji: string) => {
-  const isRemoving = selected === emoji;
-  const prevSelected = selected;
+  const clamp = (n: number) => Math.max(0, n | 0);
 
-  // ✅ بلافاصله UI رو تغییر بده (بدون معطلی)
-  setSelected(isRemoving ? null : emoji);
+  const handleReact = async (emoji: string) => {
+    const isRemoving = selected === emoji;
+    const prevSelected = selected;
+    const prevState = localReactions.map((r) => ({ ...r })); // deep-ish clone for rollback
 
-  try {
-    if (isRemoving) {
-      await TdLib.removeMessageReaction(chatId, messageId, emoji);
-    } else {
-      if (prevSelected) {
-        await TdLib.removeMessageReaction(chatId, messageId, prevSelected);
+    // Optimistic update:
+    const newReactions = localReactions.map((r) => {
+      const rEmoji = r.type.emoji;
+      // user is removing their selected reaction
+      if (isRemoving && rEmoji === emoji) {
+        return { ...r, totalCount: clamp(r.totalCount - 1), isChosen: false };
       }
-      await TdLib.addMessageReaction(chatId, messageId, emoji);
+
+      // user is selecting a new emoji
+      if (!isRemoving) {
+        if (rEmoji === emoji) {
+          return { ...r, totalCount: r.totalCount + 1, isChosen: true };
+        }
+        // if previously selected another emoji, decrement it
+        if (rEmoji === prevSelected) {
+          return { ...r, totalCount: clamp(r.totalCount - 1), isChosen: false };
+        }
+      }
+
+      return r;
+    });
+
+    // If emoji isn't already present in the list (rare), add it optimistically
+    let finalReactions = newReactions;
+    if (!newReactions.some((r) => r.type.emoji === emoji) && !isRemoving) {
+      finalReactions = [
+        ...newReactions,
+        { type: { emoji }, totalCount: 1, isChosen: true },
+      ];
     }
-  } catch (err) {
-    console.error("Reaction failed:", err);
 
-    // ❌ اگر خطا داد، برگرد به حالت قبلی (Rollback)
-    setSelected(prevSelected);
-  }
-};
+    // apply optimistic UI
+    setLocalReactions(finalReactions);
+    setSelected(isRemoving ? null : emoji);
+    if (onReact) {
+      try { onReact(isRemoving ? null : emoji); } catch (e) {}
+    }
 
+    // perform network/native call
+    try {
+      if (isRemoving) {
+        await TdLib.removeMessageReaction(chatId, messageId, emoji);
+      } else {
+        // if previously chose another emoji, remove it first on server
+        if (prevSelected) {
+          await TdLib.removeMessageReaction(chatId, messageId, prevSelected);
+        }
+        await TdLib.addMessageReaction(chatId, messageId, emoji);
+      }
+      // success: nothing to do (UI already updated optimistically)
+    } catch (err) {
+      // rollback UI on error
+      console.error("Reaction failed, rolling back:", err);
+      setLocalReactions(prevState);
+      setSelected(prevSelected ?? null);
+      if (onReact) {
+        try { onReact(prevSelected ?? null); } catch (e) {}
+      }
+    }
+  };
 
   return (
     <View style={[styles.container, customStyles?.container]}>
-      {reactions.map((reaction, idx) => {
+      {localReactions.map((reaction, idx) => {
         const isSelected = selected === reaction.type.emoji;
         return (
           <TouchableOpacity
-            key={idx}
+            key={reaction.type.emoji + "_" + idx}
             style={[
               styles.reactionBox,
               customStyles?.reactionBox,
@@ -84,6 +144,7 @@ const handleReact = async (emoji: string) => {
               isSelected && customStyles?.selectedBox,
             ]}
             onPress={() => handleReact(reaction.type.emoji)}
+            activeOpacity={0.7}
           >
             <Text style={[styles.emoji, customStyles?.emoji]}>
               {reaction.type.emoji}
@@ -97,7 +158,6 @@ const handleReact = async (emoji: string) => {
     </View>
   );
 }
-
 
 const styles = StyleSheet.create({
   container: {
