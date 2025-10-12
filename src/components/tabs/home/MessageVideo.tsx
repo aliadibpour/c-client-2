@@ -1,3 +1,4 @@
+// MessageVideoVisibility.tsx
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -8,31 +9,86 @@ import {
   DeviceEventEmitter,
   TouchableOpacity,
   Text,
+  AppState,
 } from "react-native";
 import Video from "react-native-video";
+import { VisibilitySensor } from '@futurejj/react-native-visibility-sensor';
 import { Download, Pause, Play, X } from "lucide-react-native";
 import { startDownload, cancelDownload, subscribeToFile } from "../../../hooks/useMediaDownloadManager";
+import { useIsFocused } from "@react-navigation/native";
 
 // ---------- Config ----------
 const screenWidth = Dimensions.get("window").width;
-const AUTO_DOWNLOAD_THRESHOLD = 5 * 1024 * 1024; // 5 MB - زیر این سایز اتودانلود بشه
+const AUTO_DOWNLOAD_THRESHOLD = 5 * 1024 * 1024; // 5 MB
 const STALL_TIMEOUT_MS = 8000;
 
 type DownloadStatus = "idle" | "downloading" | "paused" | "completed" | "error";
 
 interface Props {
   video: any;
-  isVisible: boolean;
+  // note: isVisible prop removed on purpose; component manages its own visibility
   activeDownload?: any;
   context?: "channel" | "explore";
 }
 
-/**
- * useTdlibDownload (final)
- * - uses subscribeToFile() (if available) to get immediate snapshot so UI can show size/progress/path
- * - tries to start download with remoteId first, then falls back to tdFileId (fileId) if provided
- * - Pause button acts as cancel (per request)
- */
+/* -------------------------
+   VideoFocusManager (singleton)
+   ensures only one video plays at once and can force-pause all
+   ------------------------- */
+export const VideoFocusManager = (() => {
+  let currentOwner: string | null = null;
+  const subs = new Map<string, { id: string; pause: () => void; onGranted?: () => void }>();
+
+  return {
+    subscribe(sub: { id: string; pause: () => void; onGranted?: () => void }) {
+      subs.set(sub.id, sub);
+      return () => {
+        subs.delete(sub.id);
+        if (currentOwner === sub.id) currentOwner = null;
+      };
+    },
+
+    requestFocus(id: string) {
+      if (currentOwner === id) return true;
+      if (currentOwner && subs.has(currentOwner)) {
+        try {
+          subs.get(currentOwner)!.pause();
+        } catch (e) {
+          // ignore
+        }
+      }
+      currentOwner = id;
+      const now = subs.get(id);
+      if (now && now.onGranted) {
+        try {
+          now.onGranted();
+        } catch (e) {}
+      }
+      return true;
+    },
+
+    releaseFocus(id: string) {
+      if (currentOwner === id) currentOwner = null;
+    },
+
+    pauseAll() {
+      for (const s of subs.values()) {
+        try {
+          s.pause();
+        } catch (e) {}
+      }
+      currentOwner = null;
+    },
+
+    getCurrent() {
+      return currentOwner;
+    },
+  };
+})();
+
+/* -------------------------
+   useTdlibDownload (copied/kept from your code)
+   ------------------------- */
 function useTdlibDownload(remoteId: string | number | undefined, size: number, fileId?: number | undefined, externalActiveDownload?: any) {
   console.log("useTdlibDownload init - remoteId:", remoteId, "fileId:", fileId, "size:", size);
   const [status, setStatus] = useState<DownloadStatus>("idle");
@@ -73,7 +129,6 @@ function useTdlibDownload(remoteId: string | number | undefined, size: number, f
     if (!f) return false;
     const tdId = f.id ?? f.file_id ?? null;
     const rId = f.remote?.id ?? f.remote_id ?? f.remoteId ?? null;
-    // check equality with provided remoteId OR td fileId
     if (remoteId != null && (String(rId) === String(remoteId) || String(tdId) === String(remoteId))) return true;
     if (fileId != null && String(tdId) === String(fileId)) return true;
     return false;
@@ -96,11 +151,9 @@ function useTdlibDownload(remoteId: string | number | undefined, size: number, f
     }
   };
 
-  // listen to manager-snapshot via subscribeToFile (preferred) and also DeviceEventEmitter as fallback
   useEffect(() => {
     if (!remoteId && !fileId) return;
 
-    // external snapshot
     if (externalActiveDownload) {
       try {
         applySnapshot(externalActiveDownload);
@@ -109,10 +162,9 @@ function useTdlibDownload(remoteId: string | number | undefined, size: number, f
       }
     }
 
-    let unsub: any = null;
     try {
       if (typeof subscribeToFile === "function") {
-        unsub = subscribeToFile((Number(remoteId) || String(remoteId) as any), (snap: any) => {
+        const unsub = subscribeToFile((Number(remoteId) || String(remoteId) as any), (snap: any) => {
           try {
             applySnapshot(snap);
             resetStall();
@@ -126,11 +178,9 @@ function useTdlibDownload(remoteId: string | number | undefined, size: number, f
       console.warn("[useTdlibDownload] subscribeToFile failed", e);
     }
 
-    // also attach DeviceEventEmitter fallback (if manager doesn't call subscribe)
     const deviceSub = DeviceEventEmitter.addListener("tdlib-update", (ev) => {
       try {
         const parsed = parseRaw(ev);
-        const type = parsed["@type"] ?? parsed.type ?? null;
         const f = parsed.file ?? parsed.data?.file ?? parsed.data ?? parsed;
         if (!f) return;
         if (!idMatchesRemote(f)) return;
@@ -176,7 +226,6 @@ function useTdlibDownload(remoteId: string | number | undefined, size: number, f
   }, [remoteId, fileId, externalActiveDownload, resetStall]);
 
   const attemptStart = async () => {
-    // try remoteId first, then fallback to fileId
     try {
       const rid = remoteId == null ? null : Number.isFinite(Number(remoteId)) ? Number(remoteId) : String(remoteId);
       if (rid != null) {
@@ -209,12 +258,10 @@ function useTdlibDownload(remoteId: string | number | undefined, size: number, f
   }, [remoteId, fileId]);
 
   const pause = useCallback(() => {
-    // pause acts like cancel
     try {
       if (!remoteId && !fileId) return;
       const rid = remoteId == null ? null : Number.isFinite(Number(remoteId)) ? Number(remoteId) : String(remoteId);
-      // cancelDownload should accept remoteId or fileId (manager will try both)
-      cancelDownload((rid ?? fileId as any));
+      cancelDownload((rid ?? (fileId as any)));
       setStatus("idle");
       setProgress(0);
       setVideoPath(null);
@@ -227,11 +274,9 @@ function useTdlibDownload(remoteId: string | number | undefined, size: number, f
   }, [remoteId, fileId]);
 
   const cancel = useCallback(() => {
-    // API parity
     pause();
   }, [pause]);
 
-  // auto-start small files
   useEffect(() => {
     if ((!remoteId && !fileId) || status !== "idle") return;
     if (typeof size === "number" && size > 0 && size <= AUTO_DOWNLOAD_THRESHOLD) {
@@ -242,9 +287,18 @@ function useTdlibDownload(remoteId: string | number | undefined, size: number, f
   return { status, progress, videoPath, totalBytes, error, start, pause, cancel };
 }
 
-export default function MessageVideo({ video, isVisible, context = "channel", activeDownload }: Props) {
+/* -------------------------
+   MessageVideo component
+   - uses @futurejj/react-native-visibility-sensor for visibility
+   - controls play/pause internally
+   ------------------------- */
+export default function MessageVideo({ video, context = "channel", activeDownload }: Props) {
   const [playerKey, setPlayerKey] = useState<number>(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const isScreenFocused = useIsFocused();
+  const appState = useRef<string>(AppState.currentState);
+  const idRef = useRef<string>("vid_" + Math.random().toString(36).slice(2, 9));
 
   const thumbnailPath = video?.thumbnail?.file?.local?.path;
   const minithumbnailData = video?.minithumbnail?.data;
@@ -262,10 +316,9 @@ export default function MessageVideo({ video, isVisible, context = "channel", ac
     }
   }
 
-  const tdFileId = video?.video?.id ?? video?.file?.id; // td file id
-  const remoteId = video?.video?.remote?.id ?? video?.file?.remote?.id; // remote id
+  const tdFileId = video?.video?.id ?? video?.file?.id;
+  const remoteId = video?.video?.remote?.id ?? video?.file?.remote?.id;
   const size = video?.video?.size ?? video?.size ?? 0;
-  const duration = video?.video?.duration ?? video?.duration ?? 0;
 
   const originalWidth = video?.width || 320;
   const originalHeight = video?.height || 240;
@@ -289,92 +342,173 @@ export default function MessageVideo({ video, isVisible, context = "channel", ac
 
   const { status, progress, videoPath, totalBytes, start, pause, cancel } = useTdlibDownload(remoteId, size, tdFileId, activeDownload);
 
-  // وقتی ویدیوپث ست شد key پلیر را افزایش می‌دیم تا mount شود (فقط وقتی مسیر جدید یا اولین بار)
   useEffect(() => {
     if (videoPath) setPlayerKey((k) => k + 1);
   }, [videoPath]);
 
   const isCompleted = status === "completed" && videoPath;
 
-  // UI: اگر فایل کامل نیست، نمایش thumbnail + دکمه دانلود (auto-download برای زیر 5MB انجام می‌شود)
+  // local playing state — controlled by sensor + focus manager + navigation
+  const [isPlayingLocal, setIsPlayingLocal] = useState(false);
+
+  // subscribe to VideoFocusManager
+  useEffect(() => {
+    const unsub = VideoFocusManager.subscribe({
+      id: idRef.current,
+      pause: () => {
+        setIsPlayingLocal(false);
+      },
+      onGranted: () => {
+        // nothing special required
+      },
+    });
+    return () => {
+      try {
+        unsub();
+      } catch (e) {}
+    };
+  }, []);
+
+  // pause all when screen not focused (navigation change)
+  useEffect(() => {
+    if (!isScreenFocused) {
+      VideoFocusManager.pauseAll();
+    }
+  }, [isScreenFocused]);
+
+  // AppState: pause on background/inactive
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      appState.current = next;
+      if (next !== "active") {
+        VideoFocusManager.pauseAll();
+      }
+    });
+    return () => {
+      try {
+        sub.remove();
+      } catch (e) {}
+    };
+  }, []);
+
+  // handle visibility changes from sensor
+  const handleVisibilityChange = useCallback(
+    (visible: boolean) => {
+      // only consider visible if app active, screen focused and not fullscreen
+      const shouldPlay = visible && appState.current === "active" && isScreenFocused && !isFullscreen;
+      if (shouldPlay) {
+        // request global focus so only one plays
+        VideoFocusManager.requestFocus(idRef.current);
+        const owner = (VideoFocusManager as any).getCurrent?.() ?? null;
+        const granted = owner === idRef.current;
+        if (granted) {
+          setIsPlayingLocal(true);
+        } else {
+          setIsPlayingLocal(false);
+        }
+      } else {
+        // release focus and pause
+        VideoFocusManager.releaseFocus(idRef.current);
+        setIsPlayingLocal(false);
+      }
+    },
+    [isFullscreen, isScreenFocused]
+  );
+
+  // cleanup on unmount
+  useEffect(() => {
+    return () => {
+      VideoFocusManager.releaseFocus(idRef.current);
+      try {
+        VideoFocusManager.pauseAll();
+      } catch (e) {}
+    };
+  }, []);
+
+  // UI: not downloaded yet => thumbnail + download UI
   if (!videoPath && !isCompleted) {
     return (
-      <View
-        style={{ width: finalWidth, height: finalHeight, borderRadius, overflow: "hidden", backgroundColor: "#000", justifyContent: "center", alignItems: "center" }}
-      >
-        {thumbnailUri && <Image source={{ uri: thumbnailUri }} style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0 }} resizeMode="cover" />}
+      <VisibilitySensor onChange={handleVisibilityChange}>
+        <View
+          style={{ width: finalWidth, height: finalHeight, borderRadius, overflow: "hidden", backgroundColor: "#000", justifyContent: "center", alignItems: "center" }}
+        >
+          {thumbnailUri && <Image source={{ uri: thumbnailUri }} style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0 }} resizeMode="cover" />}
 
-        {/* top-left download / pause-as-cancel */}
-        <View style={styles.topLeftOverlay} pointerEvents="box-none">
-          {status === "downloading" && (
-            <View style={styles.topLeftRow}>
-              <TouchableOpacity style={styles.smallCircle} onPress={() => pause()}>
-                <Pause width={14} height={14} color="#fff" />
-              </TouchableOpacity>
+          <View style={styles.topLeftOverlay} pointerEvents="box-none">
+            {status === "downloading" && (
+              <View style={styles.topLeftRow}>
+                <TouchableOpacity style={styles.smallCircle} onPress={() => pause()}>
+                  <Pause width={14} height={14} color="#fff" />
+                </TouchableOpacity>
 
-              <View style={styles.smallProgContainer}>
-                <Text style={styles.smallProgText}>{progress}%</Text>
+                <View style={styles.smallProgContainer}>
+                  <Text style={styles.smallProgText}>{progress}%</Text>
+                </View>
               </View>
-            </View>
-          )}
+            )}
 
-          {status === "idle" && (
-            <View style={{ alignItems: "center" }}>
-              <TouchableOpacity style={styles.smallCircle} onPress={() => start()}>
-                <Download width={14} height={14} color="#fff" />
+            {status === "idle" && (
+              <View style={{ alignItems: "center" }}>
+                <TouchableOpacity style={styles.smallCircle} onPress={() => start()}>
+                  <Download width={14} height={14} color="#fff" />
+                </TouchableOpacity>
+                <Text style={styles.sizeLabel}>{(size / (1024 * 1024)).toFixed(1)} MB</Text>
+              </View>
+            )}
+
+            {status === "error" && (
+              <TouchableOpacity style={[styles.smallCircle, { backgroundColor: "#cc3333" }]} onPress={() => start()}>
+                <X width={14} height={14} color="#fff" />
               </TouchableOpacity>
-              {/* show size label always when idle */}
-              <Text style={styles.sizeLabel}>{(size / (1024 * 1024)).toFixed(1)} MB</Text>
+            )}
+          </View>
+
+          {status === "downloading" && (
+            <View style={styles.bottomBar} pointerEvents="none">
+              <View style={styles.progressBarBg}>
+                <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
+              </View>
+              <Text style={styles.bottomText}>{progress}%</Text>
             </View>
           )}
 
-          {status === "error" && (
-            <TouchableOpacity style={[styles.smallCircle, { backgroundColor: "#cc3333" }]} onPress={() => start()}>
-              <X width={14} height={14} color="#fff" />
-            </TouchableOpacity>
+          {status === "downloading" && (
+            <View style={styles.loadingSpinner}>
+              <ActivityIndicator color="#fff" />
+            </View>
           )}
         </View>
-
-        {/* bottom progress bar (just percent and small bar) */}
-        {status === "downloading" && (
-          <View style={styles.bottomBar} pointerEvents="none">
-            <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
-            </View>
-            <Text style={styles.bottomText}>{progress}%</Text>
-          </View>
-        )}
-
-        {/* spinner to indicate downloading */}
-        {status === "downloading" && (
-          <View style={styles.loadingSpinner}>
-            <ActivityIndicator color="#fff" />
-          </View>
-        )}
-      </View>
+      </VisibilitySensor>
     );
   }
 
-  // player (بعد از تکمیل دانلود)
+  // player (after download)
   return (
-    <View style={{ width: finalWidth, height: finalHeight, borderRadius, overflow: "hidden", backgroundColor: "#000" }}>
-      <Video
-        key={playerKey}
-        source={videoPath ? { uri: videoPath } : undefined}
-        style={{ width: "100%", height: "100%" }}
-        resizeMode={isFullscreen ? "contain" : "cover"}
-        controls
-        paused={!isVisible}
-        repeat={true}
-        onError={(e) => console.warn("[MessageVideo] player error:", e)}
-        onLoad={(m) => console.log("[MessageVideo] player onLoad:", m)}
-        onBuffer={(b) => console.log("[MessageVideo] player onBuffer:", b)}
-        onFullscreenPlayerWillPresent={() => setIsFullscreen(true)}
-        onFullscreenPlayerWillDismiss={() => setIsFullscreen(false)}
-      />
-
-      {/* اگر دانلود کامل شده باشه overlay نیاز نیست */}
-    </View>
+    <VisibilitySensor onChange={handleVisibilityChange}>
+      <View style={{ width: finalWidth, height: finalHeight, borderRadius, overflow: "hidden", backgroundColor: "#000" }}>
+        <Video
+          key={playerKey}
+          source={videoPath ? { uri: videoPath } : undefined}
+          style={{ width: "100%", height: "100%" }}
+          resizeMode={isFullscreen ? "contain" : "cover"}
+          controls
+          paused={!isPlayingLocal}
+          repeat={true}
+          onError={(e) => console.warn("[MessageVideo] player error:", e)}
+          onLoad={(m) => console.log("[MessageVideo] player onLoad:", m)}
+          onBuffer={(b) => console.log("[MessageVideo] player onBuffer:", b)}
+          onFullscreenPlayerWillPresent={() => {
+            setIsFullscreen(true);
+            VideoFocusManager.requestFocus(idRef.current);
+          }}
+          onFullscreenPlayerWillDismiss={() => {
+            setIsFullscreen(false);
+            // when exit fullscreen, the sensor will re-evaluate; ensure we don't resume if screen isn't focused
+            if (!isScreenFocused) VideoFocusManager.pauseAll();
+          }}
+        />
+      </View>
+    </VisibilitySensor>
   );
 }
 
@@ -456,11 +590,3 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 });
-
-/*
-  Integration notes:
-  - make sure hooks/useMediaDownloadManager exports subscribeToFile(remoteIdOrFileId, listener) -> unsubscribe
-  - startDownload should accept remoteId (string|number) OR tdFileId; manager will try both keys
-  - cancelDownload should accept remoteId or tdFileId and the manager will try to cancel using mapped td id if available
-  - This version always shows size when idle and will attempt auto-start for files <= 5MB
-*/
