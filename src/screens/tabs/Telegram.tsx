@@ -23,7 +23,7 @@ export default function TelegramScreen() {
       setGlobalLoading(true);
       try {
         const res: any = await fetch(
-          `http://10.183.236.115:9000/feed-channel?team=perspolis`
+          `http://10.129.21.115:9000/feed-channel?team=perspolis`
         );
         const data = await res.json();
 

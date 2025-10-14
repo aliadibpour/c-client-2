@@ -39,6 +39,12 @@ export default function HomeScreen() {
   const isFocused = useIsFocused();
 
   const [activeTab, setActiveTab] = useState(pepe("برای شما"));
+  // keep a ref to always read latest activeTab from callbacks/closures
+  const activeTabRef = useRef<string>(activeTab);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
   const [messages, setMessages] = useState<any[]>([]);
   const [visibleIds, setVisibleIds] = useState<number[]>([]);
   const alreadyViewed = useRef<Set<number>>(new Set());
@@ -468,30 +474,82 @@ export default function HomeScreen() {
     [loadBatch, messages, getAndCacheChatInfo, ensureRepliesForMessages]
   );
 
-  // notify server batch reached (keeps as in your original)
-  const sentBatchesRef = useRef<Set<number>>(new Set());
-  const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
+  // helper: read stored user info (robust for multiple formats)
+  const getStoredUserInfo = useCallback(async (): Promise<{ uuid?: string; activeTab?: string }> => {
     try {
-      if (sentBatchesRef.current.has(batchIdx)) return;
-      const start = batchIdx * BATCH_SIZE;
-      const metas = datasRef.current.slice(start, start + BATCH_SIZE);
-      if (!metas.length) return;
-      const ids: string[] = metas.map((m) => `${m.messageId}`);
-      const uuidRaw: any = await AsyncStorage.getItem("userId-corner");
-      const parsedUuid = JSON.parse(uuidRaw || "{}").uuid;
-      if (!parsedUuid) return;
-      const params = new URLSearchParams();
-      params.append("uuid", parsedUuid);
-      ids.forEach((id) => params.append("messageIds", id));
-      await fetch(`http://10.129.218.115:9000/feed-message/seen-message?${params.toString()}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      sentBatchesRef.current.add(batchIdx);
-    } catch (err) {
-      // ignore
+      const raw = await AsyncStorage.getItem("userId-corner");
+      if (!raw) return {};
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          if (parsed.uuid) return { uuid: String(parsed.uuid), activeTab: parsed.activeTab ? String(parsed.activeTab) : undefined };
+        }
+      } catch (e) {
+        // not JSON — raw is a string (maybe combined)
+      }
+      const str = raw as string;
+      const currentTab = activeTabRef.current;
+      if (currentTab && str.endsWith(currentTab)) {
+        const uuid = str.slice(0, str.length - currentTab.length);
+        return { uuid, activeTab: currentTab };
+      }
+      return { uuid: str };
+    } catch (e) {
+      return {};
     }
   }, []);
+
+  // notify server batch reached (keeps as in your original) — read activeTab from ref and uuid via helper
+  // keep track of sent batches per activeTab so tabs don't block each other
+const sentBatchesMapRef = useRef<Map<string, Set<number>>>(new Map());
+
+function hasSentBatchForTab(tab: string, batchIdx: number) {
+  const key = tab || '__GLOBAL__';
+  const s = sentBatchesMapRef.current.get(key);
+  return !!s && s.has(batchIdx);
+}
+function markSentBatchForTab(tab: string, batchIdx: number) {
+  const key = tab || '__GLOBAL__';
+  let s = sentBatchesMapRef.current.get(key);
+  if (!s) {
+    s = new Set<number>();
+    sentBatchesMapRef.current.set(key, s);
+  }
+  s.add(batchIdx);
+}
+
+const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
+  try {
+    const currentTab = activeTabRef.current || '';
+    if (hasSentBatchForTab(currentTab, batchIdx)) return;
+
+    const start = batchIdx * BATCH_SIZE;
+    const metas = datasRef.current.slice(start, start + BATCH_SIZE);
+    if (!metas.length) return;
+    const ids: string[] = metas.map((m) => `${m.messageId}`);
+
+    const parsed = await getStoredUserInfo();
+    if (!parsed?.uuid) return;
+
+    const params = new URLSearchParams();
+    params.append("uuid", parsed.uuid);
+    ids.forEach((id) => params.append("messageIds", id));
+    params.append("activeTab", currentTab);
+
+    // debug log (remove or lower verbosity later)
+    console.log('[notify] sending seen-message', { tab: currentTab, batchIdx, idsLength: ids.length });
+
+    await fetch(`http://10.129.218.115:9000/feed-message/seen-message?${params.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    // mark as sent for this tab
+    markSentBatchForTab(currentTab, batchIdx);
+  } catch (err) {
+    console.warn('[notify] failed', err);
+  }
+}, []);
 
   // initial load effect
   useEffect(() => {
@@ -504,10 +562,10 @@ export default function HomeScreen() {
         setInitialLoading(true);
         setInitialError(false);
 
-        const uuidRaw: any = await AsyncStorage.getItem("userId-corner");
-        const parsedUuid = JSON.parse(uuidRaw || "{}").uuid;
-        const serverTab = activeTab;
-
+        const parsed = await getStoredUserInfo();
+        const parsedUuid = parsed.uuid;
+        if (!parsedUuid) return;
+        const serverTab = activeTabRef.current || activeTab;
         const res = await fetch(`http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}`);
         const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!mounted) return;
@@ -745,8 +803,14 @@ export default function HomeScreen() {
       const nextBatchIdx = currentBatchIdx + 1;
       const start = nextBatchIdx * BATCH_SIZE;
       if (start >= datasRef.current.length) {
-        const uuidRaw: any = await AsyncStorage.getItem("userId-corner");
-        const res = await fetch(`http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(activeTab)}&uuid=${JSON.parse(uuidRaw || "{}").uuid}`);
+        const parsed = await getStoredUserInfo();
+        if (!parsed?.uuid) {
+          setLoadingMore(false);
+          isLoadingMoreRef.current = false;
+          return;
+        }
+        console.log(encodeURIComponent(activeTabRef.current))
+        const res = await fetch(`http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(activeTabRef.current)}&uuid=${parsed.uuid}`);
         const newDatas: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!newDatas || newDatas.length === 0) {
           setLoadingMore(false);
@@ -835,6 +899,12 @@ export default function HomeScreen() {
     if (y <= 5) showHeader();
   };
 
+  // small helper to set activeTab and sync ref in one place
+  const setActiveTabAndSync = useCallback((tab: string) => {
+    activeTabRef.current = tab;
+    setActiveTab(tab);
+  }, []);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
@@ -850,7 +920,7 @@ export default function HomeScreen() {
         style={[styles.animatedHeader, { transform: [{ translateY }] }]}
       >
         <View style={{ flex: 1, backgroundColor: "transparent", overflow: "hidden" }} pointerEvents="box-none">
-          <HomeHeader activeTab={activeTab} setActiveTab={setActiveTab} />
+          <HomeHeader activeTab={activeTab} setActiveTab={setActiveTabAndSync} />
         </View>
       </Animated.View>
 

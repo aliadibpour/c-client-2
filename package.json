@@ -10,12 +10,16 @@
     "test": "jest"
   },
   "dependencies": {
+    "@futurejj/react-native-visibility-sensor": "^1.4.4",
+    "@herberthtk/react-native-viewport": "^0.1.15",
     "@react-native-async-storage/async-storage": "^2.1.2",
     "@react-native-community/blur": "^4.4.1",
+    "@react-native-community/slider": "^5.0.1",
     "@react-navigation/bottom-tabs": "^7.3.11",
     "@react-navigation/native": "^7.1.7",
     "@react-navigation/native-stack": "^7.3.11",
     "@shopify/flash-list": "^2.0.3",
+    "@svanboxel/visibility-sensor-react-native": "^1.0.2",
     "axios": "^1.9.0",
     "base64-js": "^1.5.1",
     "libphonenumber-js": "^1.12.8",
@@ -31,6 +35,7 @@
     "react-native-image-layout": "^5.9.1",
     "react-native-image-viewing": "^0.2.2",
     "react-native-image-zoom-viewer": "^3.0.1",
+    "react-native-inviewport": "^1.1.0",
     "react-native-linear-gradient": "^2.8.3",
     "react-native-masonry-list": "^2.16.2",
     "react-native-modal": "^14.0.0-rc.1",
@@ -43,8 +48,9 @@
     "react-native-storage": "^1.0.1",
     "react-native-svg": "^15.12.0",
     "react-native-tdlib": "^1.0.2",
-    "react-native-video": "^6.14.1",
+    "react-native-video": "^6.17.0",
     "react-native-video-controls": "^2.8.1",
+    "react-visibility-sensor": "^5.1.1",
     "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
