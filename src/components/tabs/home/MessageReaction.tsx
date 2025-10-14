@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     gap: 10,
-    marginTop: 12,
+    marginTop: 5,
     flexWrap: "wrap",
   },
   reactionBox: {

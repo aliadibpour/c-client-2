@@ -144,7 +144,7 @@ function MessageItem({ data, isVisible, activeDownload, chatInfo }: Props) {
         )}
       </TouchableOpacity>
 
-      {content?.video && <VideoMessage video={content.video} isVisible={isVisible} activeDownload={activeDownload} />}
+      {content?.video && <VideoMessage video={content.video} activeDownload={activeDownload} />}
 
       {message.interactionInfo?.reactions?.reactions?.length > 0 && (
         <MessageReactions
@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
   },
   bodyText: {
     color: "#ccc",
-    marginBottom: 10,
+    marginBottom: 6,
     fontSize: 13.5,
     fontFamily: "SFArabic-Regular",
     lineHeight: 25,
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
   commentsRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 8,
+    marginTop: 6,
     marginLeft: 4.5,
     gap: 6,
   },
