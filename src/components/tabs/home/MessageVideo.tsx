@@ -1,4 +1,4 @@
-// MessageVideoVisibility.tsx
+// MessageVideo.tsx  (final updated)
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -10,10 +10,14 @@ import {
   TouchableOpacity,
   Text,
   AppState,
+  LayoutChangeEvent,
+  Modal,
+  Pressable,
+  I18nManager,
 } from "react-native";
 import Video from "react-native-video";
 import { VisibilitySensor } from '@futurejj/react-native-visibility-sensor';
-import { Download, Pause, Play, X } from "lucide-react-native";
+import { Download, Pause, Play, X, Maximize2, Minimize2 } from "lucide-react-native";
 import { startDownload, cancelDownload, subscribeToFile } from "../../../hooks/useMediaDownloadManager";
 import { useIsFocused } from "@react-navigation/native";
 
@@ -21,19 +25,18 @@ import { useIsFocused } from "@react-navigation/native";
 const screenWidth = Dimensions.get("window").width;
 const AUTO_DOWNLOAD_THRESHOLD = 5 * 1024 * 1024; // 5 MB
 const STALL_TIMEOUT_MS = 8000;
+const CONTROLS_AUTOHIDE_MS = 3000;
 
 type DownloadStatus = "idle" | "downloading" | "paused" | "completed" | "error";
 
 interface Props {
   video: any;
-  // note: isVisible prop removed on purpose; component manages its own visibility
   activeDownload?: any;
   context?: "channel" | "explore";
 }
 
 /* -------------------------
    VideoFocusManager (singleton)
-   ensures only one video plays at once and can force-pause all
    ------------------------- */
 export const VideoFocusManager = (() => {
   let currentOwner: string | null = null;
@@ -51,18 +54,12 @@ export const VideoFocusManager = (() => {
     requestFocus(id: string) {
       if (currentOwner === id) return true;
       if (currentOwner && subs.has(currentOwner)) {
-        try {
-          subs.get(currentOwner)!.pause();
-        } catch (e) {
-          // ignore
-        }
+        try { subs.get(currentOwner)!.pause(); } catch (e) {}
       }
       currentOwner = id;
       const now = subs.get(id);
       if (now && now.onGranted) {
-        try {
-          now.onGranted();
-        } catch (e) {}
+        try { now.onGranted(); } catch (e) {}
       }
       return true;
     },
@@ -72,25 +69,18 @@ export const VideoFocusManager = (() => {
     },
 
     pauseAll() {
-      for (const s of subs.values()) {
-        try {
-          s.pause();
-        } catch (e) {}
-      }
+      for (const s of subs.values()) { try { s.pause(); } catch (e) {} }
       currentOwner = null;
     },
 
-    getCurrent() {
-      return currentOwner;
-    },
+    getCurrent() { return currentOwner; },
   };
 })();
 
 /* -------------------------
-   useTdlibDownload (copied/kept from your code)
+   useTdlibDownload (kept compatible)
    ------------------------- */
 function useTdlibDownload(remoteId: string | number | undefined, size: number, fileId?: number | undefined, externalActiveDownload?: any) {
-  console.log("useTdlibDownload init - remoteId:", remoteId, "fileId:", fileId, "size:", size);
   const [status, setStatus] = useState<DownloadStatus>("idle");
   const [progress, setProgress] = useState<number>(0);
   const [videoPath, setVideoPath] = useState<string | null>(null);
@@ -103,10 +93,7 @@ function useTdlibDownload(remoteId: string | number | undefined, size: number, f
   const stallRef = useRef<any>(null);
 
   const clearStall = useCallback(() => {
-    if (stallRef.current) {
-      clearTimeout(stallRef.current);
-      stallRef.current = null;
-    }
+    if (stallRef.current) { clearTimeout(stallRef.current); stallRef.current = null; }
   }, []);
 
   const resetStall = useCallback(() => {
@@ -117,12 +104,7 @@ function useTdlibDownload(remoteId: string | number | undefined, size: number, f
   }, [remoteId, clearStall]);
 
   const parseRaw = (rawEvent: any) => {
-    try {
-      const raw = rawEvent.raw ?? rawEvent;
-      return typeof raw === "string" ? JSON.parse(raw) : raw;
-    } catch (e) {
-      return rawEvent;
-    }
+    try { const raw = rawEvent.raw ?? rawEvent; return typeof raw === "string" ? JSON.parse(raw) : raw; } catch (e) { return rawEvent; }
   };
 
   const idMatchesRemote = (f: any) => {
@@ -138,159 +120,80 @@ function useTdlibDownload(remoteId: string | number | undefined, size: number, f
     if (!snapshot) return;
     if (snapshot.total != null) setTotalBytes(snapshot.total);
     if (snapshot.progress != null) {
-      if (snapshot.progress !== lastPercentRef.current) {
-        lastPercentRef.current = snapshot.progress;
-        setProgress(snapshot.progress);
-      }
+      if (snapshot.progress !== lastPercentRef.current) { lastPercentRef.current = snapshot.progress; setProgress(snapshot.progress); }
     }
     if (snapshot.status) setStatus(snapshot.status);
     if (snapshot.path) setVideoPath(snapshot.path);
-    if (snapshot.status === "completed" && snapshot.path) {
-      setProgress(100);
-      setStatus("completed");
-    }
+    if (snapshot.status === "completed" && snapshot.path) { setProgress(100); setStatus("completed"); }
   };
 
   useEffect(() => {
     if (!remoteId && !fileId) return;
 
     if (externalActiveDownload) {
-      try {
-        applySnapshot(externalActiveDownload);
-      } catch (e) {
-        console.warn("[useTdlibDownload] externalActiveDownload error", e);
-      }
+      try { applySnapshot(externalActiveDownload); } catch (e) { console.warn("[useTdlibDownload] externalActiveDownload error", e); }
     }
 
     try {
       if (typeof subscribeToFile === "function") {
-        const unsub = subscribeToFile((Number(remoteId) || String(remoteId) as any), (snap: any) => {
-          try {
-            applySnapshot(snap);
-            resetStall();
-          } catch (e) {
-            console.warn("[useTdlibDownload] subscribeToFile cb error", e);
-          }
-        });
+        const unsub = subscribeToFile((Number(remoteId) || String(remoteId) as any), (snap: any) => { try { applySnapshot(snap); resetStall(); } catch (e) { console.warn("[useTdlibDownload] subscribeToFile cb error", e); } });
         subUnsubRef.current = unsub;
       }
-    } catch (e) {
-      console.warn("[useTdlibDownload] subscribeToFile failed", e);
-    }
+    } catch (e) { console.warn("[useTdlibDownload] subscribeToFile failed", e); }
 
     const deviceSub = DeviceEventEmitter.addListener("tdlib-update", (ev) => {
       try {
         const parsed = parseRaw(ev);
         const f = parsed.file ?? parsed.data?.file ?? parsed.data ?? parsed;
-        if (!f) return;
-        if (!idMatchesRemote(f)) return;
-
+        if (!f) return; if (!idMatchesRemote(f)) return;
         const local = f.local ?? {};
         const localPath = local.path ?? null;
-        const downloadedSize =
-          local.downloadedSize ?? local.downloaded_size ?? local.downloaded_prefix_size ?? f.downloadedSize ?? f.downloaded_size ?? 0;
+        const downloadedSize = local.downloadedSize ?? local.downloaded_size ?? local.downloaded_prefix_size ?? f.downloadedSize ?? f.downloaded_size ?? 0;
         const total = f.size ?? f.total ?? null;
         if (total) setTotalBytes(total);
-
         const percent = total ? Math.floor((downloadedSize / Math.max(1, total)) * 100) : 0;
-        if (percent !== lastPercentRef.current) {
-          lastPercentRef.current = percent;
-          setProgress(percent);
-          resetStall();
-        }
-
+        if (percent !== lastPercentRef.current) { lastPercentRef.current = percent; setProgress(percent); resetStall(); }
         const completed = !!local.is_downloading_completed || !!local.isDownloadingCompleted || false;
         if (completed && localPath) {
           lastLocalPathRef.current = localPath;
           const uri = String(localPath).startsWith("file://") ? String(localPath) : "file://" + String(localPath);
-          setVideoPath(uri);
-          setStatus("completed");
-          setProgress(100);
-        } else {
-          if (status !== "downloading" && status !== "error") setStatus("downloading");
-        }
-      } catch (e) {
-        console.warn("[useTdlibDownload] device update parse err", e);
-      }
+          setVideoPath(uri); setStatus("completed"); setProgress(100);
+        } else { if (status !== "downloading" && status !== "error") setStatus("downloading"); }
+      } catch (e) { console.warn("[useTdlibDownload] device update parse err", e); }
     });
 
-    return () => {
-      try {
-        if (subUnsubRef.current) subUnsubRef.current();
-      } catch (e) {}
-      try {
-        deviceSub.remove();
-      } catch (e) {}
-      clearStall();
-    };
+    return () => { try { if (subUnsubRef.current) subUnsubRef.current(); } catch (e) {} try { deviceSub.remove(); } catch (e) {} clearStall(); };
   }, [remoteId, fileId, externalActiveDownload, resetStall]);
 
   const attemptStart = async () => {
     try {
       const rid = remoteId == null ? null : Number.isFinite(Number(remoteId)) ? Number(remoteId) : String(remoteId);
-      if (rid != null) {
-        console.log("[useTdlibDownload] startDownload with remoteId:", rid);
-        await startDownload((rid as any));
-        return;
-      }
-      if (fileId != null) {
-        console.log("[useTdlibDownload] startDownload fallback with fileId:", fileId);
-        await startDownload(fileId);
-        return;
-      }
+      if (rid != null) { await startDownload((rid as any)); return; }
+      if (fileId != null) { await startDownload(fileId); return; }
       throw new Error("no remoteId or fileId to start");
-    } catch (e: any) {
-      console.warn("[useTdlibDownload] startDownload failed:", e);
-      setError(String(e));
-      setStatus("error");
-      throw e;
-    }
+    } catch (e: any) { console.warn("[useTdlibDownload] startDownload failed:", e); setError(String(e)); setStatus("error"); throw e; }
   };
 
-  const start = useCallback(() => {
-    if (!remoteId && !fileId) {
-      console.warn("[useTdlibDownload] start called but no remoteId/fileId");
-      return;
-    }
-    setError(null);
-    setStatus("downloading");
-    attemptStart().catch(() => {});
-  }, [remoteId, fileId]);
+  const start = useCallback(() => { if (!remoteId && !fileId) return; setError(null); setStatus("downloading"); attemptStart().catch(() => {}); }, [remoteId, fileId]);
 
   const pause = useCallback(() => {
     try {
       if (!remoteId && !fileId) return;
       const rid = remoteId == null ? null : Number.isFinite(Number(remoteId)) ? Number(remoteId) : String(remoteId);
       cancelDownload((rid ?? (fileId as any)));
-      setStatus("idle");
-      setProgress(0);
-      setVideoPath(null);
-      lastLocalPathRef.current = null;
-    } catch (e) {
-      console.warn("[useTdlibDownload] pause/cancel err:", e);
-      setError(String(e));
-      setStatus("error");
-    }
+      setStatus("idle"); setProgress(0); setVideoPath(null); lastLocalPathRef.current = null;
+    } catch (e) { console.warn("[useTdlibDownload] pause/cancel err:", e); setError(String(e)); setStatus("error"); }
   }, [remoteId, fileId]);
 
-  const cancel = useCallback(() => {
-    pause();
-  }, [pause]);
+  const cancel = useCallback(() => { pause(); }, [pause]);
 
-  useEffect(() => {
-    if ((!remoteId && !fileId) || status !== "idle") return;
-    if (typeof size === "number" && size > 0 && size <= AUTO_DOWNLOAD_THRESHOLD) {
-      start();
-    }
-  }, [remoteId, fileId, size, status, start]);
+  useEffect(() => { if ((!remoteId && !fileId) || status !== "idle") return; if (typeof size === "number" && size > 0 && size <= AUTO_DOWNLOAD_THRESHOLD) { start(); } }, [remoteId, fileId, size, status, start]);
 
   return { status, progress, videoPath, totalBytes, error, start, pause, cancel };
 }
 
 /* -------------------------
    MessageVideo component
-   - uses @futurejj/react-native-visibility-sensor for visibility
-   - controls play/pause internally
    ------------------------- */
 export default function MessageVideo({ video, context = "channel", activeDownload }: Props) {
   const [playerKey, setPlayerKey] = useState<number>(0);
@@ -311,9 +214,7 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
       if (typeof btoa !== "undefined") base64 = btoa(binary);
       else if (typeof Buffer !== "undefined") base64 = Buffer.from(binary, "binary").toString("base64");
       if (base64) thumbnailUri = `data:image/jpeg;base64,${base64}`;
-    } catch (e) {
-      console.warn("[MessageVideo] minithumbnail error:", e);
-    }
+    } catch (e) { console.warn("[MessageVideo] minithumbnail error:", e); }
   }
 
   const tdFileId = video?.video?.id ?? video?.file?.id;
@@ -331,10 +232,7 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
   let displayWidth = Math.min(originalWidth, maxWidth);
   displayWidth = Math.max(displayWidth, minWidth);
   let displayHeight = displayWidth / aspectRatio;
-  if (displayHeight > maxHeight) {
-    displayHeight = maxHeight;
-    displayWidth = displayHeight * aspectRatio;
-  }
+  if (displayHeight > maxHeight) { displayHeight = maxHeight; displayWidth = displayHeight * aspectRatio; }
 
   const finalWidth = displayWidth < screenWidth * 0.72 ? screenWidth * 0.72 : displayWidth;
   const finalHeight = displayHeight < 160 ? 160 : displayHeight;
@@ -342,96 +240,201 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
 
   const { status, progress, videoPath, totalBytes, start, pause, cancel } = useTdlibDownload(remoteId, size, tdFileId, activeDownload);
 
-  useEffect(() => {
-    if (videoPath) setPlayerKey((k) => k + 1);
-  }, [videoPath]);
+  useEffect(() => { if (videoPath) setPlayerKey((k) => k + 1); }, [videoPath]);
 
   const isCompleted = status === "completed" && videoPath;
 
-  // local playing state — controlled by sensor + focus manager + navigation
+  // refs for inline and modal video
+  const inlineRef = useRef<any>(null);
+  const modalRef = useRef<any>(null);
+
+  // playback
   const [isPlayingLocal, setIsPlayingLocal] = useState(false);
 
-  // subscribe to VideoFocusManager
+  // controls
+  const [showControls, setShowControls] = useState<boolean>(false);
+  const controlsTimerRef = useRef<any>(null);
+
+  // meta
+  const [duration, setDuration] = useState<number>(0);
+  const [currentTime, setCurrentTime] = useState<number>(0);
+  const [isSeeking, setIsSeeking] = useState(false);
+
+  // seek bar layout info (for robust tap)
+  const seekBarRef = useRef<any>(null);
+  const [seekBarWidth, setSeekBarWidth] = useState<number>(0);
+  const [seekLayoutX, setSeekLayoutX] = useState<number>(0);
+
+  // pending seeks
+  const pendingSeekForModal = useRef<number | null>(null);
+  const pendingSeekForInline = useRef<number | null>(null);
+
+  // subscribe focus manager
   useEffect(() => {
-    const unsub = VideoFocusManager.subscribe({
-      id: idRef.current,
-      pause: () => {
-        setIsPlayingLocal(false);
-      },
-      onGranted: () => {
-        // nothing special required
-      },
-    });
-    return () => {
-      try {
-        unsub();
-      } catch (e) {}
-    };
+    const unsub = VideoFocusManager.subscribe({ id: idRef.current, pause: () => setIsPlayingLocal(false), onGranted: () => {} });
+    return () => { try { unsub(); } catch (e) {} };
   }, []);
 
-  // pause all when screen not focused (navigation change)
-  useEffect(() => {
-    if (!isScreenFocused) {
-      VideoFocusManager.pauseAll();
+  useEffect(() => { if (!isScreenFocused) VideoFocusManager.pauseAll(); }, [isScreenFocused]);
+  useEffect(() => { const sub = AppState.addEventListener("change", (next) => { appState.current = next; if (next !== "active") VideoFocusManager.pauseAll(); }); return () => { try { sub.remove(); } catch (e) {} }; }, []);
+
+  // Visibility handler: require >=50% to auto-play
+  const handleVisibilityChange = useCallback((payload: any) => {
+    // payload might be boolean | number | object
+    let percent = 0;
+    if (typeof payload === "number") percent = payload;
+    else if (typeof payload === "boolean") percent = payload ? 100 : 0;
+    else if (payload && typeof payload === "object") {
+      if (typeof payload.visiblePercent === "number") percent = payload.visiblePercent;
+      else if (typeof payload.percent === "number") percent = payload.percent;
+      else if (typeof payload.isVisible === "boolean") percent = payload.isVisible ? 100 : 0;
+      else percent = Number(payload.coverage ?? 0) || 0;
     }
-  }, [isScreenFocused]);
 
-  // AppState: pause on background/inactive
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", (next) => {
-      appState.current = next;
-      if (next !== "active") {
-        VideoFocusManager.pauseAll();
-      }
-    });
-    return () => {
-      try {
-        sub.remove();
-      } catch (e) {}
-    };
-  }, []);
-
-  // handle visibility changes from sensor
-  const handleVisibilityChange = useCallback(
-    (visible: boolean) => {
-      // only consider visible if app active, screen focused and not fullscreen
-      const shouldPlay = visible && appState.current === "active" && isScreenFocused && !isFullscreen;
-      if (shouldPlay) {
-        // request global focus so only one plays
-        VideoFocusManager.requestFocus(idRef.current);
-        const owner = (VideoFocusManager as any).getCurrent?.() ?? null;
-        const granted = owner === idRef.current;
-        if (granted) {
-          setIsPlayingLocal(true);
-        } else {
-          setIsPlayingLocal(false);
-        }
-      } else {
-        // release focus and pause
-        VideoFocusManager.releaseFocus(idRef.current);
-        setIsPlayingLocal(false);
-      }
-    },
-    [isFullscreen, isScreenFocused]
-  );
-
-  // cleanup on unmount
-  useEffect(() => {
-    return () => {
+    const isMoreThanHalfVisible = percent >= 50;
+    const shouldAutoPlay = isMoreThanHalfVisible && appState.current === "active" && isScreenFocused && !isFullscreen;
+    if (shouldAutoPlay) {
+      VideoFocusManager.requestFocus(idRef.current);
+      const owner = (VideoFocusManager as any).getCurrent?.() ?? null;
+      if (owner === idRef.current) setIsPlayingLocal(true);
+    } else {
+      // if user is interacting we don't force pause immediately
+      if (!showControls) setIsPlayingLocal(false);
       VideoFocusManager.releaseFocus(idRef.current);
+    }
+  }, [isFullscreen, isScreenFocused, showControls]);
+
+  useEffect(() => { return () => { VideoFocusManager.releaseFocus(idRef.current); try { VideoFocusManager.pauseAll(); } catch (e) {} if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current); }; }, []);
+
+  // overlay tap
+  const onOverlayTap = useCallback(() => {
+    setShowControls((prev) => !prev);
+    if (controlsTimerRef.current) { clearTimeout(controlsTimerRef.current); controlsTimerRef.current = null; }
+    if (!showControls && isPlayingLocal) {
+      controlsTimerRef.current = setTimeout(() => { setShowControls(false); controlsTimerRef.current = null; }, CONTROLS_AUTOHIDE_MS);
+    }
+  }, [isPlayingLocal, showControls]);
+
+  // play/pause
+  const togglePlay = useCallback(() => {
+    if (isPlayingLocal) {
+      setIsPlayingLocal(false);
+    } else {
+      VideoFocusManager.requestFocus(idRef.current);
+      const owner = (VideoFocusManager as any).getCurrent?.() ?? null;
+      if (owner === idRef.current) setIsPlayingLocal(true);
+    }
+    setShowControls(true);
+    if (controlsTimerRef.current) { clearTimeout(controlsTimerRef.current); controlsTimerRef.current = null; }
+    if (!isPlayingLocal) {
+      controlsTimerRef.current = setTimeout(() => { setShowControls(false); controlsTimerRef.current = null; }, CONTROLS_AUTOHIDE_MS);
+    }
+  }, [isPlayingLocal]);
+
+  // onLoad handlers
+  const onLoadInline = useCallback((meta: any) => {
+    if (meta?.duration) setDuration(meta.duration);
+    if (pendingSeekForInline.current != null) {
       try {
-        VideoFocusManager.pauseAll();
-      } catch (e) {}
-    };
+        if (inlineRef.current && typeof inlineRef.current.seek === "function") {
+          inlineRef.current.seek(pendingSeekForInline.current);
+          setCurrentTime(pendingSeekForInline.current);
+        }
+      } catch (e) { console.warn("inline seek after load err", e); }
+      pendingSeekForInline.current = null;
+    }
   }, []);
 
-  // UI: not downloaded yet => thumbnail + download UI
-  if (!videoPath && !isCompleted) {
+  const onLoadModal = useCallback((meta: any) => {
+    if (meta?.duration) setDuration(meta.duration);
+    if (pendingSeekForModal.current != null) {
+      try {
+        if (modalRef.current && typeof modalRef.current.seek === "function") {
+          modalRef.current.seek(pendingSeekForModal.current);
+          setCurrentTime(pendingSeekForModal.current);
+        }
+      } catch (e) { console.warn("modal seek after load err", e); }
+      pendingSeekForModal.current = null;
+    }
+  }, []);
+
+  const onProgress = useCallback((p: any) => { if (!isSeeking) setCurrentTime(p.currentTime || 0); }, [isSeeking]);
+
+  // seek util
+  const seekTo = useCallback((t: number) => {
+    try {
+      const ref = isFullscreen ? modalRef.current : inlineRef.current;
+      if (ref && typeof ref.seek === "function") {
+        ref.seek(t);
+        setCurrentTime(t);
+      } else {
+        if (isFullscreen) pendingSeekForModal.current = t;
+        else pendingSeekForInline.current = t;
+      }
+    } catch (e) {
+      console.warn("seek error", e);
+    }
+  }, [isFullscreen]);
+
+  // measure seek bar absolute position (for robust tapping)
+  const onSeekBarLayout = useCallback((e: LayoutChangeEvent) => {
+    // store width from layout (fallback)
+    const w = e.nativeEvent.layout.width;
+    setSeekBarWidth(w);
+    // attempt to measure absolute x using measureInWindow if available (helps pageX math)
+    const node = seekBarRef.current;
+    if (node && typeof node.measureInWindow === "function") {
+      try {
+        node.measureInWindow((x: number, y: number, width: number, height: number) => {
+          setSeekLayoutX(x);
+          setSeekBarWidth(width);
+        });
+      } catch (err) {
+        // ignore, width already set
+      }
+    }
+  }, []);
+
+  const onSeekPress = useCallback((e: any) => {
+    if (seekBarWidth <= 0 || duration <= 0) return;
+    // use pageX for absolute touch x
+    const pageX = e.nativeEvent.pageX ?? e.nativeEvent.locationX ?? 0;
+    let relativeX = pageX - seekLayoutX;
+    if (!isFinite(relativeX)) relativeX = e.nativeEvent.locationX ?? 0;
+    // clamp
+    if (relativeX < 0) relativeX = 0;
+    if (relativeX > seekBarWidth) relativeX = seekBarWidth;
+    let percent = relativeX / seekBarWidth;
+    // If your layout is mirrored and you want logical left->right always, flip when RTL:
+    if (I18nManager.isRTL) percent = 1 - percent;
+    const t = percent * duration;
+    seekTo(t);
+  }, [seekBarWidth, duration, seekLayoutX, seekTo]);
+
+  useEffect(() => { if (isCompleted) { const owner = (VideoFocusManager as any).getCurrent?.() ?? null; if (owner === idRef.current) setIsPlayingLocal(true); } }, [isCompleted]);
+
+  // fullscreen open/close
+  const openFullscreen = useCallback(() => {
+    pendingSeekForModal.current = currentTime;
+    setIsFullscreen(true);
+    setShowControls(true);
+    VideoFocusManager.requestFocus(idRef.current);
+  }, [currentTime]);
+
+  const closeFullscreen = useCallback(() => {
+    pendingSeekForInline.current = currentTime;
+    setIsFullscreen(false);
+    setShowControls(false);
+  }, [currentTime]);
+
+  // Determine whether to show download UI (more robust)
+  const showDownloadUI = (!isCompleted && (!videoPath || status !== "completed")) || (status === "downloading") || (progress > 0 && progress < 100);
+
+  // Player UI when not downloaded yet (download UI)
+  if (showDownloadUI && !isCompleted && !videoPath) {
     return (
       <VisibilitySensor onChange={handleVisibilityChange}>
-        <View
-          style={{ width: finalWidth, height: finalHeight, borderRadius, overflow: "hidden", backgroundColor: "#000", justifyContent: "center", alignItems: "center" }}
-        >
+        <View style={{ width: finalWidth, height: finalHeight, borderRadius, overflow: "hidden", backgroundColor: "#000", justifyContent: "center", alignItems: "center" }}>
           {thumbnailUri && <Image source={{ uri: thumbnailUri }} style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0 }} resizeMode="cover" />}
 
           <View style={styles.topLeftOverlay} pointerEvents="box-none">
@@ -463,7 +466,7 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
             )}
           </View>
 
-          {status === "downloading" && (
+          {(status === "downloading" || (progress > 0 && progress < 100)) && (
             <View style={styles.bottomBar} pointerEvents="none">
               <View style={styles.progressBarBg}>
                 <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
@@ -472,7 +475,7 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
             </View>
           )}
 
-          {status === "downloading" && (
+          {(status === "downloading" || (progress > 0 && progress < 100)) && (
             <View style={styles.loadingSpinner}>
               <ActivityIndicator color="#fff" />
             </View>
@@ -482,111 +485,146 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
     );
   }
 
-  // player (after download)
+  // --- Inline Player ---
+  const PlayerInner = (
+    <View style={{ width: finalWidth, height: finalHeight, borderRadius, overflow: "hidden", backgroundColor: "#000" }}>
+      <Video
+        ref={inlineRef}
+        key={playerKey + (isFullscreen ? "_fs" : "")}
+        source={videoPath ? { uri: videoPath } : undefined}
+        style={{ width: "100%", height: "100%" }}
+        resizeMode={isFullscreen ? "contain" : "cover"}
+        controls={false}
+        paused={!isPlayingLocal}
+        onError={(e) => console.warn("[MessageVideo] player error:", e)}
+        onLoad={onLoadInline}
+        onProgress={onProgress}
+        repeat={true}
+      />
+
+      {/* overlay: use View + Pressable so pointerEvents typing is OK */}
+      <View pointerEvents={showControls ? "box-none" : "auto"} style={styles.tapOverlay}>
+        <Pressable style={{ flex: 1 }} onPress={onOverlayTap} />
+      </View>
+
+      {/* Custom controls above overlay */}
+      {showControls && (
+        <View style={styles.controllerOverlay} pointerEvents="box-none">
+          <View style={styles.controllerCenterRow}>
+            <TouchableOpacity onPress={togglePlay} style={styles.playButton}>
+              {isPlayingLocal ? <Pause width={28} height={28} color="#fff" /> : <Play width={28} height={28} color="#fff" />}
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.controllerBottomRow}>
+            <View style={{ flex: 1 }} ref={seekBarRef} onLayout={onSeekBarLayout}>
+              <Pressable activeOpacity={1} onPress={onSeekPress} style={styles.seekBarTouchable}>
+                <View style={styles.seekBg}>
+                  {/* Force grow from LEFT -> RIGHT by anchoring left:0 */}
+                  <View style={[styles.seekFill, { left: 0, width: `${(currentTime / Math.max(1, duration)) * 100}%` }]} />
+                </View>
+              </Pressable>
+              <Text style={styles.timeText}>{formatTime(currentTime)} / {formatTime(duration)}</Text>
+            </View>
+
+            <TouchableOpacity onPress={() => { if (!isFullscreen) openFullscreen(); else closeFullscreen(); }} style={styles.fullscreenBtn}>
+              {isFullscreen ? <Minimize2 width={18} height={18} color="#fff" /> : <Maximize2 width={18} height={18} color="#fff" />}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+
   return (
     <VisibilitySensor onChange={handleVisibilityChange}>
-      <View style={{ width: finalWidth, height: finalHeight, borderRadius, overflow: "hidden", backgroundColor: "#000" }}>
-        <Video
-          key={playerKey}
-          source={videoPath ? { uri: videoPath } : undefined}
-          style={{ width: "100%", height: "100%" }}
-          resizeMode={isFullscreen ? "contain" : "cover"}
-          controls
-          paused={!isPlayingLocal}
-          repeat={true}
-          onError={(e) => console.warn("[MessageVideo] player error:", e)}
-          onLoad={(m) => console.log("[MessageVideo] player onLoad:", m)}
-          onBuffer={(b) => console.log("[MessageVideo] player onBuffer:", b)}
-          onFullscreenPlayerWillPresent={() => {
-            setIsFullscreen(true);
-            VideoFocusManager.requestFocus(idRef.current);
-          }}
-          onFullscreenPlayerWillDismiss={() => {
-            setIsFullscreen(false);
-            // when exit fullscreen, the sensor will re-evaluate; ensure we don't resume if screen isn't focused
-            if (!isScreenFocused) VideoFocusManager.pauseAll();
-          }}
-        />
+      <View>
+        {PlayerInner}
+        {/* fullscreen modal */}
+        <Modal visible={isFullscreen} animationType="fade" onRequestClose={closeFullscreen} supportedOrientations={["portrait", "landscape"]}>
+          <View style={styles.fullscreenContainer}>
+            <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
+              <View style={{ width: '100%', height: '100%' }}>
+                <Video
+                  ref={modalRef}
+                  key={playerKey + '_modal'}
+                  source={videoPath ? { uri: videoPath } : undefined}
+                  style={{ width: '100%', height: '100%' }}
+                  resizeMode={'contain'}
+                  controls={false}
+                  paused={!isPlayingLocal}
+                  onLoad={onLoadModal}
+                  onProgress={onProgress}
+                  repeat={true}
+                />
+
+                <View pointerEvents={showControls ? "box-none" : "auto"} style={styles.tapOverlayFullscreen}>
+                  <Pressable style={{ flex: 1 }} onPress={onOverlayTap} />
+                </View>
+
+                {showControls && (
+                  <View style={[styles.controllerOverlay, { padding: 16 }]} pointerEvents="box-none">
+                    <View style={styles.controllerCenterRow}>
+                      <TouchableOpacity onPress={togglePlay} style={styles.playButton}>
+                        {isPlayingLocal ? <Pause width={28} height={28} color="#fff" /> : <Play width={28} height={28} color="#fff" />}
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.controllerBottomRow}>
+                      <View style={{ flex: 1 }} ref={seekBarRef} onLayout={onSeekBarLayout}>
+                        <Pressable activeOpacity={1} onPress={onSeekPress} style={styles.seekBarTouchable}>
+                          <View style={styles.seekBg}>
+                            <View style={[styles.seekFill, { left: 0, width: `${(currentTime / Math.max(1, duration)) * 100}%` }]} />
+                          </View>
+                        </Pressable>
+                        <Text style={styles.timeText}>{formatTime(currentTime)} / {formatTime(duration)}</Text>
+                      </View>
+
+                      <TouchableOpacity onPress={closeFullscreen} style={styles.fullscreenBtn}>
+                        <Minimize2 width={18} height={18} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </VisibilitySensor>
   );
 }
 
+/* helpers */
+function formatTime(s: number) { if (!s || !isFinite(s)) return "0:00"; const total = Math.floor(s); const m = Math.floor(total / 60); const sec = total % 60; return `${m}:${sec < 10 ? "0" + sec : sec}`; }
+
 const styles = StyleSheet.create({
-  topLeftOverlay: {
-    position: "absolute",
-    left: 8,
-    top: 8,
-    zIndex: 30,
-  },
-  topLeftRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  smallCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  smallProgContainer: {
-    marginLeft: 8,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  smallProgText: {
-    color: "#fff",
-    fontSize: 12,
-  },
-  bottomBar: {
-    position: "absolute",
-    bottom: 8,
-    left: 8,
-    right: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    zIndex: 20,
-  },
-  progressBarBg: {
-    flex: 1,
-    height: 4,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    borderRadius: 2,
-    overflow: "hidden",
-    marginRight: 8,
-  },
-  progressBarFill: {
-    height: 4,
-    backgroundColor: "rgba(255,255,255,0.92)",
-  },
-  bottomText: {
-    color: "#fff",
-    fontSize: 12,
-  },
-  loadingSpinner: {
-    position: "absolute",
-    bottom: 40,
-  },
-  cornerOverlay: {
-    position: "absolute",
-    left: 8,
-    bottom: 8,
-    zIndex: 30,
-  },
-  smallRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  sizeLabel: {
-    color: "#fff",
-    fontSize: 12,
-    marginTop: 4,
-    textAlign: "center",
-  },
+  topLeftOverlay: { position: "absolute", left: 8, top: 8, zIndex: 30 },
+  topLeftRow: { flexDirection: "row", alignItems: "center" },
+  smallCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(0,0,0,0.5)", borderWidth: 1, borderColor: "rgba(255,255,255,0.12)", alignItems: "center", justifyContent: "center" },
+  smallProgContainer: { marginLeft: 8, backgroundColor: "rgba(0,0,0,0.45)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  smallProgText: { color: "#fff", fontSize: 12 },
+  bottomBar: { position: "absolute", bottom: 8, left: 8, right: 8, flexDirection: "row", alignItems: "center", zIndex: 20 },
+  progressBarBg: { flex: 1, height: 4, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 2, overflow: "hidden", marginRight: 8 },
+  progressBarFill: { height: 4, backgroundColor: "rgba(255,255,255,0.92)" },
+  bottomText: { color: "#fff", fontSize: 12 },
+  loadingSpinner: { position: "absolute", bottom: 40 },
+  cornerOverlay: { position: "absolute", left: 8, bottom: 8, zIndex: 30 },
+  smallRow: { flexDirection: "row", alignItems: "center" },
+  sizeLabel: { color: "#fff", fontSize: 12, marginTop: 4, textAlign: "center" },
+
+  /* controller */
+  tapOverlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 40 },
+  tapOverlayFullscreen: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 40 },
+  controllerOverlay: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, justifyContent: "space-between", zIndex: 60, padding: 8 },
+  controllerCenterRow: { flex: 1, alignItems: "center", justifyContent: "center" },
+  controllerBottomRow: { flexDirection: "row", alignItems: "center" },
+  playButton: { width: 64, height: 64, borderRadius: 32, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center" },
+  seekBarTouchable: { paddingVertical: 8 },
+  seekBg: { width: "100%", height: 4, backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 3, overflow: "hidden", position: "relative" },
+  seekFill: { position: "absolute", top: 0, bottom: 0, height: 4, backgroundColor: "rgba(255,255,255,0.95)" /* left set inline */ },
+  timeText: { color: "#fff", fontSize: 12, marginTop: 6 },
+  fullscreenBtn: { marginLeft: 8, padding: 6 },
+  fullscreenContainer: { flex: 1, backgroundColor: '#000' },
 });
