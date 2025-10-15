@@ -19,6 +19,7 @@ import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import HomeHeader, { pepe } from "../../components/tabs/home/HomeHeader";
 import { Buffer } from "buffer";
+import uuid from 'react-native-uuid';
 
 // ---- CONFIG ----
 const BATCH_SIZE = 5;
@@ -180,6 +181,21 @@ export default function HomeScreen() {
   // helper: message key
   const mk = (chatId: number | string | undefined, messageId: number | string) => `${chatId ?? "ch"}:${messageId}`;
 
+  // -----------------------------
+  // === UUID helper (stable keys) ===
+  // - prefer deterministic `chatId-id` when available (stable across restarts)
+  // - otherwise generate uuidv4()
+  // This returns a NEW object if __uuid missing, otherwise returns original msg.
+  // -----------------------------
+  const withUuid = useCallback((msg: any) => {
+    if (!msg || typeof msg !== "object") return msg;
+    if (msg.__uuid) return msg;
+    if (msg.chatId != null && msg.id != null) {
+      return { ...msg, __uuid: `${msg.chatId}-${msg.id}` };
+    }
+    return { ...msg, __uuid: uuid.v4() };
+  }, []);
+
   // LRU touch openedChat
   const touchOpenedChat = useCallback((chatId: number) => {
     openedChats.current.delete(chatId);
@@ -267,9 +283,10 @@ export default function HomeScreen() {
               const res: any = await tdCall("getMessage", Number(t.chatId), Number(t.messageId));
               const parsed = JSON.parse(res.raw);
               const k2 = mk(parsed.chatId ?? t.chatId, parsed.id);
-              // store parsed into cache
-              messageCacheRef.current.set(k2, parsed);
-              return parsed;
+              const stored = withUuid(parsed);
+              // store parsed into cache (with uuid)
+              messageCacheRef.current.set(k2, stored);
+              return stored;
             } catch (e) {
               // ignore per-message errors
               return null;
@@ -303,7 +320,7 @@ export default function HomeScreen() {
 
       return enriched;
     },
-    [tdCall, persistCachesDebounced]
+    [tdCall, persistCachesDebounced, withUuid]
   );
 
   // loadBatch: group by chat to reduce openChat churn
@@ -373,8 +390,9 @@ export default function HomeScreen() {
                 const r: any = await tdCall("getMessage", +cidToUse, +meta.messageId);
                 const parsed = JSON.parse(r.raw);
                 const k2 = mk(parsed.chatId || cidToUse, parsed.id);
-                messageCacheRef.current.set(k2, parsed);
-                return parsed;
+                const stored = withUuid(parsed);
+                messageCacheRef.current.set(k2, stored);
+                return stored;
               } else {
                 // fallback: search per-meta
                 const r: any = await tdCall("searchPublicChat", meta.channel);
@@ -387,8 +405,9 @@ export default function HomeScreen() {
                   const rr: any = await tdCall("getMessage", fid, +meta.messageId);
                   const parsed = JSON.parse(rr.raw);
                   const k2 = mk(parsed.chatId || fid, parsed.id);
-                  messageCacheRef.current.set(k2, parsed);
-                  return parsed;
+                  const stored = withUuid(parsed);
+                  messageCacheRef.current.set(k2, stored);
+                  return stored;
                 }
                 return null;
               }
@@ -410,7 +429,7 @@ export default function HomeScreen() {
 
       return ordered;
     },
-    [tdCall, touchOpenedChat, persistCachesDebounced]
+    [tdCall, touchOpenedChat, persistCachesDebounced, withUuid]
   );
 
   // prefetch next batches with stagger (now ensures replies for prefetched)
@@ -446,7 +465,7 @@ export default function HomeScreen() {
       if (pref) {
         const exist = new Set(messages.map((m: any) => `${m.chatId}:${m.id}`));
         const toAppend = pref.filter((m) => !exist.has(`${m.chatId}:${m.id}`));
-        if (toAppend.length) setMessages((prev) => [...prev, ...toAppend]);
+        if (toAppend.length) setMessages((prev) => [...prev, ...toAppend.map(withUuid)]);
         prefetchRef.current.delete(nextBatchIdx);
         loaded = pref;
       } else {
@@ -454,7 +473,7 @@ export default function HomeScreen() {
         const enriched = await ensureRepliesForMessages(newLoaded);
         const exist = new Set(messages.map((m: any) => `${m.chatId}:${m.id}`));
         const toAppend = enriched.filter((m) => !exist.has(`${m.chatId}:${m.id}`));
-        if (toAppend.length) setMessages((prev) => [...prev, ...toAppend]);
+        if (toAppend.length) setMessages((prev) => [...prev, ...toAppend.map(withUuid)]);
         loaded = enriched;
       }
 
@@ -471,7 +490,7 @@ export default function HomeScreen() {
 
       return loaded.length;
     },
-    [loadBatch, messages, getAndCacheChatInfo, ensureRepliesForMessages]
+    [loadBatch, messages, getAndCacheChatInfo, ensureRepliesForMessages, withUuid]
   );
 
   // helper: read stored user info (robust for multiple formats)
@@ -501,55 +520,55 @@ export default function HomeScreen() {
 
   // notify server batch reached (keeps as in your original) — read activeTab from ref and uuid via helper
   // keep track of sent batches per activeTab so tabs don't block each other
-const sentBatchesMapRef = useRef<Map<string, Set<number>>>(new Map());
+  const sentBatchesMapRef = useRef<Map<string, Set<number>>>(new Map());
 
-function hasSentBatchForTab(tab: string, batchIdx: number) {
-  const key = tab || '__GLOBAL__';
-  const s = sentBatchesMapRef.current.get(key);
-  return !!s && s.has(batchIdx);
-}
-function markSentBatchForTab(tab: string, batchIdx: number) {
-  const key = tab || '__GLOBAL__';
-  let s = sentBatchesMapRef.current.get(key);
-  if (!s) {
-    s = new Set<number>();
-    sentBatchesMapRef.current.set(key, s);
+  function hasSentBatchForTab(tab: string, batchIdx: number) {
+    const key = tab || '__GLOBAL__';
+    const s = sentBatchesMapRef.current.get(key);
+    return !!s && s.has(batchIdx);
   }
-  s.add(batchIdx);
-}
-
-const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
-  try {
-    const currentTab = activeTabRef.current || '';
-    if (hasSentBatchForTab(currentTab, batchIdx)) return;
-
-    const start = batchIdx * BATCH_SIZE;
-    const metas = datasRef.current.slice(start, start + BATCH_SIZE);
-    if (!metas.length) return;
-    const ids: string[] = metas.map((m) => `${m.messageId}`);
-
-    const parsed = await getStoredUserInfo();
-    if (!parsed?.uuid) return;
-
-    const params = new URLSearchParams();
-    params.append("uuid", parsed.uuid);
-    ids.forEach((id) => params.append("messageIds", id));
-    params.append("activeTab", currentTab);
-
-    // debug log (remove or lower verbosity later)
-    console.log('[notify] sending seen-message', { tab: currentTab, batchIdx, idsLength: ids.length });
-
-    await fetch(`http://10.129.218.115:9000/feed-message/seen-message?${params.toString()}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    });
-
-    // mark as sent for this tab
-    markSentBatchForTab(currentTab, batchIdx);
-  } catch (err) {
-    console.warn('[notify] failed', err);
+  function markSentBatchForTab(tab: string, batchIdx: number) {
+    const key = tab || '__GLOBAL__';
+    let s = sentBatchesMapRef.current.get(key);
+    if (!s) {
+      s = new Set<number>();
+      sentBatchesMapRef.current.set(key, s);
+    }
+    s.add(batchIdx);
   }
-}, []);
+
+  const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
+    try {
+      const currentTab = activeTabRef.current || '';
+      if (hasSentBatchForTab(currentTab, batchIdx)) return;
+
+      const start = batchIdx * BATCH_SIZE;
+      const metas = datasRef.current.slice(start, start + BATCH_SIZE);
+      if (!metas.length) return;
+      const ids: string[] = metas.map((m) => `${m.messageId}`);
+
+      const parsed = await getStoredUserInfo();
+      if (!parsed?.uuid) return;
+
+      const params = new URLSearchParams();
+      params.append("uuid", parsed.uuid);
+      ids.forEach((id) => params.append("messageIds", id));
+      params.append("activeTab", currentTab);
+
+      // debug log (remove or lower verbosity later)
+      console.log('[notify] sending seen-message', { tab: currentTab, batchIdx, idsLength: ids.length });
+
+      await fetch(`http://192.168.1.102:9000/feed-message/seen-message?${params.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      // mark as sent for this tab
+      markSentBatchForTab(currentTab, batchIdx);
+    } catch (err) {
+      console.warn('[notify] failed', err);
+    }
+  }, [getStoredUserInfo]);
 
   // initial load effect
   useEffect(() => {
@@ -566,7 +585,7 @@ const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
         const parsedUuid = parsed.uuid;
         if (!parsedUuid) return;
         const serverTab = activeTabRef.current || activeTab;
-        const res = await fetch(`http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}`);
+        const res = await fetch(`http://192.168.1.102:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}`);
         const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!mounted) return;
 
@@ -580,7 +599,8 @@ const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
         const enrichedFirst = await ensureRepliesForMessages(first);
         if (!mounted) return;
 
-        setMessages(enrichedFirst);
+        // ensure uuids for initial messages
+        setMessages(enrichedFirst.map(withUuid));
         setCurrentBatchIdx(0);
 
         const chatIds = Array.from(new Set(enrichedFirst.map((m) => m.chatId).filter(Boolean)));
@@ -604,7 +624,7 @@ const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
     return () => {
       mounted = false;
     };
-  }, [activeTab, loadBatch, getAndCacheChatInfo, prefetchNextBatches, loadPersistedCaches, notifyServerBatchReached, ensureRepliesForMessages]);
+  }, [activeTab, loadBatch, getAndCacheChatInfo, prefetchNextBatches, loadPersistedCaches, notifyServerBatchReached, ensureRepliesForMessages, withUuid]);
 
   // poll visible messages (only when focused & visible)
   const pollVisibleMessages = useCallback(() => {
@@ -619,19 +639,27 @@ const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
           const enrichedArray = await ensureRepliesForMessages([full]);
           const enrichedFull = enrichedArray[0] || full;
 
+          // store enriched into cache with uuid
+          const key = mk(full.chatId || msg.chatId, full.id);
+          const stored = withUuid(enrichedFull);
+          messageCacheRef.current.set(key, stored);
+          persistCachesDebounced();
+
           setMessages((prev) => {
             const copy = [...prev];
             const idx = copy.findIndex((m) => m.id === id);
-            if (idx !== -1) copy[idx] = enrichedFull;
+            if (idx !== -1) {
+              // preserve existing item fields but replace with enriched stored (ensures __uuid)
+              copy[idx] = { ...copy[idx], ...stored };
+              // ensure __uuid exists
+              copy[idx] = withUuid(copy[idx]);
+            }
             return copy;
           });
-          const key = mk(full.chatId || msg.chatId, full.id);
-          messageCacheRef.current.set(key, full);
-          persistCachesDebounced();
         })
         .catch(() => {});
     }
-  }, [visibleIds, messages, tdCall, persistCachesDebounced, ensureRepliesForMessages]);
+  }, [visibleIds, messages, tdCall, persistCachesDebounced, ensureRepliesForMessages, withUuid]);
 
   useEffect(() => {
     if (pollingIntervalRef.current) {
@@ -671,21 +699,31 @@ const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
           const msg = update.message;
           // Update cache & messages list; but make sure to resolve any reply references for this msg
           const key = mk(msg.chatId || msg.chat?.id, msg.id);
-          messageCacheRef.current.set(key, msg);
+          // store msg in cache with uuid
+          messageCacheRef.current.set(key, withUuid(msg));
           persistCachesDebounced();
 
           // enrich with reply if necessary and update UI list
           const enrichedArr = await ensureRepliesForMessages([msg]);
           const enriched = enrichedArr[0] || msg;
 
-          setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, ...enriched } : m)));
+          setMessages((prev) => {
+            const found = prev.findIndex((m) => m.id === msg.id);
+            if (found !== -1) {
+              // update existing item, preserve/ensure __uuid
+              return prev.map((m) => (m.id === msg.id ? withUuid({ ...m, ...enriched }) : m));
+            } else {
+              // if the updated message isn't in the list, prepend it with uuid
+              return [withUuid(enriched), ...prev];
+            }
+          });
         }
       } catch (e) {
         // ignore malformed updates
       }
     });
     return () => subscription.remove();
-  }, [persistCachesDebounced, ensureRepliesForMessages, tdCall]);
+  }, [persistCachesDebounced, ensureRepliesForMessages, tdCall, withUuid]);
 
   // onViewable changed — make deterministic and pick center item for activeDownloads
   const visibleIdsRef = useRef<number[]>([]);
@@ -776,7 +814,7 @@ const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
         if (pref) {
           const exist = new Set(messages.map((m: any) => `${m.chatId}:${m.id}`));
           const toAppend = pref.filter((m) => !exist.has(`${m.chatId}:${m.id}`));
-          if (toAppend.length) setMessages((prev) => [...prev, ...toAppend]);
+          if (toAppend.length) setMessages((prev) => [...prev, ...toAppend.map(withUuid)]);
           prefetchRef.current.delete(nextBatchIdx);
         } else {
           await appendNextBatch(nextBatchIdx);
@@ -792,7 +830,7 @@ const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
         // ignore
       }
     },
-    [appendNextBatch, prefetchNextBatches, messages]
+    [appendNextBatch, prefetchNextBatches, messages, withUuid, notifyServerBatchReached]
   );
 
   const loadMore = useCallback(async () => {
@@ -810,7 +848,7 @@ const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
           return;
         }
         console.log(encodeURIComponent(activeTabRef.current))
-        const res = await fetch(`http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(activeTabRef.current)}&uuid=${parsed.uuid}`);
+        const res = await fetch(`http://192.168.1.102:9000/feed-message?team=${encodeURIComponent(activeTabRef.current)}&uuid=${parsed.uuid}`);
         const newDatas: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!newDatas || newDatas.length === 0) {
           setLoadingMore(false);
@@ -831,7 +869,7 @@ const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
       setLoadingMore(false);
       isLoadingMoreRef.current = false;
     }
-  }, [currentBatchIdx, activeTab, appendAndAdvance]);
+  }, [currentBatchIdx, activeTab, appendAndAdvance, getStoredUserInfo]);
 
   const onEndReached = useCallback(() => {
     loadMore();
@@ -938,7 +976,7 @@ const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
           <FlatList
             style={{ paddingHorizontal: 12.5 }}
             data={messages}
-            keyExtractor={(item, index) => `${item?.chatId || "c"}-${item?.id || index}`}
+            keyExtractor={(item, index) => item.__uuid || `${item?.chatId || "c"}-${item?.id || index}`}
             renderItem={renderItem}
             onViewableItemsChanged={onViewRef}
             viewabilityConfig={viewConfigRef.current}
