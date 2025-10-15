@@ -146,7 +146,7 @@ function MessageHeaderInner({ chatId, chatInfo }: any) {
   }, [navigation, chatId]);
 
   return (
-    <TouchableOpacity onPress={handlePress} style={{ flexDirection: "row", alignItems: "center", marginBottom: 8.5 }}>
+    <TouchableOpacity onPress={handlePress} style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
       <Image source={{ uri: photoUri || minithumbnailUri || undefined }} style={styles.avatar} />
       <Text numberOfLines={1} style={styles.title}>
         {title || "کانال"}

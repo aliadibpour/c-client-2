@@ -12,19 +12,55 @@ import { normalizeReplyPreview } from "../../../hooks";
 
 const cleanText = (text: string): string => {
   if (!text || typeof text !== "string") return "";
-  return text
+
+  // Emoji character class (unicode properties). Keep as a character class string for RegExp.
+  const EMOJI_CLASS = "[\\p{Emoji_Presentation}\\p{Extended_Pictographic}]";
+
+  // Normalize CRLF -> LF
+  let out = text.replace(/\r\n/g, "\n");
+
+  // Remove Telegram links
+  out = out
     .replace(/https?:\/\/t\.me\/[^\s]+/gi, "")
-    .replace(/https?:\/\/telegram\.me\/[^\s]+/gi, "")
-    .replace(/\n*@\w+[^\n]*$/gm, "")
-    .replace(/\|\s*[^\n]+$/gm, "")
-    .replace(/#[\p{L}0-9_]+/gu, "")
-    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]+/gu, "")
-    .replace(/(\n\s*)+(?=(?:@|#|[\p{Emoji_Presentation}\p{Extended_Pictographic}]))/gu, "\n")
-    .replace(/(\n\s*)+$/g, "")
-    .replace(/^[\s\-_.]+$/gm, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+    .replace(/https?:\/\/telegram\.me\/[^\s]+/gi, "");
+
+  // Remove hashtags
+  out = out.replace(/#[\p{L}0-9_]+/gu, "");
+
+  // Split to lines for per-line processing
+  const lines = out.split("\n");
+
+  const processed = lines
+    .map((line) => {
+      // Trim edges first
+      let ln = line.trim();
+
+      // If the line contains any @username -> drop the whole line later
+      // We use a simple username pattern: @ followed by letters/numbers/underscore
+      if (/@[A-Za-z0-9_]+/.test(ln)) {
+        return ""; // mark for removal
+      }
+
+      // Remove leading sequences of emojis (and spaces between them)
+      // Pattern: ^(?:EMOJI(?:\s*EMOJI)*)\s*  -> removes emojis at line-start
+      const leadingEmojiRe = new RegExp(`^(?:${EMOJI_CLASS}(?:\\s*${EMOJI_CLASS})*)\\s*`, "u");
+      ln = ln.replace(leadingEmojiRe, "");
+
+      // Remove lines that are only punctuation/whitespace (like ----- or ___)
+      if (/^[\s\-\._]+$/.test(ln)) {
+        return "";
+      }
+
+      // Trim again and return
+      return ln.trim();
+    })
+    // Remove empty results (dropped lines, blank lines)
+    .filter((l) => l !== "");
+
+  // Join with single newline (no blank lines anywhere)
+  return processed.join("\n");
 };
+
 
 const getRelativeTime = (unixTimestamp: number): string => {
   if (!unixTimestamp) return "";
@@ -140,11 +176,16 @@ function MessageItem({ data, isVisible, activeDownload, chatInfo }: Props) {
         {!!cleanedCaption && <Text style={styles.bodyText}>{cleanedCaption}</Text>}
         {!!cleanedText && <Text style={styles.bodyText}>{cleanedText}</Text>}
         {content?.photo && (
-          <PhotoMessage photo={content.photo} activeDownload={activeDownload} context="explore" />
+          <View style={{marginVertical: 4}}>
+            <PhotoMessage photo={content.photo} activeDownload={activeDownload} context="explore" />
+          </View>
         )}
       </TouchableOpacity>
 
-      {content?.video && <VideoMessage video={content.video} activeDownload={activeDownload} />}
+      {content?.video && 
+        <View style={{marginVertical: 4}}>
+          <VideoMessage video={content.video} activeDownload={activeDownload} />
+        </View>}
 
       {message.interactionInfo?.reactions?.reactions?.length > 0 && (
         <MessageReactions
@@ -153,7 +194,7 @@ function MessageItem({ data, isVisible, activeDownload, chatInfo }: Props) {
           messageId={message.id}
           onReact={(emoji: any) => console.log("🧡", emoji)}
           customStyles={{
-            container: { paddingBottom: 6 },
+            container: { paddingBottom: 2 },
             emoji: { fontSize: 13 },
             count: { fontSize: 12 },
             reactionBox: { paddingHorizontal: 6 },
@@ -166,9 +207,9 @@ function MessageItem({ data, isVisible, activeDownload, chatInfo }: Props) {
           <View style={styles.commentsRow}>
             <Text style={styles.commentsText}>{message.interactionInfo.replyInfo.replyCount} کامنت</Text>
             {openingComments ? (
-              <ActivityIndicator style={{ marginLeft: 3 }} size="small" color="#adadad" />
+              <ActivityIndicator style={{ marginLeft: 2 }} size="small" color="#adadad" />
             ) : (
-              <ArrowLeftIcon style={{ color: "#adadad", marginLeft: -3 }} width={13.5} height={13.5} />
+              <ArrowLeftIcon style={{ color: "#adadad" }} width={13.5} height={13.5} />
             )}
           </View>
         </TouchableOpacity>
@@ -198,7 +239,8 @@ const styles = StyleSheet.create({
   container: {
     borderBottomColor: "#111",
     borderBottomWidth: 1,
-    paddingVertical: 13,
+    paddingVertical: 12.4,
+    gap: 2
   },
   headerRow: {
     flexDirection: "row",
@@ -217,7 +259,6 @@ const styles = StyleSheet.create({
     fontFamily: "SFArabic-Regular",
     marginLeft: 5,
     alignSelf: "center",
-    marginBottom:5
   },
 
   // reply box: X-like preview (no heavy BG, border only, small thumb + small text)
@@ -231,7 +272,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    marginBottom:4,
+    marginVertical:4,
   },
   replyThumbWrap: {
     width: 44,
@@ -256,7 +297,6 @@ const styles = StyleSheet.create({
   },
   bodyText: {
     color: "#ccc",
-    marginBottom: 6,
     fontSize: 13.5,
     fontFamily: "SFArabic-Regular",
     lineHeight: 25,
@@ -264,9 +304,9 @@ const styles = StyleSheet.create({
   commentsRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 6,
     marginLeft: 4.5,
-    gap: 6,
+    gap: 1,
+    marginTop:2
   },
   commentsText: {
     color: "#adadad",
