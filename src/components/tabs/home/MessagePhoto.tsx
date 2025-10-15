@@ -330,6 +330,6 @@ export default function MessagePhoto({
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 6,
+    //marginBottom: 6,
   },
 });
