@@ -1115,7 +1115,7 @@ const handleSend = async (textToSend: string) => {
             <TouchableOpacity onPress={() => navigation.goBack()}>
               <ArrowLeft color="#fff" size={22} />
             </TouchableOpacity>
-            {commentsCount && <Text style={styles.headerTitle}>{commentsCount} کامنت</Text>}
+            {commentsCount ? <Text style={styles.headerTitle}>{commentsCount} کامنت</Text>: null}
             <View style={{ width: 22 }} />
           </View>
 

@@ -204,7 +204,7 @@ export default function CommentItem({ item, index, comments, navigation, highlig
                 paddingHorizontal: 0,
                 marginBottom: 8,
               },
-              reactionBox: { backgroundColor: "#333", paddingHorizontal: 0 },
+              reactionBox: { backgroundColor: isUser ? "#612183c6": "#333", paddingHorizontal: 0 },
               selectedBox: { backgroundColor: "#666" },
               emoji: { fontSize: 12 },
               count: { color: "#ccc", fontWeight: "bold", fontSize: 11 },
