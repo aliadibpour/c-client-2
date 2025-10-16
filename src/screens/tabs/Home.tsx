@@ -64,8 +64,9 @@ export default function HomeScreen() {
   const chatInfoRef = useRef<Map<number, any>>(new Map());
 
   // prefetch
-  const prefetchRef = useRef<Map<number, any[]>>(new Map());
-  const prefetchInFlightRef = useRef<Set<number>>(new Set());
+  // NAMESPACE prefetch by tab: key = `${tab}:${batchIdx}`
+  const prefetchRef = useRef<Map<string, any[]>>(new Map());
+  const prefetchInFlightRef = useRef<Set<string>>(new Set());
 
   // opened chats LRU (Map maintains insertion order)
   const openedChats = useRef<Map<number, number>>(new Map()); // chatId -> lastTouchedTimestamp
@@ -180,6 +181,9 @@ export default function HomeScreen() {
 
   // helper: message key
   const mk = (chatId: number | string | undefined, messageId: number | string) => `${chatId ?? "ch"}:${messageId}`;
+
+  // prefetch key helper (namespaced by tab)
+  const prefetchKey = (tab: string, batchIdx: number) => `${tab}:${batchIdx}`;
 
   // -----------------------------
   // === UUID helper (stable keys) ===
@@ -435,23 +439,25 @@ export default function HomeScreen() {
   // prefetch next batches with stagger (now ensures replies for prefetched)
   const prefetchNextBatches = useCallback(
     async (fromBatchIdx: number) => {
+      const tab = activeTabRef.current || activeTab;
       for (let i = 1; i <= MAX_PREFETCH_BATCHES; i++) {
         const idx = fromBatchIdx + i;
-        if (prefetchRef.current.has(idx) || prefetchInFlightRef.current.has(idx)) continue;
+        const key = prefetchKey(tab, idx);
+        if (prefetchRef.current.has(key) || prefetchInFlightRef.current.has(key)) continue;
         const start = idx * BATCH_SIZE;
         if (start >= datasRef.current.length) break;
-        prefetchInFlightRef.current.add(idx);
-        (async (batchIndex, waitMs) => {
+        prefetchInFlightRef.current.add(key);
+        (async (batchIndex, waitMs, keyLocal) => {
           await delay(waitMs);
           try {
             const msgs = await loadBatch(batchIndex);
             if (msgs && msgs.length) {
               const enriched = await ensureRepliesForMessages(msgs);
-              prefetchRef.current.set(batchIndex, enriched);
+              prefetchRef.current.set(keyLocal, enriched);
             }
           } catch (e) {}
-          prefetchInFlightRef.current.delete(batchIndex);
-        })(idx, i * 300);
+          prefetchInFlightRef.current.delete(keyLocal);
+        })(idx, i * 300, key);
       }
     },
     [loadBatch, ensureRepliesForMessages]
@@ -460,13 +466,15 @@ export default function HomeScreen() {
   // appendNextBatch (uses prefetch if available) — ensures replies before appending
   const appendNextBatch = useCallback(
     async (nextBatchIdx: number) => {
-      const pref = prefetchRef.current.get(nextBatchIdx);
+      const tab = activeTabRef.current || activeTab;
+      const key = prefetchKey(tab, nextBatchIdx);
+      const pref = prefetchRef.current.get(key);
       let loaded: any[] = [];
       if (pref) {
         const exist = new Set(messages.map((m: any) => `${m.chatId}:${m.id}`));
         const toAppend = pref.filter((m) => !exist.has(`${m.chatId}:${m.id}`));
         if (toAppend.length) setMessages((prev) => [...prev, ...toAppend.map(withUuid)]);
-        prefetchRef.current.delete(nextBatchIdx);
+        prefetchRef.current.delete(key);
         loaded = pref;
       } else {
         const newLoaded = await loadBatch(nextBatchIdx);
@@ -558,7 +566,7 @@ export default function HomeScreen() {
       // debug log (remove or lower verbosity later)
       console.log('[notify] sending seen-message', { tab: currentTab, batchIdx, idsLength: ids.length });
 
-      await fetch(`http://192.168.1.102:9000/feed-message/seen-message?${params.toString()}`, {
+      await fetch(`http://10.129.218.115:9000/feed-message/seen-message?${params.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -585,12 +593,19 @@ export default function HomeScreen() {
         const parsedUuid = parsed.uuid;
         if (!parsedUuid) return;
         const serverTab = activeTabRef.current || activeTab;
-        const res = await fetch(`http://192.168.1.102:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}`);
+        const res = await fetch(`http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}&activeTab=${encodeURIComponent(serverTab)}`);
         const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!mounted) return;
 
         const datas = datass.sort((a, b) => +b.messageId - +a.messageId).slice(0, 200);
+        console.log(datas)
+        // set datas and clear any old prefetchs (namespaced)
         datasRef.current = datas;
+        prefetchRef.current.clear();
+        prefetchInFlightRef.current.clear();
+        // preserve other caches but clear UI items so first batch is cleanly loaded
+        setMessages([]);
+        setCurrentBatchIdx(0);
 
         const first = await loadBatch(0);
         if (!mounted) return;
@@ -810,12 +825,14 @@ export default function HomeScreen() {
   const appendAndAdvance = useCallback(
     async (nextBatchIdx: number) => {
       try {
-        const pref = prefetchRef.current.get(nextBatchIdx);
+        const tab = activeTabRef.current || activeTab;
+        const key = prefetchKey(tab, nextBatchIdx);
+        const pref = prefetchRef.current.get(key);
         if (pref) {
           const exist = new Set(messages.map((m: any) => `${m.chatId}:${m.id}`));
           const toAppend = pref.filter((m) => !exist.has(`${m.chatId}:${m.id}`));
           if (toAppend.length) setMessages((prev) => [...prev, ...toAppend.map(withUuid)]);
-          prefetchRef.current.delete(nextBatchIdx);
+          prefetchRef.current.delete(key);
         } else {
           await appendNextBatch(nextBatchIdx);
         }
@@ -847,8 +864,9 @@ export default function HomeScreen() {
           isLoadingMoreRef.current = false;
           return;
         }
-        console.log(encodeURIComponent(activeTabRef.current))
-        const res = await fetch(`http://192.168.1.102:9000/feed-message?team=${encodeURIComponent(activeTabRef.current)}&uuid=${parsed.uuid}`);
+        const tab = activeTabRef.current || activeTab;
+        console.log(encodeURIComponent(tab))
+        const res = await fetch(`http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${parsed.uuid}&activeTab=${encodeURIComponent(tab)}`);
         const newDatas: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!newDatas || newDatas.length === 0) {
           setLoadingMore(false);
@@ -939,8 +957,21 @@ export default function HomeScreen() {
 
   // small helper to set activeTab and sync ref in one place
   const setActiveTabAndSync = useCallback((tab: string) => {
+    // switch tab: sync ref + state
     activeTabRef.current = tab;
     setActiveTab(tab);
+
+    // reset view/state relevant to the feed so we don't mix cached prefetched batches
+    prefetchRef.current.clear();
+    prefetchInFlightRef.current.clear();
+    // optional: clear sentBatches map for previous tab? (keeps per-tab tracking OK)
+    // clear messages and reset batch idx so we reload fresh
+    setMessages([]);
+    datasRef.current = [];
+    setCurrentBatchIdx(0);
+    // clear visible id tracking
+    setVisibleIds([]);
+    alreadyViewed.current.clear();
   }, []);
 
   return (
