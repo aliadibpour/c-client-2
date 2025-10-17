@@ -1,5 +1,5 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Platform, StyleSheet, View } from 'react-native';
+import { AppState, Platform, StyleSheet, View } from 'react-native';
 import { DefaultTheme, NavigationContainer, ThemeProvider, useNavigation } from '@react-navigation/native';
 import React, { useCallback, useEffect, useState } from 'react';
 import RootNavigator from './src/navigation/RootNavigatore';
@@ -29,8 +29,19 @@ function App(): React.JSX.Element {
   }, []);
   
   useEffect(() => {
-    // Set navigation bar to black and icons to light
-    changeNavigationBarColor('#000000', false, true);
+    const setNavBar = () => {
+      changeNavigationBarColor('#000000', false, true);
+    }
+
+    setNavBar(); // برای mount اولیه
+
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        setNavBar(); // وقتی اپ به foreground برمی‌گردد
+      }
+    });
+
+    return () => subscription.remove();
   }, []);
   return (
     <NavigationContainer>
