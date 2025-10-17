@@ -176,6 +176,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginLeft: 7,
     fontFamily: "SFArabic-Heavy",
-    color: "white",
+    color: "#edededff",
   },
 });
