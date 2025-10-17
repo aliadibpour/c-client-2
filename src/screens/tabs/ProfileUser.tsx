@@ -27,6 +27,9 @@ type Profile = {
   profilePhoto?: {
     minithumbnail?: { data: number[] };
   };
+  // possible bio/about fields
+  bio?: string;
+  about?: string;
 };
 
 export default function ProfileScreen() {
@@ -72,6 +75,25 @@ export default function ProfileScreen() {
 
         setMetaPhotos(photosArray);
         setUris(new Array(photosArray.length).fill(null));
+
+        // try to fetch full user info (bio/about) if available
+        try {
+          const userRaw = await TdLib.getUserFull?.(userId);
+          if (userRaw) {
+            const userParsed = JSON.parse(userRaw);
+            console.log(userParsed)
+            // try common fields for bio/about
+            const bio = userParsed.bio || userParsed.about || userParsed.description || userParsed.aboutText;
+            if (bio) {
+              setProfile((prev: any) => ({ ...prev, bio, ...userParsed }));
+            } else {
+              setProfile((prev: any) => ({ ...prev, ...userParsed }));
+            }
+          }
+        } catch (e) {
+          // TdLib wrapper may not expose getUser or it may fail — ignore gracefully
+          console.warn("could not fetch full user info (bio)", e);
+        }
 
         if (photosArray.length > 0) {
           await loadChunk(0, CHUNK_SIZE, photosArray);
@@ -216,15 +238,20 @@ export default function ProfileScreen() {
 
   const renderLineIndicator = () => {
     if (uris.length <= 1) return null;
-    const width: number = 100 / uris.length;
+
+    // compute pixel width per indicator, ensure at least 1px
+    const paddingHorizontal = 10; // same as container paddingHorizontal
+    const availableWidth = Math.max(1, SCREEN_WIDTH - paddingHorizontal * 2);
+    const per = Math.max(1, Math.floor(availableWidth / uris.length));
+
     return (
-      <View style={styles.indicatorContainer}>
+      <View style={[styles.indicatorContainer, { left: 0, right: 0, paddingHorizontal }]}>
         {uris.map((_, i) => (
           <View
             key={i}
             style={[
-              { width: `${width}%` },
               styles.indicator,
+              { width: per, marginRight: 3 },
               currentIndex === i && styles.indicatorActive,
             ]}
           />
@@ -245,7 +272,7 @@ export default function ProfileScreen() {
           <Image key={uri} source={{ uri }} style={styles.image} />
         ) : isDownloading ? (
           <View style={styles.centered}>
-            <ActivityIndicator color={"#fff"}  size="large" />
+            <ActivityIndicator color={"#fff"} size="large" />
           </View>
         ) : profile?.profilePhoto?.minithumbnail?.data ? (
           <Image
@@ -279,9 +306,7 @@ export default function ProfileScreen() {
           <View style={styles.touchLeft} />
         </TouchableWithoutFeedback>
 
-        <Text style={styles.nameText}>
-          {profile?.firstName} {profile?.lastName}
-        </Text>
+        {/* name removed from here so it won't scroll with FlatList */}
       </View>
     );
   };
@@ -323,6 +348,11 @@ export default function ProfileScreen() {
             })}
           />
           {renderLineIndicator()}
+
+          {/* name fixed on top of FlatList so it doesn't scroll */}
+          <Text style={styles.nameText} pointerEvents="none">
+            {profile?.firstName} {profile?.lastName}
+          </Text>
         </View>
       ) : (
         renderFallback()
@@ -348,6 +378,16 @@ export default function ProfileScreen() {
               <Text style={styles.infoValue}>@{profile.usernames.activeUsernames[0]}</Text>
               <Text style={styles.infoLabel}>نام کاربری</Text>
             </View>
+          </View>
+        )}
+
+        {/* Bio display (try several possible field names) */}
+        {(profile?.bio || profile?.about || profile?.description || profile?.aboutText) && (
+          <View style={{ marginTop: 6 }}>
+            <Text style={[styles.infoValue, { fontSize: 13 }]}>
+              {profile?.bio || profile?.about || profile?.description || profile?.aboutText}
+            </Text>
+            <Text style={styles.infoLabel}>بیو</Text>
           </View>
         )}
       </View>
@@ -382,8 +422,9 @@ const styles = StyleSheet.create({
     fontSize: 25,
     fontFamily: "SFArabic-Heavy",
     position: "absolute",
-    bottom: 10,
-    right: 20,
+    bottom: 8,
+    left: 20,
+    zIndex: 20,
   },
   centered: {
     height: 370,
@@ -392,12 +433,13 @@ const styles = StyleSheet.create({
   },
   indicatorContainer: {
     flexDirection: "row",
-    justifyContent: "center",
     alignItems: "center",
-    gap: 3,
+    // don't center horizontally — we'll start from left and show all indicators
     position: "absolute",
     top: 5,
-    paddingHorizontal: 5,
+    // paddingHorizontal added dynamically in renderLineIndicator
+    // ensure it sits above images
+    zIndex: 15,
   },
   indicator: {
     height: 2.3,
@@ -406,6 +448,8 @@ const styles = StyleSheet.create({
   },
   indicatorActive: {
     backgroundColor: "#fff",
+    // make active slightly taller so visible even when width=1
+    height: 3.6,
   },
   touchRight: {
     position: "absolute",
