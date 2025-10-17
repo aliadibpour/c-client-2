@@ -238,7 +238,7 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
   const finalHeight = displayHeight < 160 ? 160 : displayHeight;
   const borderRadius = context === "channel" ? 8 : 12;
 
-  const { status, progress, videoPath, totalBytes, start, pause, cancel } = useTdlibDownload(remoteId, size, tdFileId, activeDownload);
+  const { status, progress, videoPath, totalBytes, start, pause, cancel }:any = useTdlibDownload(remoteId, size, tdFileId, activeDownload);
 
   useEffect(() => { if (videoPath) setPlayerKey((k) => k + 1); }, [videoPath]);
 
@@ -518,7 +518,7 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
 
           <View style={styles.controllerBottomRow}>
             <View style={{ flex: 1 }} ref={seekBarRef} onLayout={onSeekBarLayout}>
-              <Pressable activeOpacity={1} onPress={onSeekPress} style={styles.seekBarTouchable}>
+              <Pressable onPress={onSeekPress} style={styles.seekBarTouchable}>
                 <View style={styles.seekBg}>
                   {/* Force grow from LEFT -> RIGHT by anchoring left:0 */}
                   <View style={[styles.seekFill, { left: 0, width: `${(currentTime / Math.max(1, duration)) * 100}%` }]} />
@@ -572,7 +572,7 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
 
                     <View style={styles.controllerBottomRow}>
                       <View style={{ flex: 1 }} ref={seekBarRef} onLayout={onSeekBarLayout}>
-                        <Pressable activeOpacity={1} onPress={onSeekPress} style={styles.seekBarTouchable}>
+                        <Pressable onPress={onSeekPress} style={styles.seekBarTouchable}>
                           <View style={styles.seekBg}>
                             <View style={[styles.seekFill, { left: 0, width: `${(currentTime / Math.max(1, duration)) * 100}%` }]} />
                           </View>
