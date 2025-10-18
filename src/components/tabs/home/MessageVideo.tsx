@@ -1,4 +1,4 @@
-// MessageVideo.tsx  (final updated)
+// MessageVideo.tsx  (final updated - two-way 50% autoplay/pause with debounce + stable controller behavior)
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -26,6 +26,11 @@ const screenWidth = Dimensions.get("window").width;
 const AUTO_DOWNLOAD_THRESHOLD = 5 * 1024 * 1024; // 5 MB
 const STALL_TIMEOUT_MS = 8000;
 const CONTROLS_AUTOHIDE_MS = 3000;
+
+// Thresholds & debounce
+const VISIBILITY_THRESHOLD = 50; // percent
+const ENTER_DEBOUNCE_MS = 350; // require >=50% for this ms to autoplay
+const EXIT_DEBOUNCE_MS = 200; // require <50% for this ms to pause
 
 type DownloadStatus = "idle" | "downloading" | "paused" | "completed" | "error";
 
@@ -269,6 +274,14 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
   const pendingSeekForModal = useRef<number | null>(null);
   const pendingSeekForInline = useRef<number | null>(null);
 
+  // ---------- visibility percent + timers ----------
+  const [percentVisible, setPercentVisible] = useState<number>(0);
+  const enterTimerRef = useRef<any>(null);
+  const exitTimerRef = useRef<any>(null);
+  // mark if user manually interacted with controls (click/tap)
+  const userInteractedRef = useRef<boolean>(false);
+  // --------------------------------------------------
+
   // subscribe focus manager
   useEffect(() => {
     const unsub = VideoFocusManager.subscribe({ id: idRef.current, pause: () => setIsPlayingLocal(false), onGranted: () => {} });
@@ -278,57 +291,124 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
   useEffect(() => { if (!isScreenFocused) VideoFocusManager.pauseAll(); }, [isScreenFocused]);
   useEffect(() => { const sub = AppState.addEventListener("change", (next) => { appState.current = next; if (next !== "active") VideoFocusManager.pauseAll(); }); return () => { try { sub.remove(); } catch (e) {} }; }, []);
 
-  // Visibility handler: require >=50% to auto-play
+  // minimal boolean change handler (do NOT auto show/hide controls here)
   const handleVisibilityChange = useCallback((payload: any) => {
-    // payload might be boolean | number | object
-    let percent = 0;
-    if (typeof payload === "number") percent = payload;
-    else if (typeof payload === "boolean") percent = payload ? 100 : 0;
-    else if (payload && typeof payload === "object") {
-      if (typeof payload.visiblePercent === "number") percent = payload.visiblePercent;
-      else if (typeof payload.percent === "number") percent = payload.percent;
-      else if (typeof payload.isVisible === "boolean") percent = payload.isVisible ? 100 : 0;
-      else percent = Number(payload.coverage ?? 0) || 0;
-    }
-
-    const isMoreThanHalfVisible = percent >= 50;
-    const shouldAutoPlay = isMoreThanHalfVisible && appState.current === "active" && isScreenFocused && !isFullscreen;
-    if (shouldAutoPlay) {
-      VideoFocusManager.requestFocus(idRef.current);
-      const owner = (VideoFocusManager as any).getCurrent?.() ?? null;
-      if (owner === idRef.current) setIsPlayingLocal(true);
-    } else {
-      // if user is interacting we don't force pause immediately
+    // if package reports simple boolean false (fully hidden), ensure percent is 0 and clear timers
+    if (typeof payload === "boolean" && payload === false) {
+      setPercentVisible(0);
+      if (enterTimerRef.current) { clearTimeout(enterTimerRef.current); enterTimerRef.current = null; }
+      if (exitTimerRef.current) { clearTimeout(exitTimerRef.current); exitTimerRef.current = null; }
+      // directly pause when fully hidden
       if (!showControls) setIsPlayingLocal(false);
       VideoFocusManager.releaseFocus(idRef.current);
     }
-  }, [isFullscreen, isScreenFocused, showControls]);
+    // else do nothing here — main logic uses onPercentChange
+  }, [showControls]);
 
-  useEffect(() => { return () => { VideoFocusManager.releaseFocus(idRef.current); try { VideoFocusManager.pauseAll(); } catch (e) {} if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current); }; }, []);
+  // Effect: two-way debounce logic for percentVisible
+  useEffect(() => {
+    // clear existing timers if any
+    if (enterTimerRef.current) { clearTimeout(enterTimerRef.current); enterTimerRef.current = null; }
+    if (exitTimerRef.current) { clearTimeout(exitTimerRef.current); exitTimerRef.current = null; }
 
-  // overlay tap
-  const onOverlayTap = useCallback(() => {
-    setShowControls((prev) => !prev);
-    if (controlsTimerRef.current) { clearTimeout(controlsTimerRef.current); controlsTimerRef.current = null; }
-    if (!showControls && isPlayingLocal) {
-      controlsTimerRef.current = setTimeout(() => { setShowControls(false); controlsTimerRef.current = null; }, CONTROLS_AUTOHIDE_MS);
+    const pct = percentVisible ?? 0;
+    const isAbove = pct >= VISIBILITY_THRESHOLD;
+
+    if (isAbove) {
+      // clear exit timer and start enter debounce
+      enterTimerRef.current = setTimeout(() => {
+        enterTimerRef.current = null;
+        // check conditions
+        if (appState.current !== "active") return;
+        if (!isScreenFocused) return;
+        if (isFullscreen) return;
+        if (!((videoPath) || (status === "completed"))) {
+          // video not ready locally: DO NOT autoplay; do not change play state, but we might show controls if no user interaction.
+          // Show controls briefly only if user never interacted before (gives user cue)
+          if (!userInteractedRef.current) {
+            setShowControls(true);
+            if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+            controlsTimerRef.current = setTimeout(() => { setShowControls(false); controlsTimerRef.current = null; }, CONTROLS_AUTOHIDE_MS);
+          }
+          return;
+        }
+
+        // All conditions satisfied -> request focus and play
+        VideoFocusManager.requestFocus(idRef.current);
+        const owner = (VideoFocusManager as any).getCurrent?.() ?? null;
+        if (owner === idRef.current) {
+          setIsPlayingLocal(true);
+          // show controls briefly only if user hasn't manually interacted (otherwise respect user's show/hide)
+          if (!userInteractedRef.current) {
+            setShowControls(true);
+            if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+            controlsTimerRef.current = setTimeout(() => { setShowControls(false); controlsTimerRef.current = null; }, CONTROLS_AUTOHIDE_MS);
+          }
+        }
+      }, ENTER_DEBOUNCE_MS);
+    } else {
+      // below threshold: start exit debounce to pause
+      exitTimerRef.current = setTimeout(() => {
+        exitTimerRef.current = null;
+        // if user manually playing (and wants it), we still obey pause rule — the user-interaction flag only affects controller visibility,
+        // but user-initiated playback should probably still pause when visibility drops below threshold per your spec.
+        setIsPlayingLocal(false);
+        VideoFocusManager.releaseFocus(idRef.current);
+        // DO NOT auto-change showControls here (we don't hide/show controllers automatically on exit)
+      }, EXIT_DEBOUNCE_MS);
     }
-  }, [isPlayingLocal, showControls]);
 
-  // play/pause
+    return () => {
+      if (enterTimerRef.current) { clearTimeout(enterTimerRef.current); enterTimerRef.current = null; }
+      if (exitTimerRef.current) { clearTimeout(exitTimerRef.current); exitTimerRef.current = null; }
+    };
+  }, [percentVisible, videoPath, status, isScreenFocused, isFullscreen]);
+
+  useEffect(() => {
+    return () => {
+      // cleanup all timers on unmount
+      if (enterTimerRef.current) { clearTimeout(enterTimerRef.current); enterTimerRef.current = null; }
+      if (exitTimerRef.current) { clearTimeout(exitTimerRef.current); exitTimerRef.current = null; }
+      if (controlsTimerRef.current) { clearTimeout(controlsTimerRef.current); controlsTimerRef.current = null; }
+      VideoFocusManager.releaseFocus(idRef.current);
+      try { VideoFocusManager.pauseAll(); } catch (e) {}
+    };
+  }, []);
+
+  // overlay tap (user interaction)
+  const onOverlayTap = useCallback(() => {
+    // this is explicit user interaction: toggle controllers and mark userInteracted
+    userInteractedRef.current = true;
+    setShowControls((prev) => {
+      const next = !prev;
+      // if turning on, schedule auto-hide after timeout
+      if (next) {
+        if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+        controlsTimerRef.current = setTimeout(() => { setShowControls(false); controlsTimerRef.current = null; }, CONTROLS_AUTOHIDE_MS);
+      } else {
+        // if user hides controllers, clear timer
+        if (controlsTimerRef.current) { clearTimeout(controlsTimerRef.current); controlsTimerRef.current = null; }
+      }
+      return next;
+    });
+  }, []);
+
+  // play/pause via button (user interaction)
   const togglePlay = useCallback(() => {
+    userInteractedRef.current = true;
     if (isPlayingLocal) {
       setIsPlayingLocal(false);
+      VideoFocusManager.releaseFocus(idRef.current);
     } else {
       VideoFocusManager.requestFocus(idRef.current);
       const owner = (VideoFocusManager as any).getCurrent?.() ?? null;
       if (owner === idRef.current) setIsPlayingLocal(true);
     }
+
+    // show controls when toggled by user, and auto-hide after timeout
     setShowControls(true);
     if (controlsTimerRef.current) { clearTimeout(controlsTimerRef.current); controlsTimerRef.current = null; }
-    if (!isPlayingLocal) {
-      controlsTimerRef.current = setTimeout(() => { setShowControls(false); controlsTimerRef.current = null; }, CONTROLS_AUTOHIDE_MS);
-    }
+    controlsTimerRef.current = setTimeout(() => { setShowControls(false); controlsTimerRef.current = null; }, CONTROLS_AUTOHIDE_MS);
   }, [isPlayingLocal]);
 
   // onLoad handlers
@@ -378,10 +458,8 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
 
   // measure seek bar absolute position (for robust tapping)
   const onSeekBarLayout = useCallback((e: LayoutChangeEvent) => {
-    // store width from layout (fallback)
     const w = e.nativeEvent.layout.width;
     setSeekBarWidth(w);
-    // attempt to measure absolute x using measureInWindow if available (helps pageX math)
     const node = seekBarRef.current;
     if (node && typeof node.measureInWindow === "function") {
       try {
@@ -397,15 +475,12 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
 
   const onSeekPress = useCallback((e: any) => {
     if (seekBarWidth <= 0 || duration <= 0) return;
-    // use pageX for absolute touch x
     const pageX = e.nativeEvent.pageX ?? e.nativeEvent.locationX ?? 0;
     let relativeX = pageX - seekLayoutX;
     if (!isFinite(relativeX)) relativeX = e.nativeEvent.locationX ?? 0;
-    // clamp
     if (relativeX < 0) relativeX = 0;
     if (relativeX > seekBarWidth) relativeX = seekBarWidth;
     let percent = relativeX / seekBarWidth;
-    // If your layout is mirrored and you want logical left->right always, flip when RTL:
     if (I18nManager.isRTL) percent = 1 - percent;
     const t = percent * duration;
     seekTo(t);
@@ -417,13 +492,18 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
   const openFullscreen = useCallback(() => {
     pendingSeekForModal.current = currentTime;
     setIsFullscreen(true);
-    setShowControls(true);
+    // when entering fullscreen, prefer focus for this player
     VideoFocusManager.requestFocus(idRef.current);
+    setShowControls(true);
+    userInteractedRef.current = true; // user intent by opening fullscreen
+    if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+    controlsTimerRef.current = setTimeout(() => { setShowControls(false); controlsTimerRef.current = null; }, CONTROLS_AUTOHIDE_MS);
   }, [currentTime]);
 
   const closeFullscreen = useCallback(() => {
     pendingSeekForInline.current = currentTime;
     setIsFullscreen(false);
+    // keep controls hidden when exiting fullscreen unless user interacted
     setShowControls(false);
   }, [currentTime]);
 
@@ -433,7 +513,10 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
   // Player UI when not downloaded yet (download UI)
   if (showDownloadUI && !isCompleted && !videoPath) {
     return (
-      <VisibilitySensor onChange={handleVisibilityChange}>
+      <VisibilitySensor
+        onChange={handleVisibilityChange}
+        onPercentChange={setPercentVisible}
+      >
         <View style={{ width: finalWidth, height: finalHeight, borderRadius, overflow: "hidden", backgroundColor: "#000", justifyContent: "center", alignItems: "center" }}>
           {thumbnailUri && <Image source={{ uri: thumbnailUri }} style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0 }} resizeMode="cover" />}
 
@@ -502,8 +585,8 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
         repeat={true}
       />
 
-      {/* overlay: use View + Pressable so pointerEvents typing is OK */}
-      <View pointerEvents={showControls ? "box-none" : "auto"} style={styles.tapOverlay}>
+      {/* overlay: Pressable to toggle controls (user interaction only) */}
+      <View pointerEvents="box-none" style={styles.tapOverlay}>
         <Pressable style={{ flex: 1 }} onPress={onOverlayTap} />
       </View>
 
@@ -537,7 +620,10 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
   );
 
   return (
-    <VisibilitySensor onChange={handleVisibilityChange}>
+    <VisibilitySensor
+      onChange={handleVisibilityChange}
+      onPercentChange={setPercentVisible} // use the official onPercentChange callback
+    >
       <View>
         {PlayerInner}
         {/* fullscreen modal */}
@@ -558,7 +644,7 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
                   repeat={true}
                 />
 
-                <View pointerEvents={showControls ? "box-none" : "auto"} style={styles.tapOverlayFullscreen}>
+                <View pointerEvents="box-none" style={styles.tapOverlayFullscreen}>
                   <Pressable style={{ flex: 1 }} onPress={onOverlayTap} />
                 </View>
 
