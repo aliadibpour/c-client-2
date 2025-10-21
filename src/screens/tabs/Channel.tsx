@@ -23,6 +23,7 @@ import ChannelAlbumItem from "../../components/tabs/channel/ChannelAlbumItem";
 import { useFocusEffect } from "@react-navigation/native";
 import { getChat, getChatHistory, TelegramService } from "../../services/TelegramService";
 import { lstat } from "fs";
+import uuid from 'react-native-uuid'; // <-- added
 
 const { width, height } = Dimensions.get("window");
 
@@ -43,23 +44,32 @@ export default function ChannelScreen({ route }: any) {
   const [showScrollToBottom, setShowScrollToBottom] = useState<boolean | "loading">(false);
 
   const groupedMessages = useMemo(() => groupMessagesByAlbum(messages), [messages]);
-
   function groupMessagesByAlbum(messages: any[]) {
-    const albumMap = new Map();
-    const normalMessages = [];
+    // 1) dedupe messages by id (preserve first occurrence order)
+    const seen = new Set<number | string>();
+    const uniqueMessages: any[] = [];
+    for (const m of messages) {
+      if (!seen.has(m?.id)) {
+        seen.add(m.id);
+        uniqueMessages.push(m);
+      }
+    }
 
-    for (const msg of messages) {
+    const albumMap = new Map<number | string, any[]>();
+    const normalMessages: any[] = [];
+
+    for (const msg of uniqueMessages) {
       if (msg.mediaAlbumId && msg.mediaAlbumId !== 0) {
         if (!albumMap.has(msg.mediaAlbumId)) {
           albumMap.set(msg.mediaAlbumId, []);
         }
-        albumMap.get(msg.mediaAlbumId).push(msg);
+        albumMap.get(msg.mediaAlbumId)!.push(msg);
       } else {
         normalMessages.push(msg);
       }
     }
 
-    const grouped = [];
+    const grouped: any[] = [];
 
     for (const [albumId, albumMsgs] of albumMap) {
       const sorted = albumMsgs.sort((a: any, b: any) => a.id - b.id);
@@ -67,6 +77,7 @@ export default function ChannelScreen({ route }: any) {
         type: "album",
         mediaAlbumId: albumId,
         messages: sorted,
+        // keep numeric id for album (used elsewhere) but note: key map will use composite key
         id: sorted[0].id,
       });
     }
@@ -79,6 +90,7 @@ export default function ChannelScreen({ route }: any) {
       });
     }
 
+    // newest first (same as before)
     return grouped.sort((a, b) => b.id - a.id);
   }
 
@@ -96,6 +108,24 @@ export default function ChannelScreen({ route }: any) {
     setViewableItems(viewableItems);
   });
 
+  // KEY MAP: map grouped-item-id -> stable uuid (preserve across renders)
+  const keyMapRef = useRef<Map<number | string, string>>(new Map());
+
+  // ensure keyMap contains stable uuid for every grouped item
+  useEffect(() => {
+    // add keys for current grouped items using composite key `${type}-${id}`
+    for (const item of groupedMessages) {
+      const mapKey = `${item.type}-${item.id}`;
+      if (!keyMapRef.current.has(mapKey)) {
+        keyMapRef.current.set(mapKey, String(uuid.v4()));
+      }
+    }
+    // remove keys that no longer exist (keeps map small)
+    const ids:any = new Set(groupedMessages.map(i => `${i.type}-${i.id}`));
+    for (const k of Array.from(keyMapRef.current.keys())) {
+      if (!ids.has(k)) keyMapRef.current.delete(k);
+    }
+  }, [groupedMessages]);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -296,14 +326,15 @@ export default function ChannelScreen({ route }: any) {
   const activeDownloads = useMemo(() => {
     if (!viewableItems.length) return [];
     const selected = [];
-    const currentMessageId = viewableItems[0]?.key;
+    // NOTE: use item.id (not key) because we're using uuid keys now
+    const currentMessageId = viewableItems[0]?.item?.id;
     const currentIndex = messages.findIndex((v) => v.id == currentMessageId);
     if (currentIndex - 1 >= 0) selected.push(messages[currentIndex - 1].id);
-    selected.push(messages[currentIndex].id);
+    selected.push(messages[currentIndex]?.id || 0);
     if (currentIndex + 1 < messages.length) selected.push(messages[currentIndex + 1].id);
     if (currentIndex + 2 < messages.length) selected.push(messages[currentIndex + 2].id);
     return selected;
-  }, [viewableItems]);
+  }, [viewableItems, messages]);
 
 
   const hasScrolledToFocus = useRef(false);
@@ -430,8 +461,12 @@ export default function ChannelScreen({ route }: any) {
 
         <FlatList
           ref={listRef}
-          keyExtractor={(item) => item.id?.toString()}
+          keyExtractor={(item) => {
+            const mapKey = `${item.type}-${item.id}`;
+            return keyMapRef.current.get(mapKey) || mapKey;
+          }}
           data={groupedMessages}
+          extraData={messages}
           renderItem={({ item }) => {
             if (item.type === "album") {
               return <ChannelAlbumItem data={item.messages} />;
@@ -471,7 +506,7 @@ export default function ChannelScreen({ route }: any) {
               </View>
             ) : null
           }
-
+          removeClippedSubviews={false}
         />
       </View>
 

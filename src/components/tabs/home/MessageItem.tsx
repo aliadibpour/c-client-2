@@ -195,8 +195,8 @@ function MessageItem({ data, isVisible, activeDownload, chatInfo }: Props) {
           onReact={(emoji: any) => console.log("🧡", emoji)}
           customStyles={{
             container: { paddingBottom: 2 },
-            emoji: { fontSize: 13 },
-            count: { fontSize: 12 },
+            emoji: { fontSize: 12.5 },
+            count: { fontSize: 11.5 },
             reactionBox: { paddingHorizontal: 6 },
           }}
         />
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
   },
   commentsText: {
     color: "#adadad",
-    fontSize: 13.6,
+    fontSize: 13,
     fontFamily: "SFArabic-Regular",
   },
 });

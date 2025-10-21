@@ -71,7 +71,7 @@ export default function ChannelHeader({ chatId, chatInfo, superGroupeInfo }: { c
   return (
     <View style={styles.wrapper}>
       <TouchableOpacity
-        onPress={() => navigation.navigate("ChannelDetail", { chatId })}
+        //onPress={() => navigation.navigate("ChannelDetail", { chatId })}
         style={styles.infoContainer}
       >
         {/* 📍 آواتار کانال */}

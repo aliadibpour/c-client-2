@@ -143,7 +143,7 @@ export default function ProfileScreen({ navigation }: any) {
   const renderInformation = () => (
     <View style={styles.informationBox}>
       {profile?.phoneNumber && (
-        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 4 }}>
           <PhoneIcon color={"#999"} />
           <View>
             <Text style={styles.infoValue}>
@@ -156,7 +156,7 @@ export default function ProfileScreen({ navigation }: any) {
       )}
 
       {profile?.usernames?.activeUsernames?.[0] && (
-        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 4 }}>
           <UserIcon color={"#999"} />
           <View>
             <Text style={styles.infoValue}>@{profile.usernames.activeUsernames[0]}</Text>
@@ -225,7 +225,7 @@ export default function ProfileScreen({ navigation }: any) {
                 ) : (
                   <View style={{ width: 24, height: 24, backgroundColor: "#444", borderRadius: 6 }} />
                 )}
-                <Text style={styles.teamName}>{teamName}</Text>
+                <Text numberOfLines={1} style={styles.teamName}>{teamName}</Text>
               </View>
             );
           })}
@@ -291,7 +291,7 @@ export default function ProfileScreen({ navigation }: any) {
       <View style={{ backgroundColor: "#111", paddingVertical: 10, paddingHorizontal: 10, marginTop: 15 }}>
         <TouchableOpacity style={{ gap: 6, alignItems: "center", flexDirection: "row" }}>
           <LogoutIcon color={"#999"} />
-          <Text style={{ fontSize: 15, fontFamily: "SFArabic-Regular", color: "#ddd" }}>خروج از حساب کاربری</Text>
+          <Text style={{ fontSize: 13.5, fontFamily: "SFArabic-Regular", color: "#ddd" }}>خروج از حساب کاربری</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   informationBox: {
-    paddingHorizontal: 7,
+    paddingHorizontal: 8.5,
     paddingVertical: 7.5,
     alignItems: "flex-start",
     gap: 20,
@@ -380,7 +380,7 @@ const styles = StyleSheet.create({
   },
   infoValue: {
     color: "#ccc",
-    fontSize: 15,
+    fontSize: 13.4,
     textAlign: "left",
     fontFamily: "SFArabic-Regular",
   },
@@ -400,7 +400,7 @@ const styles = StyleSheet.create({
   },
   favoritesTitle: {
     color: '#ddd',
-    fontSize: 15,
+    fontSize: 13.5,
     fontFamily: 'SFArabic-Regular',
   },
   favoritesList: {
@@ -411,7 +411,7 @@ const styles = StyleSheet.create({
   teamItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(224, 222, 222, 0.12)',
+    backgroundColor: 'rgba(224, 222, 222, 0.08)',
     padding: 10,
     borderRadius: 10,
     width: 70,

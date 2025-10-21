@@ -210,9 +210,9 @@ const styles = StyleSheet.create({
     marginVertical: 7,
   },
   logo: {
-    width: 70,
-    height: 70,
-    borderRadius: 10,
+    width: 50,
+    height: 50,
+    borderRadius: 80,
     position: 'absolute',
     bottom: 140,
   },

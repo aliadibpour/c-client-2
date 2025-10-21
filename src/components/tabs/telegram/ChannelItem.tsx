@@ -16,10 +16,12 @@ export default function ChannelItem({
   channel,
   onPress,
   onReady,
+  prefetched, // <-- جدید: داده‌ای که از loader می‌گیریم (ممکن است شامل __downloaded_profile_photo باشد)
 }: {
   channel: ChannelProp;
   onPress?: (c: any) => void;
   onReady?: (uniqueId: string | number | null | undefined) => void;
+  prefetched?: any;
 }) {
   const navigation: any = useNavigation();
 
@@ -33,6 +35,12 @@ export default function ChannelItem({
   const [loading, setLoading] = useState<boolean>(true);
 
   const calledReadyRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const safeParse = (maybe: any) => {
     if (!maybe) return null;
@@ -103,6 +111,50 @@ export default function ChannelItem({
     }
   };
 
+  // helper: try to find remote id anywhere in object (profile_photo, photo, remote, id ...)
+  const findRemoteId = (obj: any): string | null => {
+    if (!obj || typeof obj !== "object") return null;
+    // check common paths first
+    if (obj?.profile_photo?.small?.remote?.id) return String(obj.profile_photo.small.remote.id);
+    if (obj?.photo?.small?.remote?.id) return String(obj.photo.small.remote.id);
+    if (obj?.photo?.remote?.id) return String(obj.photo.remote.id);
+    // deep search
+    const deepFind = (o: any): string | null => {
+      if (!o || typeof o !== "object") return null;
+      if (o.remote && typeof o.remote === "object" && ("id" in o.remote)) {
+        return String(o.remote.id);
+      }
+      for (const k of Object.keys(o)) {
+        try {
+          if (typeof o[k] === "object") {
+            const r = deepFind(o[k]);
+            if (r) return r;
+          }
+        } catch { /* ignore */ }
+      }
+      return null;
+    };
+    return deepFind(obj);
+  };
+
+  // try download remote file (non-blocking). returns local path or null.
+  const tryDownloadRemoteFile = async (remoteId: string): Promise<string | null> => {
+    if (!remoteId) return null;
+    try {
+      const r = await TdLib.downloadFileByRemoteId(remoteId);
+      // depending on binding, r may be a path string or an object; handle both
+      if (!r) return null;
+      if (typeof r === "string") return r;
+      // if object: try common fields
+      if (r.path) return r.path;
+      if (r.local && r.local.path) return r.local.path;
+      return null;
+    } catch (e) {
+      // ignore download errors
+      return null;
+    }
+  };
+
   const applyChatObj = (chatObj: any) => {
     if (!chatObj) return;
     if (chatObj.title) setTitle(chatObj.title);
@@ -121,44 +173,119 @@ export default function ChannelItem({
       }
     }
 
+    // if there's an already-downloaded profile photo attached by loader, use it
+    if (chatObj.__downloaded_profile_photo) {
+      const dl = chatObj.__downloaded_profile_photo;
+      // if it's an absolute path or file://, normalize to uri
+      if (typeof dl === "string" && dl.length > 0) {
+        const possible = dl.startsWith("file://") ? dl : `file://${dl}`;
+        setAvatarUri(possible);
+      } else if (typeof dl === "object" && dl.path) {
+        setAvatarUri(dl.path.startsWith("file://") ? dl.path : `file://${dl.path}`);
+      }
+    }
+
+    // if there is a local path reported by TdLib structure (already downloaded)
     const small = chatObj.photo?.small;
     if (small?.local?.isDownloadingCompleted && small?.local?.path) {
-      setAvatarUri(`file://${small.local.path}`);
+      const p = small.local.path.startsWith("file://") ? small.local.path : `file://${small.local.path}`;
+      setAvatarUri(p);
     }
 
     extractPreviewAndThumb(chatObj);
-
-    setLoading(false);
   };
 
   useEffect(() => {
     let mounted = true;
     setLoading(true);
+    calledReadyRef.current = false;
 
     const fetchInfo = async () => {
+      // 1) if prefetched present, use it immediately (may include __downloaded_profile_photo)
+      if (prefetched) {
+        const parsed = prefetched?.raw ? safeParse(prefetched.raw) ?? safeParse(prefetched) : safeParse(prefetched) ?? prefetched;
+        applyChatObj(parsed ?? prefetched);
+
+        // resolved id fallback if not present
+        if ((!parsed?.chatId && !parsed?.id) && parsed?.username) {
+          setResolvedChatId(parsed.username);
+        }
+
+        // mark loading false quickly (we won't wait for download)
+        if (mountedRef.current) setLoading(false);
+
+        // if avatar not set but __downloaded_profile_photo exists -> set it (applyChatObj did)
+        // if avatar still missing, but parsed has remote id -> try download in background and update when ready
+        if (mountedRef.current) {
+          const hasAvatar = !!(avatarUri || miniAvatarUri);
+          const remoteId = findRemoteId(parsed ?? prefetched);
+          if (!hasAvatar && remoteId) {
+            // fire-and-forget
+            try {
+              const dl = await tryDownloadRemoteFile(remoteId);
+              if (mountedRef.current && dl) {
+                const p = dl.startsWith("file://") ? dl : `file://${dl}`;
+                setAvatarUri(p);
+              }
+            } catch { /* ignore */ }
+          }
+        }
+        return;
+      }
+
+      // 2) if channel is already an object, apply it
       if (typeof channel === "object" && channel !== null) {
         applyChatObj(channel);
         if ((!channel.chatId && !channel.id) && typeof channel.username === "string") {
           setResolvedChatId(channel.username);
         }
+        if (mountedRef.current) setLoading(false);
+
+        // background download if needed
+        const remoteId = findRemoteId(channel);
+        if (mountedRef.current && !avatarUri && remoteId) {
+          try {
+            const dl = await tryDownloadRemoteFile(remoteId);
+            if (mountedRef.current && dl) {
+              const p = dl.startsWith("file://") ? dl : `file://${dl}`;
+              setAvatarUri(p);
+            }
+          } catch { /* ignore */ }
+        }
         return;
       }
 
+      // 3) numeric id -> getChat
       try {
         if (typeof channel === "number") {
           const res: any = await TdLib.getChat(channel);
           const parsed = res?.raw ? safeParse(res.raw) ?? safeParse(res) : safeParse(res);
-          if (parsed && mounted) {
+          if (parsed && mountedRef.current) {
             applyChatObj(parsed);
+            setLoading(false);
+            // background download if needed
+            const remoteId = findRemoteId(parsed);
+            if (remoteId) {
+              try {
+                const dl = await tryDownloadRemoteFile(remoteId);
+                if (mountedRef.current && dl) {
+                  const p = dl.startsWith("file://") ? dl : `file://${dl}`;
+                  setAvatarUri(p);
+                }
+              } catch { /* ignore */ }
+            }
             return;
           } else {
-            setTitle(String(channel));
-            setResolvedChatId(channel);
-            setLoading(false);
+            if (mountedRef.current) {
+              setTitle(String(channel));
+              setResolvedChatId(channel);
+              setLoading(false);
+            }
             return;
           }
         }
 
+        // 4) string username -> searchPublicChat
         if (typeof channel === "string") {
           try {
             const res: any = await TdLib.searchPublicChat(channel);
@@ -167,8 +294,21 @@ export default function ChannelItem({
             if (!parsed) parsed = safeParse(res);
             if (!parsed && typeof res === "object") parsed = res;
 
-            if (parsed && mounted) {
+            if (parsed && mountedRef.current) {
               applyChatObj(parsed);
+              setLoading(false);
+
+              // background download if present
+              const remoteId = findRemoteId(parsed);
+              if (remoteId) {
+                try {
+                  const dl = await tryDownloadRemoteFile(remoteId);
+                  if (mountedRef.current && dl) {
+                    const p = dl.startsWith("file://") ? dl : `file://${dl}`;
+                    setAvatarUri(p);
+                  }
+                } catch { /* ignore */ }
+              }
               return;
             } else {
               if (res?.error) {
@@ -177,32 +317,36 @@ export default function ChannelItem({
                   setIsUsernameNotOccupied(true);
                   setTitle(channel);
                   setResolvedChatId(channel);
-                  setLoading(false);
+                  if (mountedRef.current) setLoading(false);
                   return;
                 }
               }
-              setTitle(channel);
-              setResolvedChatId(channel);
-              setLoading(false);
+              if (mountedRef.current) {
+                setTitle(channel);
+                setResolvedChatId(channel);
+                setLoading(false);
+              }
             }
           } catch (err: any) {
             const errStr = err?.message || String(err);
-            if (errStr.includes("USERNAME_NOT_OCCUPIED")) {
+            if (errStr.includes("USERNAME_NOT_OCCUPIED") || errStr.toLowerCase().includes("username is invalid")) {
               setIsUsernameNotOccupied(true);
               setTitle(channel);
               setResolvedChatId(channel);
-              setLoading(false);
+              if (mountedRef.current) setLoading(false);
               return;
             }
             console.error("ChannelItem fetch error:", err);
-            setTitle(channel);
-            setResolvedChatId(channel);
-            setLoading(false);
+            if (mountedRef.current) {
+              setTitle(channel);
+              setResolvedChatId(channel);
+              setLoading(false);
+            }
           }
         }
       } catch (e) {
         console.error("ChannelItem unexpected error:", e);
-        if (mounted) {
+        if (mountedRef.current) {
           setTitle(typeof channel === "string" ? channel : "بدون عنوان");
           setResolvedChatId(typeof channel === "string" ? channel : null);
           setLoading(false);
@@ -210,13 +354,12 @@ export default function ChannelItem({
       }
     };
 
-    if (mounted) fetchInfo();
+    fetchInfo();
 
-    return () => {
-      mounted = false;
-    };
-  }, [channel]);
+    return () => { mounted = false; };
+  }, [channel, prefetched]); // اضافه شدن prefetched به deps
 
+  // call onReady as soon as loading is false (we don't wait for background avatar download)
   useEffect(() => {
     if (!loading && !calledReadyRef.current) {
       onReady?.(resolvedChatId ?? channel);
@@ -232,7 +375,7 @@ export default function ChannelItem({
     navigation.navigate("Channel", { chatId: resolvedChatId ?? channel });
   };
 
-  // ❌ هیچ placeholder — وقتی لودینگه، هیچی نشون نده
+  // وقتی loading هست، ما null برمی‌گردونیم (تو طراحی تو) — اگر می‌خوای placeholder باشه اینجا تغییر بده
   if (loading) {
     return null;
   }

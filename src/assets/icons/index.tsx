@@ -105,7 +105,7 @@ export const SendIcon = ({ color = "white", size = 20 }) => (
   </Svg>
 )
 
-export const LogoutIcon = ({ color = "white", size = 18 }) => (
+export const LogoutIcon = ({ color = "white", size = 16 }) => (
   <Svg
     width={size}
     height={size}
@@ -124,7 +124,7 @@ export const LogoutIcon = ({ color = "white", size = 18 }) => (
   </Svg>
 );
 
-export const UserIcon = ({ color = "white", size = 20 }) => (
+export const UserIcon = ({ color = "white", size = 17 }) => (
   <Svg
     width={size}
     height={size}
@@ -136,7 +136,7 @@ export const UserIcon = ({ color = "white", size = 20 }) => (
   </Svg>
 );
 
-export const HeartIcon = ({ color = "white", size = 16.7 }) => (
+export const HeartIcon = ({ color = "white", size = 14 }) => (
   <Svg
     width={size}
     height={size}
@@ -148,7 +148,7 @@ export const HeartIcon = ({ color = "white", size = 16.7 }) => (
   </Svg>
 );
 
-export const PhoneIcon = ({ color = "white", size = 18 }) => (
+export const PhoneIcon = ({ color = "white", size = 15 }) => (
   <Svg
     width={size}
     height={size}
