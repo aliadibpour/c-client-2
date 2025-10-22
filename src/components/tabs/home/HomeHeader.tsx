@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Filter } from "lucide-react-native";
+import { Filter, Redo } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
 import { View, Text, Image, StyleSheet, Dimensions, FlatList, TouchableOpacity } from "react-native";
 import { Fire } from "../../../assets/icons";
@@ -39,13 +39,13 @@ const teamRecord : { [key: string]: string } = {
   'بایرن': 'bayern',
   'اینتر': 'inter',
   'میلان': 'milan',
-  'برای شما': "esteghlal"
+  //'برای شما': "esteghlal"
 }
 export const pepe = (team:string) => {
   return teamRecord[team];
 }
 
-export default function HomeHeader({ activeTab, setActiveTab }:any) {
+export default function HomeHeader({ activeTab, setActiveTab, hasNewMessage, onRefresh }:any) {
   const [teams, setTeams] = useState<any>([]);
 
   useEffect(() => {
@@ -57,7 +57,7 @@ export default function HomeHeader({ activeTab, setActiveTab }:any) {
       // ✅ شرط: اگر فقط یک تیم بود، "برای شما" نشون داده نشه
       const teamValues = Object.values(parsed);
       if (teamValues.length > 1) {
-        setTeams(["برای شما", ...teamValues]);
+        setTeams([...teamValues]);
       } else {
         setTeams(teamValues); // فقط همون یکی
       }
@@ -75,6 +75,7 @@ export default function HomeHeader({ activeTab, setActiveTab }:any) {
         horizontal
         showsHorizontalScrollIndicator={false}
         keyExtractor={(item: any, index) => `${item}-${index}`}
+        style={{paddingHorizontal:5}}
         renderItem={({ item }) => {
           const isActive = activeTab === pepe(item);
           return (
@@ -86,6 +87,14 @@ export default function HomeHeader({ activeTab, setActiveTab }:any) {
           );
         }}
       />
+
+      {
+        hasNewMessage &&
+        <TouchableOpacity style={styles.hasNewbox} onPress={() => onRefresh()}>
+          <Text style={styles.hasNewText}>جدیدترین ها</Text>
+          <Redo width={15}/>
+        </TouchableOpacity>
+      }
     </View>
   );
 }
@@ -96,7 +105,7 @@ const styles = StyleSheet.create({
     borderColor: "#111",
     borderBottomWidth: .7,
     gap: 6,
-    paddingHorizontal: 8,
+    //paddingHorizontal: 8,
     paddingTop: 5,
     backgroundColor: "#000000e8",
     overflow: "scroll",
@@ -113,7 +122,7 @@ const styles = StyleSheet.create({
     fontFamily: "SFArabic-Regular",
   },
   tabItem: {
-    paddingVertical: 9,
+    paddingVertical: 7,
     paddingHorizontal: 12,
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
@@ -133,4 +142,16 @@ const styles = StyleSheet.create({
     color: "#dcdcdcff", // آبی وقتی انتخاب شد
     fontWeight: "600",
   },
+  hasNewbox:{
+    backgroundColor: "#fffffff6",
+    padding:3,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  hasNewText:{
+    color: "#000000ff",
+    fontFamily: "SFArabic-Regular",
+    fontSize: 12,
+  }
 });

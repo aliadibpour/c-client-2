@@ -38,8 +38,11 @@ const STORAGE_KEYS = {
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
+  //const timestamp = Math.floor(Date.now() / 1000);
+  const [timestamp, setTimestamp] = useState(Math.floor(Date.now() / 1000))
 
-  const [activeTab, setActiveTab] = useState(pepe("برای شما"));
+  const [activeTab, setActiveTab] = useState("perspolis");
+  const [hasNewMessage, setHasNewMessage] = useState<boolean>(false)
   // keep a ref to always read latest activeTab from callbacks/closures
   const activeTabRef = useRef<string>(activeTab);
   useEffect(() => {
@@ -546,8 +549,8 @@ export default function HomeScreen() {
   }
 
   const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
+    const currentTab = activeTabRef.current || '';
     try {
-      const currentTab = activeTabRef.current || '';
       if (hasSentBatchForTab(currentTab, batchIdx)) return;
 
       const start = batchIdx * BATCH_SIZE;
@@ -560,6 +563,7 @@ export default function HomeScreen() {
 
       const params = new URLSearchParams();
       params.append("uuid", parsed.uuid);
+      // params.append("timestamp", timestamp.toString())
       ids.forEach((id) => params.append("messageIds", id));
       params.append("activeTab", currentTab);
 
@@ -575,6 +579,16 @@ export default function HomeScreen() {
       markSentBatchForTab(currentTab, batchIdx);
     } catch (err) {
       console.warn('[notify] failed', err);
+    }
+
+    try {
+      console.log(batchIdx, "poopopopopo")
+      if ((Date.now() / 1000) - timestamp < 3 * 60 || batchIdx < 4) return;
+      const newMessages = await fetch(`http://10.129.218.115:9000/feed-message/new-messages?timestamp=${timestamp}&team=${currentTab}`)
+      const hasNewMessage = await newMessages.json()
+      if (newMessages) setHasNewMessage(hasNewMessage)
+    } catch (error) {
+      console.error(error)
     }
   }, [getStoredUserInfo]);
 
@@ -593,7 +607,8 @@ export default function HomeScreen() {
         const parsedUuid = parsed.uuid;
         if (!parsedUuid) return;
         const serverTab = activeTabRef.current || activeTab;
-        const res = await fetch(`http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}&activeTab=${encodeURIComponent(serverTab)}`);
+        const res = await fetch(`http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}
+        &activeTab=${encodeURIComponent(serverTab)}&timestamp=${timestamp.toString()}`);
         const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!mounted) return;
 
@@ -866,7 +881,8 @@ export default function HomeScreen() {
         }
         const tab = activeTabRef.current || activeTab;
         console.log(encodeURIComponent(tab))
-        const res = await fetch(`http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${parsed.uuid}&activeTab=${encodeURIComponent(tab)}`);
+        const res = await fetch(`http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${parsed.uuid}
+        &activeTab=${encodeURIComponent(tab)}&timestamp=${timestamp.toString()}`);
         const newDatas: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!newDatas || newDatas.length === 0) {
           setLoadingMore(false);
@@ -974,6 +990,75 @@ export default function HomeScreen() {
     alreadyViewed.current.clear();
   }, []);
 
+
+  const onRefresh = async () => {
+  try {
+    // 1) پاک‌سازی state / prefetch تا تب از صفر شروع کنه
+    prefetchRef.current.clear();
+    prefetchInFlightRef.current.clear();
+    datasRef.current = [];
+    setMessages([]);
+    setCurrentBatchIdx(0);
+    alreadyViewed.current.clear();
+    // اگر می‌خوای badge رو هم خاموش کنیم (اختیاری)
+    // setHasNewMessage(false);
+
+    // 2) بزن لودینگ
+    setInitialLoading(true);
+    setInitialError(false);
+
+    // 3) بگیر uuid و داده‌های متا از سرور
+    const parsed = await getStoredUserInfo();
+    if (!parsed?.uuid) {
+      // اگر کاربر لاگین نیست، لودینگ رو خاموش کن و برگرد
+      setInitialLoading(false);
+      return;
+    }
+
+    const tab = activeTabRef.current || activeTab;
+    const res = await fetch(
+      `http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${parsed.uuid}` +
+      `&activeTab=${encodeURIComponent(tab)}&timestamp=${timestamp.toString()}`
+    );
+
+    const datass = await res.json();
+    const datas = Array.isArray(datass)
+      ? datass.sort((a: any, b: any) => +b.messageId - +a.messageId).slice(0, 200)
+      : [];
+
+    // 4) ست‌کردن متادیتا و بارگذاری اولین بچ
+    datasRef.current = datas;
+
+    const first = await loadBatch(0); // از همان فانکشن‌های موجود استفاده می‌کنیم
+    const enrichedFirst = await ensureRepliesForMessages(first);
+
+    setMessages(enrichedFirst.map(withUuid));
+    setCurrentBatchIdx(0);
+
+    // warm-up (اختیاری ولی مفید)
+    const chatIds = Array.from(new Set(enrichedFirst.map((m: any) => m.chatId).filter(Boolean)));
+    await limitConcurrency(
+      chatIds,
+      2,
+      async (cid) => {
+        await getAndCacheChatInfo(+cid);
+        return null;
+      }
+    );
+
+    // آماده‌سازی prefetch بعدی
+    prefetchNextBatches(0);
+  } catch (err) {
+    console.warn('[onRefresh] failed', err);
+    setInitialError(true);
+  } finally {
+    // 5) خاموش کردن لودینگ
+    setInitialLoading(false);
+  }
+};
+
+
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
@@ -989,7 +1074,7 @@ export default function HomeScreen() {
         style={[styles.animatedHeader, { transform: [{ translateY }] }]}
       >
         <View style={{ flex: 1, backgroundColor: "transparent", overflow: "hidden" }} pointerEvents="box-none">
-          <HomeHeader activeTab={activeTab} setActiveTab={setActiveTabAndSync} />
+          <HomeHeader activeTab={activeTab} setActiveTab={setActiveTabAndSync} hasNewMessage={hasNewMessage} onRefresh={onRefresh} />
         </View>
       </Animated.View>
 
