@@ -507,6 +507,7 @@ export default function ChannelScreen({ route }: any) {
             ) : null
           }
           removeClippedSubviews={false}
+          maxToRenderPerBatch={10}
         />
       </View>
 

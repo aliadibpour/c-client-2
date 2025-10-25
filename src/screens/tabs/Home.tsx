@@ -613,7 +613,7 @@ export default function HomeScreen() {
         if (!mounted) return;
 
         const datas = datass.sort((a, b) => +b.messageId - +a.messageId).slice(0, 200);
-        console.log(datas)
+        console.log(datass)
         // set datas and clear any old prefetchs (namespaced)
         datasRef.current = datas;
         prefetchRef.current.clear();
@@ -1097,7 +1097,7 @@ export default function HomeScreen() {
             onViewableItemsChanged={onViewRef}
             viewabilityConfig={viewConfigRef.current}
             initialNumToRender={8}
-            maxToRenderPerBatch={12}
+            maxToRenderPerBatch={10}
             windowSize={15}
             contentContainerStyle={{ paddingTop: measuredHeaderHeight + insets.top, paddingBottom: 20 }}
             onScroll={onScroll}
