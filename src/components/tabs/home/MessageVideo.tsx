@@ -39,7 +39,13 @@ interface Props {
   activeDownload?: any;
   context?: "channel" | "explore";
 }
-
+function formatTime(s: number) {
+  if (!s || !isFinite(s)) return "0:00";
+  const total = Math.floor(s);
+  const m = Math.floor(total / 60);
+  const sec = total % 60;
+  return `${m}:${sec < 10 ? "0" + sec : sec}`;
+}
 /* -------------------------
    VideoFocusManager (singleton)
    ------------------------- */
@@ -97,6 +103,12 @@ function useTdlibDownload(remoteId: string | number | undefined, size: number, f
   const subUnsubRef = useRef<(() => void) | null>(null);
   const stallRef = useRef<any>(null);
 
+  // --- NEW: cancel ignore window ---
+  const lastLocalCancelAt = useRef<number | null>(null);
+  const cancelIgnoreTimeoutRef = useRef<any>(null);
+  const IGNORE_AFTER_CANCEL_MS = 1000; // adjust 700..1200 if needed
+  // ---------------------------------
+
   const clearStall = useCallback(() => {
     if (stallRef.current) { clearTimeout(stallRef.current); stallRef.current = null; }
   }, []);
@@ -151,14 +163,30 @@ function useTdlibDownload(remoteId: string | number | undefined, size: number, f
         const parsed = parseRaw(ev);
         const f = parsed.file ?? parsed.data?.file ?? parsed.data ?? parsed;
         if (!f) return; if (!idMatchesRemote(f)) return;
+
+        // unify local info (we'll reuse)
         const local = f.local ?? {};
         const localPath = local.path ?? null;
-        const downloadedSize = local.downloadedSize ?? local.downloaded_size ?? local.downloaded_prefix_size ?? f.downloadedSize ?? f.downloaded_size ?? 0;
+        const downloadedSize =
+          local.downloadedSize ?? local.downloaded_size ?? local.downloaded_prefix_size ?? f.downloadedSize ?? f.downloaded_size ?? 0;
         const total = f.size ?? f.total ?? null;
+        const completed = !!local.is_downloading_completed || !!local.isDownloadingCompleted || false;
+
+        // --- NEW: ignore mid-flight progress events right after a local cancel ---
+        const now = Date.now();
+        if (lastLocalCancelAt.current && (now - lastLocalCancelAt.current) < IGNORE_AFTER_CANCEL_MS) {
+          // if this is only a progress mid-flight (not completed) then ignore it
+          if (!completed && downloadedSize > 0) {
+            // skip transient progress update that would overwrite optimistic UI
+            return;
+          }
+          // if completed === true, we WILL accept it (download actually finished)
+        }
+        // ---------------------------------------------------------------
+
         if (total) setTotalBytes(total);
         const percent = total ? Math.floor((downloadedSize / Math.max(1, total)) * 100) : 0;
         if (percent !== lastPercentRef.current) { lastPercentRef.current = percent; setProgress(percent); resetStall(); }
-        const completed = !!local.is_downloading_completed || !!local.isDownloadingCompleted || false;
         if (completed && localPath) {
           lastLocalPathRef.current = localPath;
           const uri = String(localPath).startsWith("file://") ? String(localPath) : "file://" + String(localPath);
@@ -167,7 +195,13 @@ function useTdlibDownload(remoteId: string | number | undefined, size: number, f
       } catch (e) { console.warn("[useTdlibDownload] device update parse err", e); }
     });
 
-    return () => { try { if (subUnsubRef.current) subUnsubRef.current(); } catch (e) {} try { deviceSub.remove(); } catch (e) {} clearStall(); };
+    return () => {
+      try { if (subUnsubRef.current) subUnsubRef.current(); } catch (e) {}
+      try { deviceSub.remove(); } catch (e) {}
+      clearStall();
+      // clear cancel-ignore timeout if any
+      try { if (cancelIgnoreTimeoutRef.current) { clearTimeout(cancelIgnoreTimeoutRef.current); cancelIgnoreTimeoutRef.current = null; } } catch (e) {}
+    };
   }, [remoteId, fileId, externalActiveDownload, resetStall]);
 
   const attemptStart = async () => {
@@ -185,8 +219,23 @@ function useTdlibDownload(remoteId: string | number | undefined, size: number, f
     try {
       if (!remoteId && !fileId) return;
       const rid = remoteId == null ? null : Number.isFinite(Number(remoteId)) ? Number(remoteId) : String(remoteId);
+
+      // --- NEW: mark local cancel timestamp to ignore immediate in-flight progress updates ---
+      lastLocalCancelAt.current = Date.now();
+      if (cancelIgnoreTimeoutRef.current) { clearTimeout(cancelIgnoreTimeoutRef.current); cancelIgnoreTimeoutRef.current = null; }
+      cancelIgnoreTimeoutRef.current = setTimeout(() => {
+        lastLocalCancelAt.current = null;
+        cancelIgnoreTimeoutRef.current = null;
+      }, IGNORE_AFTER_CANCEL_MS + 50);
+      // -------------------------------------------------------------------------------
+
       cancelDownload((rid ?? (fileId as any)));
-      setStatus("idle"); setProgress(0); setVideoPath(null); lastLocalPathRef.current = null;
+
+      // optimistic local update so UI immediately reflects cancel
+      setStatus("idle");
+      setProgress(0);
+      setVideoPath(null);
+      lastLocalPathRef.current = null;
     } catch (e) { console.warn("[useTdlibDownload] pause/cancel err:", e); setError(String(e)); setStatus("error"); }
   }, [remoteId, fileId]);
 
@@ -533,7 +582,7 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
               </View>
             )}
 
-            {status === "idle" && (
+            {(status === "idle" || status === "paused") && (
               <View style={{ alignItems: "center" }}>
                 <TouchableOpacity style={styles.smallCircle} onPress={() => start()}>
                   <Download width={14} height={14} color="#fff" />
@@ -681,9 +730,6 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
     </VisibilitySensor>
   );
 }
-
-/* helpers */
-function formatTime(s: number) { if (!s || !isFinite(s)) return "0:00"; const total = Math.floor(s); const m = Math.floor(total / 60); const sec = total % 60; return `${m}:${sec < 10 ? "0" + sec : sec}`; }
 
 const styles = StyleSheet.create({
   topLeftOverlay: { position: "absolute", left: 8, top: 8, zIndex: 30 },
