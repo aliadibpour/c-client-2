@@ -201,14 +201,14 @@ export function cancelDownload(remoteId: number) {
   if (!entry) {
     // still try to call TdLib cancel if available
     try {
-      TdLib.cancelDownloadByRemoteId(remoteId);
+      TdLib.cancelDownloadByRemoteId(remoteId, false);
     } catch (e) {}
     return;
   }
   entry.cancelRequested = true;
   // try to call TdLib cancel API (best-effort)
   try {
-    TdLib.cancelDownloadByRemoteId(remoteId);
+    TdLib.cancelDownloadByRemoteId(remoteId, false);
   } catch (e) {}
   entry.status = "paused";
   for (const sub of entry.subscribers) {
