@@ -1127,7 +1127,7 @@ const handleSend = async (textToSend: string) => {
               <FlashList
                 ref={listRef}
                 data={comments?.comments || []}
-                keyExtractor={(item: any) => item.id?.toString() ?? Math.random().toString()}
+                keyExtractor={(item, index) => String(item.id ?? item.temp ?? index)}
                 renderItem={({ item, index }) => (
                   <CommentItem
                     item={item}
