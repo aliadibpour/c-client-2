@@ -60,7 +60,7 @@ export default function ChannelScreen({ route }: any) {
 
     for (const msg of uniqueMessages) {
       if (msg.mediaAlbumId && msg.mediaAlbumId !== 0) {
-        if (!albumMap.has(msg.mediaAlbumId)) {
+        if (!albumMap?.has(msg.mediaAlbumId)) {
           albumMap.set(msg.mediaAlbumId, []);
         }
         albumMap.get(msg.mediaAlbumId)!.push(msg);
