@@ -55,16 +55,25 @@ export default function CommentItem({ item, index, comments, navigation, highlig
     });
 
     const [showDelete, setShowDelete] = useState(false);
-    const deleteAnim = useRef(new Animated.Value(0)).current; // 0:hidden, 1:visible
+    const deleteAnim = useRef(new Animated.Value(0)).current; // همان ولی با cleanup و useNativeDriver:false now
 
-    // وقتی showDelete تغییر می‌کنه انیمیشن رو اجرا کن
     useEffect(() => {
-      Animated.timing(deleteAnim, {
+      const animInstance = Animated.timing(deleteAnim, {
         toValue: showDelete ? 1 : 0,
         duration: 200,
         easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
+        useNativeDriver: false, // <-- تغییر: false
+      });
+
+      animInstance.start();
+
+      return () => {
+        // قطع انیمیشن و ریست کردن مقدار تا در reuse مشکلی نباشد
+        try {
+          animInstance.stop();
+        } catch (e) {}
+        deleteAnim.setValue(0);
+      };
     }, [showDelete]);
 
 
@@ -156,8 +165,8 @@ export default function CommentItem({ item, index, comments, navigation, highlig
 
       <TouchableOpacity
        style={[styles.bubble, { backgroundColor: isUser ? showDelete ? "rgba(57, 57, 57, 0.57)": "rgba(81, 0, 103, 0.73)" : bgColor }]}
-       onLongPress={handleLongPress}
-       onPress={() => setShowDelete(false)}>
+       onLongPress={isUser ? handleLongPress : () => null}
+       onPress={() => isUser ? setShowDelete(false): null}>
         {name ? <Text style={styles.username}>{name}</Text> : null}
 
         {item.replyInfo && (
