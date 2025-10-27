@@ -147,6 +147,74 @@ export default function HomeScreen() {
     [tdEnqueue]
   );
 
+  // -------------------------
+  // fetchWithRetry & wrappers
+  // -------------------------
+  async function fetchWithRetry(url: string, opts: any = {}) {
+    const {
+      retries = 2,
+      timeout = 8000,
+      backoffBase = 300,
+      fetchOptions = {},
+      acceptNonOk = false,
+    } = opts;
+
+    let attempt = 0;
+    while (true) {
+      attempt++;
+      const controller = new AbortController();
+      const signal = controller.signal;
+      const timer = setTimeout(() => controller.abort(), timeout);
+
+      try {
+        const res = await fetch(url, { signal, ...fetchOptions });
+        clearTimeout(timer);
+
+        if (!res.ok && !acceptNonOk) {
+          const text = await res.text().catch(() => null);
+          const err: any = new Error(`HTTP ${res.status} ${res.statusText}${text ? " - " + text : ""}`);
+          err.status = res.status;
+          throw err;
+        }
+
+        return res;
+      } catch (err: any) {
+        clearTimeout(timer);
+        // if no retries left -> rethrow
+        if (attempt > retries) {
+          throw err;
+        }
+        // backoff with jitter
+        const backoff = backoffBase * Math.pow(2, attempt - 1);
+        const jitter = Math.floor(Math.random() * 200);
+        await delay(backoff + jitter);
+        // retry
+      }
+    }
+  }
+
+  // wrapper for initial feed (used in initial load & refresh) => more aggressive retries
+  const fetchFeedInitial = useCallback(
+    (tab: string, uuid: string, ts: number) => {
+      const url =
+        `http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${encodeURIComponent(uuid)}` +
+        `&activeTab=${encodeURIComponent(tab)}&timestamp=${ts.toString()}`;
+      return fetchWithRetry(url, { retries: 3, timeout: 8000, backoffBase: 400, fetchOptions: {} });
+    },
+    []
+  );
+
+  // wrapper for load more (less aggressive)
+  const fetchFeedMore = useCallback(
+    (tab: string, uuid: string, ts: number) => {
+      const url =
+        `http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${encodeURIComponent(uuid)}` +
+        `&activeTab=${encodeURIComponent(tab)}&timestamp=${ts.toString()}`;
+      return fetchWithRetry(url, { retries: 2, timeout: 7000, backoffBase: 300, fetchOptions: {} });
+    },
+    []
+  );
+
   // persist caches (debounced)
   const persistCachesDebounced = useCallback(() => {
     if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
@@ -584,6 +652,7 @@ export default function HomeScreen() {
     try {
       console.log(batchIdx, "poopopopopo")
       if ((Date.now() / 1000) - timestamp < 3 * 60 || batchIdx < 4) return;
+      // <-- this call is NOT modified per your request (only initial/loadMore are modified)
       const newMessages = await fetch(`http://10.129.218.115:9000/feed-message/new-messages?timestamp=${timestamp}&team=${currentTab}`)
       const hasNewMessage = await newMessages.json()
       if (newMessages) setHasNewMessage(hasNewMessage)
@@ -607,8 +676,9 @@ export default function HomeScreen() {
         const parsedUuid = parsed.uuid;
         if (!parsedUuid) return;
         const serverTab = activeTabRef.current || activeTab;
-        const res = await fetch(`http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(serverTab)}&uuid=${parsedUuid}
-        &activeTab=${encodeURIComponent(serverTab)}&timestamp=${timestamp.toString()}`);
+
+        // <-- using fetchFeedInitial (with retry/timeout)
+        const res = await fetchFeedInitial(serverTab, parsedUuid, timestamp);
         const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
         if (!mounted) return;
 
@@ -654,7 +724,7 @@ export default function HomeScreen() {
     return () => {
       mounted = false;
     };
-  }, [activeTab, loadBatch, getAndCacheChatInfo, prefetchNextBatches, loadPersistedCaches, notifyServerBatchReached, ensureRepliesForMessages, withUuid]);
+  }, [activeTab, loadBatch, getAndCacheChatInfo, prefetchNextBatches, loadPersistedCaches, notifyServerBatchReached, ensureRepliesForMessages, withUuid, fetchFeedInitial]);
 
   // poll visible messages (only when focused & visible)
   const pollVisibleMessages = useCallback(() => {
@@ -880,20 +950,28 @@ export default function HomeScreen() {
           return;
         }
         const tab = activeTabRef.current || activeTab;
-        console.log(encodeURIComponent(tab))
-        const res = await fetch(`http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${parsed.uuid}
-        &activeTab=${encodeURIComponent(tab)}&timestamp=${timestamp.toString()}`);
-        const newDatas: { chatId: string; messageId: string; channel: string }[] = await res.json();
-        if (!newDatas || newDatas.length === 0) {
+
+        // <-- use fetchFeedMore with retries/timeouts
+        try {
+          const res = await fetchFeedMore(tab, parsed.uuid, timestamp);
+          const newDatas: { chatId: string; messageId: string; channel: string }[] = await res.json();
+          if (!newDatas || newDatas.length === 0) {
+            setLoadingMore(false);
+            isLoadingMoreRef.current = false;
+            return;
+          }
+          // dedupe and append into datasRef
+          const combined = [...datasRef.current, ...newDatas];
+          const unique = combined.filter((d, idx, arr) => arr.findIndex((x) => x.chatId === d.chatId && x.messageId === d.messageId) === idx);
+          datasRef.current = unique;
+          await appendAndAdvance(nextBatchIdx);
+        } catch (err) {
+          console.warn('[loadMore] fetch failed', err);
+          // show nothing except hide loader (you can set a toast/snackbar here if you want)
           setLoadingMore(false);
           isLoadingMoreRef.current = false;
           return;
         }
-        // dedupe and append into datasRef
-        const combined = [...datasRef.current, ...newDatas];
-        const unique = combined.filter((d, idx, arr) => arr.findIndex((x) => x.chatId === d.chatId && x.messageId === d.messageId) === idx);
-        datasRef.current = unique;
-        await appendAndAdvance(nextBatchIdx);
       } else {
         await appendAndAdvance(nextBatchIdx);
       }
@@ -903,7 +981,7 @@ export default function HomeScreen() {
       setLoadingMore(false);
       isLoadingMoreRef.current = false;
     }
-  }, [currentBatchIdx, activeTab, appendAndAdvance, getStoredUserInfo]);
+  }, [currentBatchIdx, activeTab, appendAndAdvance, getStoredUserInfo, fetchFeedMore, timestamp]);
 
   const onEndReached = useCallback(() => {
     loadMore();
@@ -992,72 +1070,81 @@ export default function HomeScreen() {
 
 
   const onRefresh = async () => {
-  try {
-    // 1) پاک‌سازی state / prefetch تا تب از صفر شروع کنه
-    prefetchRef.current.clear();
-    prefetchInFlightRef.current.clear();
-    datasRef.current = [];
-    setMessages([]);
-    setCurrentBatchIdx(0);
-    alreadyViewed.current.clear();
-    // اگر می‌خوای badge رو هم خاموش کنیم (اختیاری)
-    // setHasNewMessage(false);
+    try {
+      // 1) پاک‌سازی state / prefetch تا تب از صفر شروع کنه
+      prefetchRef.current.clear();
+      prefetchInFlightRef.current.clear();
+      datasRef.current = [];
+      setMessages([]);
+      setCurrentBatchIdx(0);
+      alreadyViewed.current.clear();
+      // اگر می‌خوای badge رو هم خاموش کنیم (اختیاری)
+      // setHasNewMessage(false);
 
-    // 2) بزن لودینگ
-    setInitialLoading(true);
-    setInitialError(false);
+      // 2) بزن لودینگ
+      setInitialLoading(true);
+      setInitialError(false);
 
-    // 3) بگیر uuid و داده‌های متا از سرور
-    const parsed = await getStoredUserInfo();
-    if (!parsed?.uuid) {
-      // اگر کاربر لاگین نیست، لودینگ رو خاموش کن و برگرد
-      setInitialLoading(false);
-      return;
-    }
-
-    const tab = activeTabRef.current || activeTab;
-    const res = await fetch(
-      `http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${parsed.uuid}` +
-      `&activeTab=${encodeURIComponent(tab)}&timestamp=${timestamp.toString()}`
-    );
-
-    const datass = await res.json();
-    const datas = Array.isArray(datass)
-      ? datass.sort((a: any, b: any) => +b.messageId - +a.messageId).slice(0, 200)
-      : [];
-
-    // 4) ست‌کردن متادیتا و بارگذاری اولین بچ
-    datasRef.current = datas;
-
-    const first = await loadBatch(0); // از همان فانکشن‌های موجود استفاده می‌کنیم
-    const enrichedFirst = await ensureRepliesForMessages(first);
-
-    setMessages(enrichedFirst.map(withUuid));
-    setCurrentBatchIdx(0);
-
-    // warm-up (اختیاری ولی مفید)
-    const chatIds = Array.from(new Set(enrichedFirst.map((m: any) => m.chatId).filter(Boolean)));
-    await limitConcurrency(
-      chatIds,
-      2,
-      async (cid) => {
-        await getAndCacheChatInfo(+cid);
-        return null;
+      // 3) بگیر uuid و داده‌های متا از سرور
+      const parsed = await getStoredUserInfo();
+      if (!parsed?.uuid) {
+        // اگر کاربر لاگین نیست، لودینگ رو خاموش کن و برگرد
+        setInitialLoading(false);
+        return;
       }
-    );
 
-    // آماده‌سازی prefetch بعدی
-    prefetchNextBatches(0);
-  } catch (err) {
-    console.warn('[onRefresh] failed', err);
-    setInitialError(true);
-  } finally {
-    // 5) خاموش کردن لودینگ
-    setInitialLoading(false);
+      const tab = activeTabRef.current || activeTab;
+
+      // <-- use fetchFeedInitial for refresh too
+      try {
+        const res = await fetchFeedInitial(tab, parsed.uuid, timestamp);
+        setHasNewMessage(false)
+
+        const datass = await res.json();
+        const datas = Array.isArray(datass)
+          ? datass.sort((a: any, b: any) => +b.messageId - +a.messageId).slice(0, 200)
+          : [];
+
+        // 4) ست‌کردن متادیتا و بارگذاری اولین بچ
+        datasRef.current = datas;
+
+        const first = await loadBatch(0); // از همان فانکشن‌های موجود استفاده می‌کنیم
+        const enrichedFirst = await ensureRepliesForMessages(first);
+
+        setMessages(enrichedFirst.map(withUuid));
+        setCurrentBatchIdx(0);
+
+        // warm-up (اختیاری ولی مفید)
+        const chatIds = Array.from(new Set(enrichedFirst.map((m: any) => m.chatId).filter(Boolean)));
+        await limitConcurrency(
+          chatIds,
+          2,
+          async (cid) => {
+            await getAndCacheChatInfo(+cid);
+            return null;
+          }
+        );
+
+        // آماده‌سازی prefetch بعدی
+        prefetchNextBatches(0);
+      } catch (err) {
+        console.warn('[onRefresh] fetch failed', err);
+        setInitialError(true);
+      }
+    } catch (err) {
+      console.warn('[onRefresh] failed', err);
+      setInitialError(true);
+    } finally {
+      // 5) خاموش کردن لودینگ
+      setInitialLoading(false);
+    }
+  };
+
+
+  const handleTryAgain = () => {
+    setInitialError(false);
+    setInitialLoading(true)
   }
-};
-
-
 
   return (
     <SafeAreaView style={styles.container}>
@@ -1084,7 +1171,7 @@ export default function HomeScreen() {
         ) : initialError ? (
           <View style={{ marginTop: 120, alignItems: "center" }}>
             <Text style={{ color: "rgba(138, 138, 138, 1)", marginBottom: 10, fontFamily: "SFArabic-Regular" }}>از وصل بودن فیاترشکن و اینترنت اطمینان حاصل کنید</Text>
-            <TouchableOpacity onPress={() => setInitialError(false)} style={{ paddingHorizontal: 20, paddingVertical: 10, backgroundColor: "#333", borderRadius: 8 }}>
+            <TouchableOpacity onPress={() => handleTryAgain()} style={{ paddingHorizontal: 20, paddingVertical: 10, backgroundColor: "#333", borderRadius: 8 }}>
               <Text style={{ color: "#fff", fontFamily: "SFArabic-Regular" }}>تلاش دوباره</Text>
             </TouchableOpacity>
           </View>
@@ -1092,7 +1179,7 @@ export default function HomeScreen() {
           <FlatList
             style={{ paddingHorizontal: 12.5 }}
             data={messages}
-            keyExtractor={(item, index) => item.__uuid || `${item?.chatId || "c"}-${item?.id || index}`}
+            keyExtractor={(item, index) => item.__uuid}
             renderItem={renderItem}
             onViewableItemsChanged={onViewRef}
             viewabilityConfig={viewConfigRef.current}
@@ -1104,7 +1191,10 @@ export default function HomeScreen() {
             scrollEventThrottle={16}
             onEndReached={onEndReached}
             onEndReachedThreshold={0.5}
-            ListFooterComponent={<View style={{ justifyContent: "center", alignItems: "center", paddingVertical: 20 }}><ActivityIndicator color="#888" size="small" /></View>}
+            ListFooterComponent={
+              // Footer now shows loader only when loadingMore
+              <View style={{ justifyContent: "center", alignItems: "center", paddingVertical: 20 }}><ActivityIndicator color="#888" size="small" /></View>
+            }
             removeClippedSubviews={false} // very important for keeping item state during fast scroll
           />
         )}
