@@ -70,23 +70,26 @@ export default function HomeHeader({ activeTab, setActiveTab, hasNewMessage, onR
     <View style={styles.headerContainer}>
       <Image source={require("../../../assets/images/corner-logo.png")} style={styles.logo} />
 
-      <FlatList
-        data={teams}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(item: any, index) => `${item}-${index}`}
-        style={{paddingHorizontal:5}}
-        renderItem={({ item }) => {
-          const isActive = activeTab === pepe(item);
-          return (
-            <TouchableOpacity onPress={() => setActiveTab(pepe(item))} style={[styles.tabItem, isActive && styles.activeTab]}>
-              <Text style={[styles.tabText, isActive && styles.activeTabText]}>
-                {item}
-              </Text>
-            </TouchableOpacity>
-          );
-        }}
-      />
+      {
+        teams.length > 1 &&
+          <FlatList
+          data={teams}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(item: any, index) => `${item}-${index}`}
+          renderItem={({ item }) => {
+            const isActive = activeTab === pepe(item);
+            return (
+              <TouchableOpacity onPress={() => setActiveTab(pepe(item))} style={[styles.tabItem, isActive && styles.activeTab]}>
+                <Text style={[styles.tabText, isActive && styles.activeTabText]}>
+                  {item}
+                </Text>
+              </TouchableOpacity>
+            );
+          }}
+          contentContainerStyle={{paddingHorizontal:5, flex:1, justifyContent: "space-between"}}
+        />
+      }
 
       {
         hasNewMessage &&
@@ -114,7 +117,8 @@ const styles = StyleSheet.create({
     width: 21,
     height: 21,
     borderRadius: 5,
-    marginHorizontal: "auto"
+    marginHorizontal: "auto",
+    marginBottom: 8,
   },
   logoText: {
     color: "#f1f1f1ff",
@@ -122,13 +126,10 @@ const styles = StyleSheet.create({
     fontFamily: "SFArabic-Regular",
   },
   tabItem: {
-    paddingVertical: 7,
-    paddingHorizontal: 12,
+    paddingHorizontal: 30,
     borderBottomWidth: 2,
-    borderBottomColor: "transparent",
-    marginRight: 5,
-    flexDirection: "row",
-    alignItems: "center"
+    margin: "auto",
+    paddingBottom:5.5
   },
   activeTab: {
     borderBottomColor: "#e6e6e6ff", // آبی شبیه X

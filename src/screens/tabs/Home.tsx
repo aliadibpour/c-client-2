@@ -41,7 +41,15 @@ export default function HomeScreen() {
   //const timestamp = Math.floor(Date.now() / 1000);
   const [timestamp, setTimestamp] = useState(Math.floor(Date.now() / 1000))
 
-  const [activeTab, setActiveTab] = useState("perspolis");
+  const [activeTab, setActiveTab] = useState<any>();
+  useEffect(() => {
+    const a = async () => {
+      const teams: any = await AsyncStorage.getItem("teams");
+      const parsed = JSON.parse(teams);
+      setActiveTab(pepe(parsed.team1))
+    }
+    a()
+  },[])
   const [hasNewMessage, setHasNewMessage] = useState<boolean>(false)
   // keep a ref to always read latest activeTab from callbacks/closures
   const activeTabRef = useRef<string>(activeTab);
@@ -269,6 +277,25 @@ export default function HomeScreen() {
       return { ...msg, __uuid: `${msg.chatId}-${msg.id}` };
     }
     return { ...msg, __uuid: uuid.v4() };
+  }, []);
+
+  // dedupe helper — ensures items have __uuid and removes duplicates (keeps first occurrence)
+  const dedupeByUuid = useCallback((items: any[]) => {
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const it of items) {
+      if (!it || typeof it !== "object") continue;
+      // ensure __uuid exists
+      if (!it.__uuid) {
+        if (it.chatId != null && it.id != null) it.__uuid = `${it.chatId}-${it.id}`;
+        else it.__uuid = uuid.v4();
+      }
+      if (!seen.has(it.__uuid)) {
+        seen.add(it.__uuid);
+        out.push(it);
+      }
+    }
+    return out;
   }, []);
 
   // LRU touch openedChat
@@ -544,7 +571,9 @@ export default function HomeScreen() {
       if (pref) {
         const exist = new Set(messages.map((m: any) => `${m.chatId}:${m.id}`));
         const toAppend = pref.filter((m) => !exist.has(`${m.chatId}:${m.id}`));
-        if (toAppend.length) setMessages((prev) => [...prev, ...toAppend.map(withUuid)]);
+        if (toAppend.length) {
+          setMessages((prev) => dedupeByUuid([...prev, ...toAppend.map(withUuid)]));
+        }
         prefetchRef.current.delete(key);
         loaded = pref;
       } else {
@@ -552,7 +581,9 @@ export default function HomeScreen() {
         const enriched = await ensureRepliesForMessages(newLoaded);
         const exist = new Set(messages.map((m: any) => `${m.chatId}:${m.id}`));
         const toAppend = enriched.filter((m) => !exist.has(`${m.chatId}:${m.id}`));
-        if (toAppend.length) setMessages((prev) => [...prev, ...toAppend.map(withUuid)]);
+        if (toAppend.length) {
+          setMessages((prev) => dedupeByUuid([...prev, ...toAppend.map(withUuid)]));
+        }
         loaded = enriched;
       }
 
@@ -569,7 +600,7 @@ export default function HomeScreen() {
 
       return loaded.length;
     },
-    [loadBatch, messages, getAndCacheChatInfo, ensureRepliesForMessages, withUuid]
+    [loadBatch, messages, getAndCacheChatInfo, ensureRepliesForMessages, withUuid, dedupeByUuid]
   );
 
   // helper: read stored user info (robust for multiple formats)
@@ -700,7 +731,7 @@ export default function HomeScreen() {
         if (!mounted) return;
 
         // ensure uuids for initial messages
-        setMessages(enrichedFirst.map(withUuid));
+        setMessages(dedupeByUuid(enrichedFirst.map(withUuid)));
         setCurrentBatchIdx(0);
 
         const chatIds = Array.from(new Set(enrichedFirst.map((m) => m.chatId).filter(Boolean)));
@@ -754,12 +785,12 @@ export default function HomeScreen() {
               // ensure __uuid exists
               copy[idx] = withUuid(copy[idx]);
             }
-            return copy;
+            return dedupeByUuid(copy);
           });
         })
         .catch(() => {});
     }
-  }, [visibleIds, messages, tdCall, persistCachesDebounced, ensureRepliesForMessages, withUuid]);
+  }, [visibleIds, messages, tdCall, persistCachesDebounced, ensureRepliesForMessages, withUuid, dedupeByUuid]);
 
   useEffect(() => {
     if (pollingIntervalRef.current) {
@@ -811,10 +842,11 @@ export default function HomeScreen() {
             const found = prev.findIndex((m) => m.id === msg.id);
             if (found !== -1) {
               // update existing item, preserve/ensure __uuid
-              return prev.map((m) => (m.id === msg.id ? withUuid({ ...m, ...enriched }) : m));
+              const mapped = prev.map((m) => (m.id === msg.id ? withUuid({ ...m, ...enriched }) : m));
+              return dedupeByUuid(mapped);
             } else {
               // if the updated message isn't in the list, prepend it with uuid
-              return [withUuid(enriched), ...prev];
+              return dedupeByUuid([withUuid(enriched), ...prev]);
             }
           });
         }
@@ -823,7 +855,7 @@ export default function HomeScreen() {
       }
     });
     return () => subscription.remove();
-  }, [persistCachesDebounced, ensureRepliesForMessages, tdCall, withUuid]);
+  }, [persistCachesDebounced, ensureRepliesForMessages, tdCall, withUuid, dedupeByUuid]);
 
   // onViewable changed — make deterministic and pick center item for activeDownloads
   const visibleIdsRef = useRef<number[]>([]);
@@ -916,7 +948,7 @@ export default function HomeScreen() {
         if (pref) {
           const exist = new Set(messages.map((m: any) => `${m.chatId}:${m.id}`));
           const toAppend = pref.filter((m) => !exist.has(`${m.chatId}:${m.id}`));
-          if (toAppend.length) setMessages((prev) => [...prev, ...toAppend.map(withUuid)]);
+          if (toAppend.length) setMessages((prev) => dedupeByUuid([...prev, ...toAppend.map(withUuid)]));
           prefetchRef.current.delete(key);
         } else {
           await appendNextBatch(nextBatchIdx);
@@ -932,7 +964,7 @@ export default function HomeScreen() {
         // ignore
       }
     },
-    [appendNextBatch, prefetchNextBatches, messages, withUuid, notifyServerBatchReached]
+    [appendNextBatch, prefetchNextBatches, messages, withUuid, notifyServerBatchReached, dedupeByUuid]
   );
 
   const loadMore = useCallback(async () => {
@@ -1111,7 +1143,7 @@ export default function HomeScreen() {
         const first = await loadBatch(0); // از همان فانکشن‌های موجود استفاده می‌کنیم
         const enrichedFirst = await ensureRepliesForMessages(first);
 
-        setMessages(enrichedFirst.map(withUuid));
+        setMessages(dedupeByUuid(enrichedFirst.map(withUuid)));
         setCurrentBatchIdx(0);
 
         // warm-up (اختیاری ولی مفید)
@@ -1166,20 +1198,13 @@ export default function HomeScreen() {
       </Animated.View>
 
       <View style={{ flex: 1 }}>
-        {initialLoading ? (
+        {initialLoading  || initialError? (
           <ActivityIndicator size="large" color="#ddd" style={{ marginTop: 120 }} />
-        ) : initialError ? (
-          <View style={{ marginTop: 120, alignItems: "center" }}>
-            <Text style={{ color: "rgba(138, 138, 138, 1)", marginBottom: 10, fontFamily: "SFArabic-Regular" }}>از وصل بودن فیاترشکن و اینترنت اطمینان حاصل کنید</Text>
-            <TouchableOpacity onPress={() => handleTryAgain()} style={{ paddingHorizontal: 20, paddingVertical: 10, backgroundColor: "#333", borderRadius: 8 }}>
-              <Text style={{ color: "#fff", fontFamily: "SFArabic-Regular" }}>تلاش دوباره</Text>
-            </TouchableOpacity>
-          </View>
         ) : (
           <FlatList
             style={{ paddingHorizontal: 12.5 }}
             data={messages}
-            keyExtractor={(item, index) => item.__uuid}
+            keyExtractor={(item, index) => item?.__uuid ?? `${item?.chatId ?? 'ch'}:${String(item?.id ?? item?.messageId ?? index)}`}
             renderItem={renderItem}
             onViewableItemsChanged={onViewRef}
             viewabilityConfig={viewConfigRef.current}
