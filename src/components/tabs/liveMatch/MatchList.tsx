@@ -1,14 +1,8 @@
-import React, { useRef, useEffect } from "react";
-import {
-  FlatList,
-  Image,
-  Text,
-  View,
-  Animated,
-  Easing,
-  StyleSheet,
-  // ImagePropertiesSourceOptions,
-} from "react-native";
+
+
+// ===== File: MatchList.tsx =====
+import React, { useCallback } from "react";
+import { FlatList, Image, Text, View, StyleSheet } from "react-native";
 
 interface Match {
   id?: string;
@@ -22,7 +16,6 @@ interface Match {
   matchFinish?: string | boolean;
   matchAdjournment?: boolean;
   matchCancel?: boolean;
-  // هر فیلد دیگه‌ای که سرور می‌فرسته
 }
 
 interface LeagueItem {
@@ -32,196 +25,167 @@ interface LeagueItem {
 }
 
 interface Props {
-  data: LeagueItem[];
+  data: LeagueItem[] | Match[]; // we accept either when using this as a per-day list or per-league
+  listRef?: (r: FlatList<any> | null) => void;
+  extraDataForList?: any;
 }
 
 function toPersianDigits(s: number | string | undefined | null): string {
   if (s === undefined || s === null) return "";
-  return s
-    .toString()
-    .replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[parseInt(d, 10)]);
+  return s.toString().replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[parseInt(d, 10)]);
 }
 
 const cleanScore = (score?: string | null) => {
   if (!score) return null;
-  // trim and normalize spaces
   return score.trim();
 };
 
-const LivePing: React.FC<{ visible: boolean }> = ({ visible }) => {
-  const scale = useRef(new Animated.Value(1)).current;
-  const opacity = useRef(new Animated.Value(0.9)).current;
-
-  useEffect(() => {
-    if (!visible) return;
-    const loop = Animated.loop(
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(scale, {
-            toValue: 1.6,
-            duration: 800,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(scale, {
-            toValue: 1,
-            duration: 0,
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.sequence([
-          Animated.timing(opacity, {
-            toValue: 0,
-            duration: 800,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(opacity, {
-            toValue: 0.9,
-            duration: 0,
-            useNativeDriver: true,
-          }),
-        ]),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [visible, scale, opacity]);
-
-  if (!visible) return null;
+// ===== MatchRow as a memoized component =====
+const MatchRowInner: React.FC<{ item: Match; isLast: boolean }> = ({ item, isLast }) => {
+  const isLive = !!(item.matchMinutes || item.matchMinutesAfter90);
+  const displayMinutes = item.matchMinutes
+    ? item.matchMinutes
+    : item.matchMinutesAfter90
+    ? item.matchMinutesAfter90
+    : null;
+  const score = cleanScore(item.score) || "-";
 
   return (
-    <View style={styles.pingContainer} pointerEvents="none">
-      {/* پینگ بزرگتر (پالس) */}
-      <Animated.View
-        style={[
-          styles.pingPulse,
-          { transform: [{ scale }], opacity: opacity as any },
-        ]}
-      />
-      {/* دات ثابت کوچک */}
-      <View style={styles.pingDot} />
+    <View style={[styles.matchRow, !isLast && styles.matchRowBorder]}>
+      <View style={styles.pingContainer} pointerEvents="none">
+        {isLive ? (
+          <>
+            <View style={styles.pingPulse} />
+            <View style={styles.pingDot} />
+          </>
+        ) : null}
+      </View>
+
+      <View style={styles.teamContainerRight}>
+        <Text style={styles.teamText} numberOfLines={1} ellipsizeMode="tail">
+          {item.homeTeam && item.homeTeam.length > 17 ? item.homeTeam.slice(0, 14) + "…" : item.homeTeam}
+        </Text>
+        <Image source={{ uri: item.homeTeamImage ? item.homeTeamImage : "" }} style={styles.teamImage} resizeMode="cover" />
+      </View>
+
+      <View style={styles.center}>
+        <Text style={styles.scoreText}>{toPersianDigits(score)}</Text>
+
+        {item.matchFinish ? (
+          <Text style={styles.finishText}>{typeof item.matchFinish === "string" && item.matchFinish ? item.matchFinish : "پایان"}</Text>
+        ) : item.matchAdjournment ? (
+          <Text style={styles.adjournText}>تعلیق</Text>
+        ) : item.matchCancel ? (
+          <Text style={styles.cancelText}>لغو</Text>
+        ) : displayMinutes ? (
+          <Text style={styles.minuteText}>{toPersianDigits(displayMinutes)}</Text>
+        ) : null}
+      </View>
+
+      <View style={styles.teamContainerLeft}>
+        <Image source={{ uri: item.awayTeamImage ? item.awayTeamImage : "" }} style={styles.teamImage} resizeMode="cover" />
+        <Text style={styles.teamText} numberOfLines={1} ellipsizeMode="tail">
+          {item.awayTeam && item.awayTeam.length > 18 ? item.awayTeam.slice(0, 14) + "…" : item.awayTeam}
+        </Text>
+      </View>
     </View>
   );
 };
 
-const MatchList: React.FC<Props> = ({ data }) => {
-  const renderMatch = ({ item, index, isLast }: { item: Match; index: number; isLast: boolean; }) => {
-    const isLive = !!(item.matchMinutes || item.matchMinutesAfter90);
-    const displayMinutes = item.matchMinutes
-      ? item.matchMinutes
-      : item.matchMinutesAfter90
-      ? item.matchMinutesAfter90
-      : null;
-    const score = cleanScore(item.score) || "-";
+function matchRowAreEqual(prevProps: any, nextProps: any) {
+  const a = prevProps.item;
+  const b = nextProps.item;
+  if (a.id !== b.id) return false;
+  const keys = [
+    "score",
+    "matchMinutes",
+    "matchMinutesAfter90",
+    "matchFinish",
+    "matchAdjournment",
+    "matchCancel",
+  ];
+  for (const k of keys) if ((a[k] ?? null) !== (b[k] ?? null)) return false;
+  return prevProps.isLast === nextProps.isLast;
+}
+
+const MatchRow = React.memo(MatchRowInner, matchRowAreEqual);
+
+// ===== If data is LeagueItem[] we render league cards, otherwise if it's Match[] we render matches directly =====
+const MatchList: React.FC<Props> = ({ data, listRef, extraDataForList }) => {
+  const isLeagueList = Array.isArray(data) && data.length > 0 && (data[0] as any).league !== undefined;
+
+  if (!isLeagueList) {
+    // data is Match[] for a single league/day
+    const matches = (data as Match[]) || [];
+    const renderMatchItem = useCallback(
+      ({ item, index }: { item: Match; index: number }) => {
+        const isLast = index === matches.length - 1;
+        return <MatchRow item={item} isLast={isLast} />;
+      },
+      [matches.length]
+    );
 
     return (
-      <View
-        style={[
-          styles.matchRow,
-          !isLast && styles.matchRowBorder,
-        ]}
-      >
-        {/* پینگ لایو */}
-        <LivePing visible={isLive} />
+      <FlatList
+        ref={listRef}
+        data={matches}
+        keyExtractor={(m, i) => m.id ?? `match_${i}`}
+        renderItem={renderMatchItem}
+        scrollEnabled={true}
+        removeClippedSubviews={true}
+        initialNumToRender={5}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        extraData={extraDataForList}
+      />
+    );
+  }
 
-        {/* میزبان */}
-        <View style={styles.teamContainerRight}>
-          <Text style={styles.teamText} numberOfLines={1} ellipsizeMode="tail">
-            {item.homeTeam && item.homeTeam.length > 17
-              ? item.homeTeam.slice(0, 14) + "…"
-              : item.homeTeam}
-          </Text>
-          <Image
-            source={ { uri: item.homeTeamImage ? item.homeTeamImage : "" } }
-            style={styles.teamImage}
-            resizeMode="cover"
-          />
-        </View>
+  // it's LeagueItem[]
+  const renderLeague = useCallback(
+    ({ item, index }: { item: LeagueItem; index: number }) => {
+      const matches = item.matchList || [];
+      const renderMatchItem = ({ item: match, index: mIndex }: { item: Match; index: number }) => (
+        <MatchRow item={{ ...match, id: match.id ?? `${item.league}_${mIndex}` }} isLast={mIndex === matches.length - 1} />
+      );
 
-        {/* وسط: امتیاز و دقیقه/وضعیت */}
-        <View style={styles.center}>
-          <Text style={styles.scoreText}>{toPersianDigits(score)}</Text>
-
-          {item.matchFinish ? (
-            // اگر matchFinish یک رشته توضیحیه (مثلاً "پایان") نمایش می‌دهیم، در غیر اینصورت "پایان" فارسی
-            <Text style={styles.finishText}>
-              {typeof item.matchFinish === "string" && item.matchFinish
-                ? item.matchFinish
-                : "پایان"}
+      return (
+        <View style={styles.leagueCard}>
+          <View style={styles.leagueHeader}>
+            <Image source={{ uri: item.leagueImage ? item.leagueImage : "" }} style={styles.leagueImage} />
+            <Text numberOfLines={1} style={styles.leagueTitle}>
+              {item.league}
             </Text>
-          ) : item.matchAdjournment ? (
-            <Text style={styles.adjournText}>تعلیق</Text>
-          ) : item.matchCancel ? (
-            <Text style={styles.cancelText}>لغو</Text>
-          ) : displayMinutes ? (
-            <Text style={styles.minuteText}>{toPersianDigits(displayMinutes)}</Text>
-          ) : (
-            null
-          )}
-        </View>
+          </View>
 
-        {/* مهمان */}
-        <View style={styles.teamContainerLeft}>
-          <Image
-            source={ { uri: item.awayTeamImage ? item.awayTeamImage : "" } }
-            style={styles.teamImage}
-            resizeMode="cover"
+          <FlatList
+            data={matches}
+            keyExtractor={(match, i) => match.id ?? `${item.league}_${i}`}
+            renderItem={renderMatchItem}
+            scrollEnabled={false}
+            removeClippedSubviews={true}
+            initialNumToRender={5}
+            maxToRenderPerBatch={10}
+            windowSize={5}
+            extraData={extraDataForList}
           />
-          <Text style={styles.teamText} numberOfLines={1} ellipsizeMode="tail">
-            {item.awayTeam && item.awayTeam.length > 18
-              ? item.awayTeam.slice(0, 14) + "…"
-              : item.awayTeam}
-          </Text>
         </View>
-      </View>
-    );
-  };
-
-  const renderLeague = ({ item }: { item: LeagueItem }) => {
-    const matches = item.matchList || [];
-
-    return (
-      <View style={styles.leagueCard}>
-        <View style={styles.leagueHeader}>
-          <Image
-            source={ { uri: item.leagueImage ? item.leagueImage : "" } }
-            style={styles.leagueImage}
-          />
-          <Text numberOfLines={1} style={styles.leagueTitle}>
-            {item.league}
-          </Text>
-        </View>
-
-        <FlatList
-          data={matches}
-          keyExtractor={(match, i) => match.id ?? `${item.league}_${i}`}
-          renderItem={({ item: match, index }) =>
-            renderMatch({
-              item: { ...match, id: match.id ?? `${item.league}_${index}` },
-              index,
-              isLast: index === matches.length - 1,
-            })
-          }
-          scrollEnabled={false}
-          removeClippedSubviews={true}
-          initialNumToRender={5}
-          maxToRenderPerBatch={10}
-          windowSize={5}
-        />
-      </View>
-    );
-  };
+      );
+    },
+    [extraDataForList]
+  );
 
   return (
     <FlatList
-      data={data}
+      data={data as LeagueItem[]}
       keyExtractor={(league, i) => `${league.league}_${i}`}
       renderItem={renderLeague}
       removeClippedSubviews={true}
       initialNumToRender={2}
       maxToRenderPerBatch={5}
       windowSize={3}
+      extraData={extraDataForList}
+      ref={listRef}
     />
   );
 };
@@ -301,7 +265,7 @@ const styles = StyleSheet.create({
     fontFamily: "SFArabic-Regular",
   },
   minuteText: {
-    color: "#16A34A", // سبز
+    color: "#16A34A",
     fontSize: 12,
     fontFamily: "SFArabic-Regular",
   },
@@ -311,17 +275,16 @@ const styles = StyleSheet.create({
     fontFamily: "SFArabic-Regular",
   },
   adjournText: {
-    color: "#FBBF24", // زرد
+    color: "#FBBF24",
     fontSize: 12,
     fontFamily: "SFArabic-Regular",
   },
   cancelText: {
-    color: "#EF4444", // قرمز
+    color: "#EF4444",
     fontSize: 12,
     fontFamily: "SFArabic-Regular",
   },
 
-  // پینگ استایل
   pingContainer: {
     position: "absolute",
     left: 10,
@@ -336,7 +299,8 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 14 / 2,
-    backgroundColor: "#10B981", // سبز مشابه کلاس
+    backgroundColor: "#10B981",
+    opacity: 0.5,
   },
   pingDot: {
     width: 6,

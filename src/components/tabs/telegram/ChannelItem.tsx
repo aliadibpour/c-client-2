@@ -380,6 +380,8 @@ export default function ChannelItem({
     return null;
   }
 
+  if (!miniAvatarUri) return;
+
   return (
     <TouchableOpacity style={styles.container} onPress={handlePress}>
       {avatarUri || miniAvatarUri ? (
@@ -412,8 +414,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 6,
     borderBottomWidth: 0.9,
-    borderColor: "#222222ac",
-    backgroundColor: "#0e0e0eff",
+    borderColor: "#2222225d",
+    backgroundColor: "#090909ff",
   },
   avatar: {
     width: 52,

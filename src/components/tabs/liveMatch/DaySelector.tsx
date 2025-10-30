@@ -36,6 +36,18 @@ const DaySelector: React.FC<Props> = ({ days, selectedIndex, onSelect, scrollX }
     });
   }, [selectedIndex]);
 
+    useEffect(() => {
+      const a = async () => {
+        await new Promise((res) => setTimeout(res, 100));
+        flatListRef.current?.scrollToIndex({
+          index: 2,
+          animated: true,
+          viewPosition: 0.5,
+        });
+      }
+      a()
+  }, []);
+
   const renderItem = ({ item, index }: { item: Day; index: number }) => (
     <Pressable
       onPress={() => onSelect(days.length - 1 - index)}

@@ -106,7 +106,7 @@ export default function PickTeamsScreen({ navigation }: any) {
         contentContainerStyle={styles.favoritesContainer}
         renderItem={({ item }) => (
           <View style={styles.favoriteItem}>
-            <Image source={item.image} style={styles.favoriteLogo} />
+            <Image source={item.image} style={styles.favoriteLogo} resizeMode='contain'/>
             <Text style={styles.favoriteText}>{item.name}</Text>
             <TouchableOpacity onPress={() => removeTeam(item.name)} style={styles.removeBtn}>
               <Text style={styles.removeBtnText}>✕</Text>
@@ -136,7 +136,7 @@ export default function PickTeamsScreen({ navigation }: any) {
               ]}
             >
               <View style={styles.blurOverlay} />
-              <Image source={item.image} style={styles.teamLogo} />
+              <Image source={item.image} style={styles.teamLogo} resizeMode='contain' />
               <Text style={styles.teamName}>{item.name}</Text>
             </TouchableOpacity>
           );
@@ -152,11 +152,11 @@ export default function PickTeamsScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000', padding: 15 },
-  title: { color: '#fff', fontSize: 18, marginBottom: 15, textAlign: 'center', fontFamily: "SFArabic-Regular" },
+  title: { color: '#fff', fontSize: 17, marginTop: 5, textAlign: 'center', fontFamily: "SFArabic-Regular" },
 
   favoritesContainer: { paddingVertical: 10 },
   favoriteItem: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
@@ -164,10 +164,9 @@ const styles = StyleSheet.create({
     marginRight: 10,
     borderRadius: 10,
     borderWidth: 1,
-    height: 50,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
-  favoriteLogo: { width: 25, height: 25, marginRight: 6, borderRadius: 8 },
+  favoriteLogo: { width: 20, height: 20 },
   favoriteText: { color: '#ddd', fontSize: 14, fontFamily: "SFArabic-Regular" },
   removeBtn: { marginLeft: 8 },
   removeBtnText: { color: '#fff', fontSize: 18 },
@@ -180,7 +179,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    backgroundColor: '#121212',
+    backgroundColor: '#0c0c0cff',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
     position: 'relative',
@@ -189,7 +188,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
-  teamLogo: { width: 38, height: 38, marginBottom: 8},
+  teamLogo: { width: 39, height: 39, marginBottom: 8},
   teamName: {
     color: '#fff',
     fontSize: 13,

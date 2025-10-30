@@ -1,3 +1,4 @@
+// ===== File: LiveMatchScreen.tsx =====
 import React, { useEffect, useRef, useState } from "react";
 import {
   Text,
@@ -6,9 +7,8 @@ import {
   View,
   StyleSheet,
   StatusBar,
-  FlatList,
   ActivityIndicator,
-  TouchableOpacity
+  TouchableOpacity,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import io from "socket.io-client";
@@ -33,136 +33,183 @@ export default function LiveMatchScreen() {
   const [matchCache, setMatchCache] = useState<{ [id: number]: any[] }>({});
   const [failedDays, setFailedDays] = useState<{ [id: number]: boolean }>({});
 
-  const inFlightRef = useRef<{ [id: number]: boolean }>({});
-  const backoffRef = useRef<{ [id: number]: number }>({});
-  const timerRef = useRef<{ [id: number]: number | NodeJS.Timeout | null }>({});
+  // ref to avoid stale closure for selectedDayIndex in socket connect
+  const selectedDayIndexRef = useRef<number>(selectedDayIndex);
+  useEffect(() => {
+    selectedDayIndexRef.current = selectedDayIndex;
+  }, [selectedDayIndex]);
 
   const scrollX = useRef(new Animated.Value(0)).current;
   const scrollViewRef = useRef<Animated.FlatList>(null);
 
-  // --- request function (now sets loader immediately for first-time and waits for socket if needed) ---
+  // track retry timers per day to avoid duplicate timers
+  const retryTimersRef = useRef<{ [id: number]: number | null }>({});
+
+  // helper: clear retry timer for a day
+  const clearRetryTimer = (dayId: number) => {
+    const t = retryTimersRef.current[dayId];
+    if (t != null) {
+      clearTimeout(t as unknown as number);
+      retryTimersRef.current[dayId] = null;
+      delete retryTimersRef.current[dayId];
+    }
+  };
+
+  // ---- helper merge & shallow compare (keeps references for unchanged items) ----
+  const shallowEqualImportant = (a: any, b: any) => {
+    if (!a || !b) return false;
+    const keys = [
+      "score",
+      "matchMinutes",
+      "matchMinutesAfter90",
+      "matchFinish",
+      "matchAdjournment",
+      "matchCancel",
+    ];
+    for (const k of keys) {
+      const va = a[k] ?? null;
+      const vb = b[k] ?? null;
+      if (va !== vb) return false;
+    }
+    return true;
+  };
+
+  const mergeMatchLists = (prevList: any[] | undefined, incoming: any[]) => {
+    if (!prevList) return incoming.map((m) => ({ ...m }));
+
+    // try to reuse as many previous item references as possible
+    if (prevList.length !== incoming.length) {
+      const prevById = new Map<string | number, any>();
+      for (const p of prevList) if (p && p.id != null) prevById.set(p.id, p);
+
+      return incoming.map((inc) => {
+        const id = inc && inc.id != null ? inc.id : null;
+        const prev = id != null ? prevById.get(id) : undefined;
+        if (prev && shallowEqualImportant(prev, inc)) {
+          return prev;
+        }
+        return { ...inc };
+      });
+    }
+
+    // same length: compare by index and reuse when possible
+    return incoming.map((inc, i) => {
+      const prev = prevList[i];
+      if (prev && prev.id != null && inc.id === prev.id && shallowEqualImportant(prev, inc)) {
+        return prev;
+      }
+      return { ...inc };
+    });
+  };
+
+  // --- request function (now with auto-retry scheduling) ---
   const requestMatchesOnce = (dayId: number, { force = false } = {}) => {
-    // prevent concurrent emits
-    if (inFlightRef.current[dayId] && !force) return;
+    // avoid concurrent emits
+    if (!force && loadingDays[dayId]) return;
+
+    // clear any pending retry because we're attempting immediately
+    clearRetryTimer(dayId);
 
     const firstTime = matchCache[dayId] === undefined;
     if (firstTime) {
-      // show loader on first visit even if socket not ready yet (prevents black screen)
       setLoadingDays((p) => ({ ...p, [dayId]: true }));
+      setFailedDays((p) => ({ ...p, [dayId]: false }));
+    } else {
+      if (force) setLoadingDays((p) => ({ ...p, [dayId]: true }));
       setFailedDays((p) => ({ ...p, [dayId]: false }));
     }
 
-    // if socket not ready, do not mark failed immediately — wait for connect (user sees loader)
+    // if socket not ready, schedule a retry and keep loader state
     if (!socketRef.current || !socketRef.current.connected) {
-      console.log("socket not ready, will wait for connect to fetch day", dayId);
+      console.log("socket not ready, will schedule retry to fetch day", dayId);
+      // schedule a retry after short delay (3s)
+      if (!retryTimersRef.current[dayId]) {
+        retryTimersRef.current[dayId] = setTimeout(() => {
+          retryTimersRef.current[dayId] = null;
+          requestMatchesOnce(dayId, { force: true });
+        }, 3000) as unknown as number;
+      }
       return;
     }
-
-    // now socket is ready -> proceed
-    inFlightRef.current[dayId] = true;
-    setFailedDays((p) => ({ ...p, [dayId]: false }));
 
     const timeoutMs = 7000;
     let timedOut = false;
     const t = setTimeout(() => {
       timedOut = true;
-      inFlightRef.current[dayId] = false;
-      if (firstTime) setLoadingDays((p) => ({ ...p, [dayId]: false }));
+      setLoadingDays((p) => ({ ...p, [dayId]: false }));
       setFailedDays((p) => ({ ...p, [dayId]: true }));
       console.warn(`live-match timeout for day ${dayId}`);
-      // backoff schedule
-      increaseBackoffAndSchedule(dayId);
+
+      // schedule retry
+      if (!retryTimersRef.current[dayId]) {
+        retryTimersRef.current[dayId] = setTimeout(() => {
+          retryTimersRef.current[dayId] = null;
+          requestMatchesOnce(dayId, { force: true });
+        }, 3000) as unknown as number;
+      }
     }, timeoutMs);
 
     try {
       socketRef.current.emit("live-match", dayId, (res: any) => {
-        if (timedOut) {
-          clearTimeout(t);
-          return;
-        }
         clearTimeout(t);
-        inFlightRef.current[dayId] = false;
-        if (firstTime) setLoadingDays((p) => ({ ...p, [dayId]: false }));
+        if (timedOut) return;
+
+        // stop loader regardless
+        setLoadingDays((p) => ({ ...p, [dayId]: false }));
 
         if (res && Array.isArray(res.matchList)) {
-          // lightweight equality: if identical, skip setState to avoid flicker
-          const prev = matchCache[dayId];
           const incoming = res.matchList;
-          let same = false;
-          if (prev && Array.isArray(prev) && prev.length === incoming.length) {
-            same = true;
-            for (let i = 0; i < incoming.length; i++) {
-              const a = prev[i];
-              const b = incoming[i];
-              if (!a || !b) { same = false; break; }
-              if ((a.id || null) !== (b.id || null)) { same = false; break; }
-              if (
-                (a.score || null) !== (b.score || null) ||
-                (a.matchMinutes || null) !== (b.matchMinutes || null) ||
-                (a.matchMinutesAfter90 || null) !== (b.matchMinutesAfter90 || null) ||
-                (a.matchFinish || null) !== (b.matchFinish || null) ||
-                (a.matchAdjournment || null) !== (b.matchAdjournment || null) ||
-                (a.matchCancel || null) !== (b.matchCancel || null)
-              ) { same = false; break; }
-            }
-          }
 
-          if (!same) {
-            setMatchCache((p) => ({ ...p, [dayId]: incoming }));
-          }
-          backoffRef.current[dayId] = 5000;
+          // use merging function to try to preserve references for unchanged items
+          setMatchCache((prev) => {
+            const prevList = prev ? prev[dayId] : undefined;
+            const merged = mergeMatchLists(prevList, incoming);
+            // if merged is identical reference to prev[dayId], keep prev to avoid re-render
+            if (prev && prev[dayId] === merged) return prev;
+            return { ...prev, [dayId]: merged };
+          });
+
           setFailedDays((p) => ({ ...p, [dayId]: false }));
+
+          // success -> clear any retry timer
+          clearRetryTimer(dayId);
         } else {
           // invalid payload: keep old data, mark failed and schedule retry
           setFailedDays((p) => ({ ...p, [dayId]: true }));
-          increaseBackoffAndSchedule(dayId);
+          if (!retryTimersRef.current[dayId]) {
+            retryTimersRef.current[dayId] = setTimeout(() => {
+              retryTimersRef.current[dayId] = null;
+              requestMatchesOnce(dayId, { force: true });
+            }, 3000) as unknown as number;
+          }
         }
       });
     } catch (err) {
       clearTimeout(t);
-      inFlightRef.current[dayId] = false;
-      if (firstTime) setLoadingDays((p) => ({ ...p, [dayId]: false }));
+      setLoadingDays((p) => ({ ...p, [dayId]: false }));
       setFailedDays((p) => ({ ...p, [dayId]: true }));
       console.error("socket emit error:", err);
-      increaseBackoffAndSchedule(dayId);
+
+      // schedule retry
+      if (!retryTimersRef.current[dayId]) {
+        retryTimersRef.current[dayId] = setTimeout(() => {
+          retryTimersRef.current[dayId] = null;
+          requestMatchesOnce(dayId, { force: true });
+        }, 3000) as unknown as number;
+      }
     }
   };
 
-  const increaseBackoffAndSchedule = (dayId: number) => {
-    const prev = backoffRef.current[dayId] ?? 5000;
-    const next = Math.min(60000, Math.max(5000, prev * 2));
-    backoffRef.current[dayId] = next;
-    scheduleNext(dayId);
-  };
-
-  const scheduleNext = (dayId: number) => {
-    const existing = timerRef.current[dayId];
-    if (existing) clearTimeout(existing as any);
-
-    const delay = backoffRef.current[dayId] ?? 5000;
-    const activeDayId = dayList[selectedDayIndex].id;
-    if (dayId !== activeDayId) {
-      timerRef.current[dayId] = null;
-      return;
-    }
-
-    const id = setTimeout(() => {
-      requestMatchesOnce(dayId);
-      scheduleNext(dayId);
-    }, delay);
-    timerRef.current[dayId] = id;
-  };
-
-  // --- socket setup (after requestMatchesOnce is defined) ---
+  // --- socket setup (uses selectedDayIndexRef to avoid stale closure) ---
   useEffect(() => {
-    socketRef.current = io("http://10.129.218.115:9000", {
+    socketRef.current = io("http://10.124.97.115:9000", {
       transports: ["websocket"],
     });
 
     socketRef.current.on("connect", () => {
       console.log("socket connected");
-      // when socket connects, try to fetch current active day (if loader is visible it will fetch)
-      const dayId = dayList[selectedDayIndex].id;
+      // use the ref so we always request for the current active day
+      const dayId = dayList[selectedDayIndexRef.current].id;
       requestMatchesOnce(dayId, { force: true });
     });
 
@@ -171,45 +218,48 @@ export default function LiveMatchScreen() {
     });
 
     return () => {
-      // clear timers
-      Object.values(timerRef.current).forEach((id) => {
-        if (id) clearTimeout(id as any);
-      });
       socketRef.current?.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // start polling for active day (schedules retries). ensures immediate loader + schedule
+  // --- ensure initial scroll and initial fetch after mount ---
+  useEffect(() => {
+    const ltrIndex = dayList.length - 1 - selectedDayIndexRef.current;
+    const id = setTimeout(() => {
+      scrollViewRef.current?.scrollToOffset({
+        offset: ltrIndex * SCREEN_WIDTH,
+        animated: false,
+      });
+      // ensure initial fetch attempted (if not cached)
+      fetchMatchesOnce(dayList[selectedDayIndexRef.current].id);
+    }, 50);
+
+    return () => clearTimeout(id);
+    // run only once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // polling for day id = 2 every 10 seconds
+  useEffect(() => {
+    const POLL_DAY_ID = 2;
+    const interval = setInterval(() => {
+      requestMatchesOnce(POLL_DAY_ID, { force: true });
+    }, 10000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // start: request for active day when selectedDayIndex changes
   useEffect(() => {
     const dayId = dayList[selectedDayIndex].id;
-    if (!backoffRef.current[dayId]) backoffRef.current[dayId] = 5000;
-
-    // try immediately (this will show loader if first time; if socket not ready it will wait)
-    requestMatchesOnce(dayId);
-
-    // clear timers for other days
-    Object.keys(timerRef.current).forEach((k) => {
-      const numKey = Number(k);
-      if (numKey !== dayId && timerRef.current[numKey]) {
-        clearTimeout(timerRef.current[numKey] as any);
-        timerRef.current[numKey] = null;
-      }
-    });
-
-    // schedule next poll
-    scheduleNext(dayId);
-
-    return () => {
-      const t = timerRef.current[dayId];
-      if (t) clearTimeout(t as any);
-      timerRef.current[dayId] = null;
-    };
+    fetchMatchesOnce(dayId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDayIndex]);
 
   // helper used by DaySelector / initial behavior
   const fetchMatchesOnce = (dayId: number) => {
+    // if we already have cached value, skip fetching
     if (matchCache[dayId] !== undefined) return;
     requestMatchesOnce(dayId);
   };
@@ -224,7 +274,7 @@ export default function LiveMatchScreen() {
     }
   };
 
-  const listRefs = useRef<{ [key: number]: FlatList<any> | null }>({});
+  const listRefs = useRef<{ [key: number]: any | null }>({});
 
   const onDaySelect = (index: number) => {
     fetchMatchesOnce(dayList[index].id);
@@ -273,32 +323,16 @@ export default function LiveMatchScreen() {
           offset: SCREEN_WIDTH * index,
           index,
         })}
-        extraData={[loadingDays, selectedDayIndex, failedDays]}
+        // reduced extraData: avoid passing whole matchCache (which would re-render everything)
+        extraData={[loadingDays, selectedDayIndex]}
+        initialNumToRender={1}
+        windowSize={3}
+        removeClippedSubviews={false}
         renderItem={({ item }) => {
           const matches = matchCache[item.id];
-          const isLoading = !!loadingDays[item.id];
+          // treat "no cached value yet" as loading so UI doesn't go blank
+          const isLoading = matches === undefined ? true : !!loadingDays[item.id];
           const isFailed = !!failedDays[item.id];
-
-          if (isFailed && !matches) {
-            return (
-              <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-                <View style={styles.centered}>
-                  <Text style={{ color: "#f55", marginBottom: 12 }}>
-                    خطا در دریافت داده‌ها
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setFailedDays((p) => ({ ...p, [item.id]: false }));
-                      requestMatchesOnce(item.id, { force: true });
-                    }}
-                    style={styles.retryButton}
-                  >
-                    <Text style={styles.retryText}>تلاش مجدد</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            );
-          }
 
           if (isLoading && !matches) {
             return (
@@ -320,7 +354,12 @@ export default function LiveMatchScreen() {
 
           return (
             <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-              <MatchList data={matches || []} />
+              {/* Pass a stable ref and matches only to the MatchList child */}
+              <MatchList
+                data={matches || []}
+                listRef={(r: any) => (listRefs.current[item.id] = r)}
+                extraDataForList={matches}
+              />
               {isFailed && matches ? (
                 <View style={{ position: "absolute", bottom: 12, right: 12 }}>
                   <TouchableOpacity
@@ -373,3 +412,4 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.6)",
   },
 });
+

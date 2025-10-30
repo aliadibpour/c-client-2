@@ -27,7 +27,7 @@ const MAX_PREFETCH_BATCHES = 2;
 const PER_GROUP_CONCURRENCY = 3; // used inside loadBatch for group concurrency
 const TD_CONCURRENCY = 6; // global limit for TdLib calls
 const POLL_INTERVAL_MS = 3000;
-const MAX_OPENED_CHATS = 12; // LRU cap for opened chats
+const MAX_OPENED_CHATS = 10; // LRU cap for opened chats
 
 // storage keys
 const STORAGE_KEYS = {
@@ -205,7 +205,7 @@ export default function HomeScreen() {
   const fetchFeedInitial = useCallback(
     (tab: string, uuid: string, ts: number) => {
       const url =
-        `http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${encodeURIComponent(uuid)}` +
+        `http://10.124.97.115:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${encodeURIComponent(uuid)}` +
         `&activeTab=${encodeURIComponent(tab)}&timestamp=${ts.toString()}`;
       return fetchWithRetry(url, { retries: 3, timeout: 8000, backoffBase: 400, fetchOptions: {} });
     },
@@ -216,7 +216,7 @@ export default function HomeScreen() {
   const fetchFeedMore = useCallback(
     (tab: string, uuid: string, ts: number) => {
       const url =
-        `http://10.129.218.115:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${encodeURIComponent(uuid)}` +
+        `http://10.124.97.115:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${encodeURIComponent(uuid)}` +
         `&activeTab=${encodeURIComponent(tab)}&timestamp=${ts.toString()}`;
       return fetchWithRetry(url, { retries: 2, timeout: 7000, backoffBase: 300, fetchOptions: {} });
     },
@@ -669,7 +669,7 @@ export default function HomeScreen() {
       // debug log (remove or lower verbosity later)
       console.log('[notify] sending seen-message', { tab: currentTab, batchIdx, idsLength: ids.length });
 
-      await fetch(`http://10.129.218.115:9000/feed-message/seen-message?${params.toString()}`, {
+      await fetch(`http://10.124.97.115:9000/feed-message/seen-message?${params.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -684,7 +684,7 @@ export default function HomeScreen() {
       console.log(batchIdx, "poopopopopo")
       if ((Date.now() / 1000) - timestamp < 3 * 60 || batchIdx < 4) return;
       // <-- this call is NOT modified per your request (only initial/loadMore are modified)
-      const newMessages = await fetch(`http://10.129.218.115:9000/feed-message/new-messages?timestamp=${timestamp}&team=${currentTab}`)
+      const newMessages = await fetch(`http://10.124.97.115:9000/feed-message/new-messages?timestamp=${timestamp}&team=${currentTab}`)
       const hasNewMessage = await newMessages.json()
       if (newMessages) setHasNewMessage(hasNewMessage)
     } catch (error) {

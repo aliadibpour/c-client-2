@@ -239,7 +239,7 @@ export default function ChannelScreen({ route }: any) {
   const handleDeleteMessages = (data:any) => {
     const { messageIds } = data;
     setMessages(prev =>
-      prev.filter(msg => !messageIds.includes(msg.id))
+      prev.filter(msg => !messageIds.includes(msg?.id || 0))
     );
   };
 

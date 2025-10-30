@@ -221,7 +221,7 @@ export default function ProfileScreen({ navigation }: any) {
             return (
               <View key={String(index)} style={styles.teamItem}>
                 {teamImages[teamName!] ? (
-                  <Image source={teamImages[teamName!]} style={styles.teamLogo} />
+                  <Image source={teamImages[teamName!]} style={styles.teamLogo} resizeMode="contain" />
                 ) : (
                   <View style={{ width: 24, height: 24, backgroundColor: "#444", borderRadius: 6 }} />
                 )}
@@ -418,9 +418,9 @@ const styles = StyleSheet.create({
     height: 70,
   },
   teamLogo: {
-    width: 24,
-    height: 24,
-    marginBottom: 6,
+    width: 27,
+    height: 27,
+    marginBottom: 2,
   },
   teamName: {
     color: '#ccc',

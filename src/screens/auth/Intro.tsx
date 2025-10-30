@@ -17,39 +17,33 @@ const { width } = Dimensions.get('window');
 const slides = [
   {
     key: 'slide1',
-    title: "اتمسفر هواداران فوتبال",
+    title: "صدای هوادار",
     text: "اکوسیستم هواداریه تیم های پر طرفدار ایران و اروپا همراه با پوشش نتایج , اخبار و حاشیه ها",
     image: require('../../assets/images/i.jpg'),
   },
   {
     key: 'slide2',
-    title: 'ضد سانسور / زنده',
-    text: "محتوای برنامه بدون فیلتر توسط جامعه ی حاضر بصورت زنده و در لحظه ایجاد میشود",
+    title: 'ضد سانسور و زنده',
+    text: "محتوای برنامه بدون فیلتر توسط کانال های هواداری بدون سانسور و در لحظه منتشر میشه",
     image: require('../../assets/images/p.jpg'),
   },
   {
     key: 'slide3',
-    title: 'نتایج خاص',
-    text: 'نتایج به‌یادماندنی و جذاب تاریخ فوتبال',
-    image: require('../../assets/images/i.jpg'),
+    title: 'کلاینت تلگرام',
+    text: 'کرنر یک کلاینت اختصاصی تلگرام در زمینه در زمینه فوتبال برای جوامع هواداری تهیه شده است ',
+    image: require('../../assets/images/3.png'),
   },
   {
     key: 'slide4',
-    title: "اتمسفر هواداران فوتبال",
-    text: "اکوسیستم هواداریه تیم های پر طرفدار ایران و اروپا همراه با پوشش نتایج , اخبار و حاشیه ها",
-    image: require('../../assets/images/p.jpg'),
+    title: "فیلترشکن",
+    text: "برای ارتباط مستقیم با برنامه نیازمند فیلترشکن هستید.(هرگونه فیلتر یا پروکسی)",
+    image: require('../../assets/images/4.png'),
   },
   {
     key: 'slide5',
-    title: 'ضد سانسور / زنده',
-    text: "محتوای برنامه بدون فیلتر توسط جامعه ی حاضر بصورت زنده و در لحظه ایجاد میشود",
-    image: require('../../assets/images/i.jpg'),
-  },
-  {
-    key: 'slide6',
-    title: 'نتایج خاص',
-    text: 'نتایج به‌یادماندنی و جذاب تاریخ فوتبال',
-    image: require('../../assets/images/i.jpg'),
+    title: 'ورود به حساب',
+    text: "کد ورود به کرنر به تلگرام حسابی می رود که شماره آن را در کرنر ارسال میکنید",
+    image: require('../../assets/images/5.jpg'),
   },
 ];
 
@@ -92,7 +86,7 @@ export default function IntroScreen({ navigation }: any) {
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.slide}>
-        <StepProgressBar currentStep={currentIndex + 1} totalSteps={6} />
+        <StepProgressBar currentStep={currentIndex + 1} totalSteps={5} />
         <View style={styles.imageContainer}>
           <LinearGradient
             colors={['black', 'rgba(0,0,0,0.01)', 'transparent']}
@@ -108,7 +102,7 @@ export default function IntroScreen({ navigation }: any) {
         {/* نمایش لوگو فقط در اسلاید اول */}
         {slide.key === 'slide1' && (
           <Image
-            source={require('../../assets/images/corner-logo.png')}
+            source={require('../../assets/images/cornerLogo.jpg')}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -118,15 +112,15 @@ export default function IntroScreen({ navigation }: any) {
           <Text style={styles.title}>{slide.title}</Text>
           <Text style={styles.text}>{slide.text}</Text>
         </View>
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity onPress={handleNext} style={styles.button} disabled={isAnimating}>
+            <Text style={styles.buttonText}>
+              {currentIndex === slides.length - 1 ? 'شروع' : 'بعدی'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity onPress={handleNext} style={styles.button} disabled={isAnimating}>
-          <Text style={styles.buttonText}>
-            {currentIndex === slides.length - 1 ? 'شروع' : 'بعدی'}
-          </Text>
-        </TouchableOpacity>
-      </View>
 
       <Animated.View
         pointerEvents="none"
@@ -140,7 +134,7 @@ const styles = StyleSheet.create({
   slide: {
     flex: 1,
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 10,
     backgroundColor: 'black',
   },
   imageContainer: {
@@ -166,7 +160,6 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   titleContainer: {
-    marginTop: -20,
     backgroundColor: 'transparent',
     padding: 10,
     alignItems: 'center',
@@ -181,11 +174,10 @@ const styles = StyleSheet.create({
     textShadowRadius: 3,
   },
   text: {
-    fontSize: 16,
+    fontSize: 14.8,
     textAlign: 'center',
     color: 'rgba(250, 250, 250, 0.8)',
     fontFamily: 'SFArabic-Regular',
-    marginTop: 10,
     textShadowColor: 'rgba(0, 0, 0, 0.6)',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 2,
@@ -197,7 +189,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     width: '85%',
     alignSelf: 'center',
-    marginBottom: 15,
   },
   buttonText: {
     color: 'black',
@@ -210,10 +201,10 @@ const styles = StyleSheet.create({
     marginVertical: 7,
   },
   logo: {
-    width: 50,
-    height: 50,
+    width: 66,
+    height: 66,
     borderRadius: 80,
     position: 'absolute',
-    bottom: 140,
+    bottom: 190,
   },
 });
