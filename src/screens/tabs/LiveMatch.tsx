@@ -202,7 +202,7 @@ export default function LiveMatchScreen() {
 
   // --- socket setup (uses selectedDayIndexRef to avoid stale closure) ---
   useEffect(() => {
-    socketRef.current = io("http://10.124.97.115:9000", {
+    socketRef.current = io("https://cornerlive.ir:9000", {
       transports: ["websocket"],
     });
 

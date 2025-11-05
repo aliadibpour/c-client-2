@@ -12,25 +12,26 @@ import { useNavigation } from "@react-navigation/native";
 
 type ChannelProp = string | number | any;
 
+// simple module-level cache to avoid re-downloading same remoteId
+const remoteDownloadCache = new Map<string, string | null>();
+const DEBUG = false;
+
 export default function ChannelItem({
   channel,
   onPress,
   onReady,
-  prefetched, // <-- جدید: داده‌ای که از loader می‌گیریم (ممکن است شامل __downloaded_profile_photo باشد)
 }: {
   channel: ChannelProp;
   onPress?: (c: any) => void;
   onReady?: (uniqueId: string | number | null | undefined) => void;
-  prefetched?: any;
 }) {
   const navigation: any = useNavigation();
-
+  //console.log(channel)
   const [title, setTitle] = useState<string>("");
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [miniAvatarUri, setMiniAvatarUri] = useState<string | null>(null);
   const [lastMessagePreview, setLastMessagePreview] = useState<string>("");
   const [lastMsgThumbUri, setLastMsgThumbUri] = useState<string | null>(null);
-  const [isUsernameNotOccupied, setIsUsernameNotOccupied] = useState(false);
   const [resolvedChatId, setResolvedChatId] = useState<number | string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -42,157 +43,180 @@ export default function ChannelItem({
     return () => { mountedRef.current = false; };
   }, []);
 
-  const safeParse = (maybe: any) => {
-    if (!maybe) return null;
-    if (typeof maybe === "object") return maybe;
-    if (typeof maybe === "string") {
-      const t = maybe.trim();
-      if (t.startsWith("{") || t.startsWith("[")) {
-        try {
-          return JSON.parse(t);
-        } catch {
-          return null;
-        }
-      }
+  // ---------- helpers ----------
+  function log(...args: any[]) {
+    if (DEBUG) console.log('[ChannelItem]', ...args);
+  }
+
+  function safeParseRaw(res: any) {
+    if (!res) return null;
+    // if native wrapper returns { raw: "..." }
+    if (typeof res === 'object' && res.raw && typeof res.raw === 'string') {
       try {
-        return JSON.parse(maybe);
-      } catch {
+        return JSON.parse(res.raw);
+      } catch (e) {
+        // fallthrough
+      }
+    }
+    // if res itself is JSON string
+    if (typeof res === 'string') {
+      try {
+        return JSON.parse(res);
+      } catch (e) {
         return null;
       }
     }
+    // already parsed object
+    if (typeof res === 'object') return res;
     return null;
-  };
+  }
 
-  const extractPreviewAndThumb = (chatObj: any) => {
-    const msg = chatObj?.lastMessage;
-    setLastMsgThumbUri(null);
-    setLastMessagePreview("");
+  function extractLocalPath(parsed: any): string | undefined {
+    if (!parsed) return undefined;
+    // check common shapes:
+    // parsed.local.path
+    if (parsed.local && parsed.local.path) return parsed.local.path;
+    // parsed.path
+    if (parsed.path) return parsed.path;
+    // parsed.file && parsed.file.local.path
+    if (parsed.file && parsed.file.local && parsed.file.local.path) return parsed.file.local.path;
+    // parsed.file_path
+    if (parsed.file_path) return parsed.file_path;
+    // sometimes wrapper returns nested in file object
+    if (parsed.result && parsed.result.local && parsed.result.local.path) return parsed.result.local.path;
+    return undefined;
+  }
 
-    if (!msg) return;
+  function normalizeToFileUri(p?: string | null) {
+    if (!p) return null;
+    if (p.startsWith('file://')) return p;
+    return `file://${p}`;
+  }
 
-    const content = msg.content || msg;
-    let text = "";
+  // robust download using native wrapper result parsing + cache + small retry
+  const tryDownloadRemoteFile = async (remoteId: string): Promise<string | null> => {
+    if (!remoteId) return null;
 
-    if (typeof content === "string") text = content;
-    else if (content.text && typeof content.text === "string") text = content.text;
-    else if (content.text && content.text.text) text = content.text.text;
-    else if (content.caption && typeof content.caption === "string")
-      text = content.caption;
-    else if (content.caption && content.caption.text) text = content.caption.text;
-    else if (msg.content?.caption?.text) text = msg.content.caption.text;
-    else if (msg.content?.text?.text) text = msg.content.text.text;
-
-    const maybePhoto = msg?.content?.photo || msg?.photo || msg?.content?.video || null;
-    const thumbData =
-      maybePhoto?.minithumbnail?.data ||
-      (maybePhoto?.sizes && maybePhoto.sizes[0]?.minithumbnail?.data) ||
-      null;
-
-    if (thumbData) {
-      try {
-        const buf = Buffer.from(thumbData as any);
-        const b64 = buf.toString("base64");
-        setLastMsgThumbUri(`data:image/jpeg;base64,${b64}`);
-      } catch {
-        setLastMsgThumbUri(null);
-      }
+    // return cached value if present (could be null for known-failed)
+    if (remoteDownloadCache.has(remoteId)) {
+      log('cache hit for', remoteId, remoteDownloadCache.get(remoteId));
+      return remoteDownloadCache.get(remoteId) ?? null;
     }
 
-    if (text) {
-      const cleaned = text.replace(/\s+/g, " ").trim();
+    // small helper to call native and parse
+    const callAndParse = async (): Promise<string | null> => {
+      try {
+        log('calling TdLib.downloadFileByRemoteId for', remoteId);
+        const res: any = await TdLib.downloadFileByRemoteId(remoteId);
+        log('raw response from native:', res);
+        const parsed = safeParseRaw(res);
+        log('parsed download response:', parsed);
+        const localPath = extractLocalPath(parsed);
+        if (localPath) {
+          const uri = normalizeToFileUri(localPath);
+          return uri;
+        }
+        // fallback: sometimes native returns top-level path string
+        if (typeof res === 'string' && res.length > 0) {
+          return normalizeToFileUri(res);
+        }
+        // sometimes native returns { path: '...' } directly
+        if (res && typeof res === 'object' && (res.path || res.local?.path)) {
+          const p = res.path ?? res.local?.path;
+          return normalizeToFileUri(p);
+        }
+        return null;
+      } catch (e: any) {
+        log('downloadFileByRemoteId error:', e?.message ?? e);
+        return null;
+      }
+    };
+
+    // try up to 2 attempts (first attempt often succeeds if underlying flow already prepared)
+    let attempts = 0;
+    let result: string | null = null;
+    while (attempts < 2 && !result) {
+      attempts++;
+      result = await callAndParse();
+      if (result) break;
+      // small delay before retry
+      await new Promise((r) => setTimeout(r, 250 * attempts));
+    }
+
+    // cache result (including null to avoid rapid retries)
+    remoteDownloadCache.set(remoteId, result);
+    log('download finished for', remoteId, '->', result);
+    return result;
+  };
+
+  // ---------- UI logic (unchanged mostly) ----------
+  const setMiniFromBase64 = (b64: string | null | undefined, setter: (s: string | null) => void) => {
+    if (!b64) { setter(null); return; }
+    if (b64.startsWith("data:")) { setter(b64); return; }
+    try {
+      const trimmed = b64.trim();
+      if (trimmed.length > 0) {
+        setter(`data:image/jpeg;base64,${trimmed}`);
+        return;
+      }
+    } catch { setter(null); return; }
+  };
+
+  const extractPreviewAndThumb = (obj: any) => {
+    const msgText = obj?.lastMessageText ?? obj?.lastMessage ?? null;
+    if (msgText && typeof msgText === "string") {
+      const cleaned = msgText.replace(/\s+/g, " ").trim();
       const max = 60;
-      setLastMessagePreview(
-        cleaned.length > max ? cleaned.slice(0, max).trim() + "…" : cleaned
-      );
-    } else if (maybePhoto) {
-      setLastMessagePreview("عکس/ویدیو");
+      setLastMessagePreview(cleaned.length > max ? cleaned.slice(0, max).trim() + "…" : cleaned);
     } else {
       setLastMessagePreview("");
     }
-  };
 
-  // helper: try to find remote id anywhere in object (profile_photo, photo, remote, id ...)
-  const findRemoteId = (obj: any): string | null => {
-    if (!obj || typeof obj !== "object") return null;
-    // check common paths first
-    if (obj?.profile_photo?.small?.remote?.id) return String(obj.profile_photo.small.remote.id);
-    if (obj?.photo?.small?.remote?.id) return String(obj.photo.small.remote.id);
-    if (obj?.photo?.remote?.id) return String(obj.photo.remote.id);
-    // deep search
-    const deepFind = (o: any): string | null => {
-      if (!o || typeof o !== "object") return null;
-      if (o.remote && typeof o.remote === "object" && ("id" in o.remote)) {
-        return String(o.remote.id);
-      }
-      for (const k of Object.keys(o)) {
-        try {
-          if (typeof o[k] === "object") {
-            const r = deepFind(o[k]);
-            if (r) return r;
+    const lThumb = obj?.lastMessageMiniThumbnail ?? null;
+    setLastMsgThumbUri(null);
+    if (typeof lThumb === "string" && lThumb.length > 0) {
+      if (lThumb.startsWith("data:")) {
+        setLastMsgThumbUri(lThumb);
+      } else if (lThumb.startsWith("/9j") || lThumb.length > 100) {
+        setMiniFromBase64(lThumb, setLastMsgThumbUri);
+      } else {
+        (async () => {
+          const p = await tryDownloadRemoteFile(lThumb);
+          if (p && mountedRef.current) {
+            setLastMsgThumbUri(p);
           }
-        } catch { /* ignore */ }
+        })();
       }
-      return null;
-    };
-    return deepFind(obj);
-  };
-
-  // try download remote file (non-blocking). returns local path or null.
-  const tryDownloadRemoteFile = async (remoteId: string): Promise<string | null> => {
-    if (!remoteId) return null;
-    try {
-      const r = await TdLib.downloadFileByRemoteId(remoteId);
-      // depending on binding, r may be a path string or an object; handle both
-      if (!r) return null;
-      if (typeof r === "string") return r;
-      // if object: try common fields
-      if (r.path) return r.path;
-      if (r.local && r.local.path) return r.local.path;
-      return null;
-    } catch (e) {
-      // ignore download errors
-      return null;
     }
   };
 
-  const applyChatObj = (chatObj: any) => {
-    if (!chatObj) return;
-    if (chatObj.title) setTitle(chatObj.title);
+  const applyServerChannel = (ch: any) => {
+    if (!ch) return;
+    if (ch.title) setTitle(ch.title);
 
-    const chatIdVal = chatObj.chatId ?? chatObj.id ?? null;
+    const chatIdVal = ch.chatId ?? ch.id ?? ch.username ?? null;
     if (chatIdVal !== null && chatIdVal !== undefined) setResolvedChatId(chatIdVal);
 
-    const mini = chatObj.photo?.minithumbnail?.data;
-    if (mini) {
-      try {
-        const buf = Buffer.from(mini as any);
-        const b64 = buf.toString("base64");
-        setMiniAvatarUri(`data:image/jpeg;base64,${b64}`);
-      } catch {
-        setMiniAvatarUri(null);
-      }
+    if (ch.miniThumbnailBase64) {
+      setMiniFromBase64(ch.miniThumbnailBase64, setMiniAvatarUri);
+    } else {
+      setMiniAvatarUri(null);
     }
 
-    // if there's an already-downloaded profile photo attached by loader, use it
-    if (chatObj.__downloaded_profile_photo) {
-      const dl = chatObj.__downloaded_profile_photo;
-      // if it's an absolute path or file://, normalize to uri
-      if (typeof dl === "string" && dl.length > 0) {
-        const possible = dl.startsWith("file://") ? dl : `file://${dl}`;
-        setAvatarUri(possible);
-      } else if (typeof dl === "object" && dl.path) {
-        setAvatarUri(dl.path.startsWith("file://") ? dl.path : `file://${dl.path}`);
-      }
+    if (ch.avatarRemoteId) {
+      // background download; use cached/inflight behavior inside tryDownloadRemoteFile
+      (async () => {
+        const p = await tryDownloadRemoteFile(ch.avatarRemoteId);
+        if (p && mountedRef.current) {
+          setAvatarUri(p);
+        }
+      })();
+    } else {
+      setAvatarUri(null);
     }
 
-    // if there is a local path reported by TdLib structure (already downloaded)
-    const small = chatObj.photo?.small;
-    if (small?.local?.isDownloadingCompleted && small?.local?.path) {
-      const p = small.local.path.startsWith("file://") ? small.local.path : `file://${small.local.path}`;
-      setAvatarUri(p);
-    }
-
-    extractPreviewAndThumb(chatObj);
+    extractPreviewAndThumb(ch);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -200,166 +224,34 @@ export default function ChannelItem({
     setLoading(true);
     calledReadyRef.current = false;
 
-    const fetchInfo = async () => {
-      // 1) if prefetched present, use it immediately (may include __downloaded_profile_photo)
-      if (prefetched) {
-        const parsed = prefetched?.raw ? safeParse(prefetched.raw) ?? safeParse(prefetched) : safeParse(prefetched) ?? prefetched;
-        applyChatObj(parsed ?? prefetched);
-
-        // resolved id fallback if not present
-        if ((!parsed?.chatId && !parsed?.id) && parsed?.username) {
-          setResolvedChatId(parsed.username);
-        }
-
-        // mark loading false quickly (we won't wait for download)
-        if (mountedRef.current) setLoading(false);
-
-        // if avatar not set but __downloaded_profile_photo exists -> set it (applyChatObj did)
-        // if avatar still missing, but parsed has remote id -> try download in background and update when ready
-        if (mountedRef.current) {
-          const hasAvatar = !!(avatarUri || miniAvatarUri);
-          const remoteId = findRemoteId(parsed ?? prefetched);
-          if (!hasAvatar && remoteId) {
-            // fire-and-forget
-            try {
-              const dl = await tryDownloadRemoteFile(remoteId);
-              if (mountedRef.current && dl) {
-                const p = dl.startsWith("file://") ? dl : `file://${dl}`;
-                setAvatarUri(p);
-              }
-            } catch { /* ignore */ }
-          }
-        }
-        return;
-      }
-
-      // 2) if channel is already an object, apply it
+    const init = async () => {
       if (typeof channel === "object" && channel !== null) {
-        applyChatObj(channel);
-        if ((!channel.chatId && !channel.id) && typeof channel.username === "string") {
-          setResolvedChatId(channel.username);
-        }
-        if (mountedRef.current) setLoading(false);
-
-        // background download if needed
-        const remoteId = findRemoteId(channel);
-        if (mountedRef.current && !avatarUri && remoteId) {
-          try {
-            const dl = await tryDownloadRemoteFile(remoteId);
-            if (mountedRef.current && dl) {
-              const p = dl.startsWith("file://") ? dl : `file://${dl}`;
-              setAvatarUri(p);
-            }
-          } catch { /* ignore */ }
-        }
+        applyServerChannel(channel);
         return;
       }
-
-      // 3) numeric id -> getChat
-      try {
-        if (typeof channel === "number") {
-          const res: any = await TdLib.getChat(channel);
-          const parsed = res?.raw ? safeParse(res.raw) ?? safeParse(res) : safeParse(res);
-          if (parsed && mountedRef.current) {
-            applyChatObj(parsed);
-            setLoading(false);
-            // background download if needed
-            const remoteId = findRemoteId(parsed);
-            if (remoteId) {
-              try {
-                const dl = await tryDownloadRemoteFile(remoteId);
-                if (mountedRef.current && dl) {
-                  const p = dl.startsWith("file://") ? dl : `file://${dl}`;
-                  setAvatarUri(p);
-                }
-              } catch { /* ignore */ }
-            }
-            return;
-          } else {
-            if (mountedRef.current) {
-              setTitle(String(channel));
-              setResolvedChatId(channel);
-              setLoading(false);
-            }
-            return;
-          }
-        }
-
-        // 4) string username -> searchPublicChat
-        if (typeof channel === "string") {
-          try {
-            const res: any = await TdLib.searchPublicChat(channel);
-            let parsed = null;
-            if (res && res.raw) parsed = safeParse(res.raw);
-            if (!parsed) parsed = safeParse(res);
-            if (!parsed && typeof res === "object") parsed = res;
-
-            if (parsed && mountedRef.current) {
-              applyChatObj(parsed);
-              setLoading(false);
-
-              // background download if present
-              const remoteId = findRemoteId(parsed);
-              if (remoteId) {
-                try {
-                  const dl = await tryDownloadRemoteFile(remoteId);
-                  if (mountedRef.current && dl) {
-                    const p = dl.startsWith("file://") ? dl : `file://${dl}`;
-                    setAvatarUri(p);
-                  }
-                } catch { /* ignore */ }
-              }
-              return;
-            } else {
-              if (res?.error) {
-                const errMsg = typeof res.error === "string" ? res.error : res.error?.message;
-                if (errMsg && String(errMsg).includes("USERNAME_NOT_OCCUPIED")) {
-                  setIsUsernameNotOccupied(true);
-                  setTitle(channel);
-                  setResolvedChatId(channel);
-                  if (mountedRef.current) setLoading(false);
-                  return;
-                }
-              }
-              if (mountedRef.current) {
-                setTitle(channel);
-                setResolvedChatId(channel);
-                setLoading(false);
-              }
-            }
-          } catch (err: any) {
-            const errStr = err?.message || String(err);
-            if (errStr.includes("USERNAME_NOT_OCCUPIED") || errStr.toLowerCase().includes("username is invalid")) {
-              setIsUsernameNotOccupied(true);
-              setTitle(channel);
-              setResolvedChatId(channel);
-              if (mountedRef.current) setLoading(false);
-              return;
-            }
-            console.error("ChannelItem fetch error:", err);
-            if (mountedRef.current) {
-              setTitle(channel);
-              setResolvedChatId(channel);
-              setLoading(false);
-            }
-          }
-        }
-      } catch (e) {
-        console.error("ChannelItem unexpected error:", e);
-        if (mountedRef.current) {
-          setTitle(typeof channel === "string" ? channel : "بدون عنوان");
-          setResolvedChatId(typeof channel === "string" ? channel : null);
-          setLoading(false);
-        }
+      if (typeof channel === "string" || typeof channel === "number") {
+        setTitle(String(channel));
+        setResolvedChatId(channel);
+        setMiniAvatarUri(null);
+        setAvatarUri(null);
+        setLastMessagePreview("");
+        setLastMsgThumbUri(null);
+        setLoading(false);
+        return;
       }
+      setTitle("بدون عنوان");
+      setMiniAvatarUri(null);
+      setAvatarUri(null);
+      setLastMessagePreview("");
+      setLastMsgThumbUri(null);
+      setLoading(false);
     };
 
-    fetchInfo();
+    if (mounted) init();
 
     return () => { mounted = false; };
-  }, [channel, prefetched]); // اضافه شدن prefetched به deps
+  }, [channel]);
 
-  // call onReady as soon as loading is false (we don't wait for background avatar download)
   useEffect(() => {
     if (!loading && !calledReadyRef.current) {
       onReady?.(resolvedChatId ?? channel);
@@ -367,20 +259,13 @@ export default function ChannelItem({
     }
   }, [loading, resolvedChatId, channel, onReady]);
 
-  const handlePress = () => {
-    if (onPress) {
-      onPress({ channel, chatId: resolvedChatId });
-      return;
-    }
-    navigation.navigate("Channel", { chatId: resolvedChatId ?? channel });
+  const handlePress = async() => {
+    console.log(channel)
+    navigation.navigate("Channel", { chatId: +channel.chatId, cache: true, username: channel.username });
   };
 
-  // وقتی loading هست، ما null برمی‌گردونیم (تو طراحی تو) — اگر می‌خوای placeholder باشه اینجا تغییر بده
-  if (loading) {
-    return null;
-  }
-
-  if (!miniAvatarUri) return;
+  if (loading) return null;
+  if (!miniAvatarUri) return null;
 
   return (
     <TouchableOpacity style={styles.container} onPress={handlePress}>
@@ -414,8 +299,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 6,
     borderBottomWidth: 0.9,
-    borderColor: "#2222225d",
-    backgroundColor: "#090909ff",
+    borderColor: "#222222ac",
+    backgroundColor: "#0e0e0eff",
   },
   avatar: {
     width: 52,

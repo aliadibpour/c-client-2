@@ -79,7 +79,7 @@ export default function HomeHeader({ activeTab, setActiveTab, hasNewMessage, onR
 
   return (
     <View style={styles.headerContainer}>
-      <Image source={require("../../../assets/images/corner-logo.png")} style={[styles.logo, teams.length > 1 ? {marginBottom: 2}: {marginBottom:7}]} />
+      <Image source={require("../../../assets/images/corner-logo.png")} style={[styles.logo, teams.length > 1 ? {marginBottom: 0}: {marginBottom:7}]} />
 
       {/* Tabs grid: supports 1,2,3 items (each fills 100%/50%/33.333%) */}
       <View style={styles.tabsRow}>
@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
 
   tabText: {
     color: "#aaa",
-    fontSize: 13.5,
+    fontSize: 13.3,
     fontFamily: "SFArabic-Regular",
   },
   activeTabText: {

@@ -27,7 +27,7 @@ const MAX_PREFETCH_BATCHES = 2;
 const PER_GROUP_CONCURRENCY = 3; // used inside loadBatch for group concurrency
 const TD_CONCURRENCY = 6; // global limit for TdLib calls
 const POLL_INTERVAL_MS = 3000;
-const MAX_OPENED_CHATS = 10; // LRU cap for opened chats
+const MAX_OPENED_CHATS = 12; // LRU cap for opened chats
 
 // storage keys
 const STORAGE_KEYS = {
@@ -38,7 +38,6 @@ const STORAGE_KEYS = {
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
-  //const timestamp = Math.floor(Date.now() / 1000);
   const [timestamp, setTimestamp] = useState(Math.floor(Date.now() / 1000))
 
   const [activeTab, setActiveTab] = useState<any>();
@@ -58,6 +57,9 @@ export default function HomeScreen() {
   }, [activeTab]);
 
   const [messages, setMessages] = useState<any[]>([]);
+  const messagesRef = useRef<any[]>([]); // keep latest messages in ref to avoid stale-state races
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+
   const [visibleIds, setVisibleIds] = useState<number[]>([]);
   const alreadyViewed = useRef<Set<number>>(new Set());
 
@@ -81,6 +83,7 @@ export default function HomeScreen() {
 
   // opened chats LRU (Map maintains insertion order)
   const openedChats = useRef<Map<number, number>>(new Map()); // chatId -> lastTouchedTimestamp
+  const openingChatsRef = useRef<Set<number>>(new Set()); // in-flight openChat set
 
   // semaphore queue for TdLib calls
   const tdQueueRef = useRef<(() => void)[]>([]);
@@ -114,20 +117,41 @@ export default function HomeScreen() {
     return results;
   }
 
-  // tdEnqueue: run function through semaphore
-  const tdEnqueue = useCallback((fn: () => Promise<any>) => {
+  // helper: promise timeout used to avoid TdLib hanging indefinitely
+  function promiseTimeout<T>(p: Promise<T>, ms: number) {
+    return new Promise<T>((resolve, reject) => {
+      let done = false;
+      const t = setTimeout(() => {
+        if (done) return;
+        done = true;
+        reject(new Error('TDLIB_TIMEOUT'));
+      }, ms);
+      p.then((v) => {
+        if (done) return; done = true; clearTimeout(t); resolve(v);
+      }).catch((e) => {
+        if (done) return; done = true; clearTimeout(t); reject(e);
+      });
+    });
+  }
+
+  // tdEnqueue: run function through semaphore with timeout protection
+  const tdEnqueue = useCallback((fn: () => Promise<any>, opts = { timeoutMs: 7000 }) => {
     return new Promise<any>((resolve, reject) => {
       const run = async () => {
         tdActiveCountRef.current += 1;
         try {
-          const r = await fn();
+          console.log('[tdEnqueue] run start active=', tdActiveCountRef.current, 'queueLen=', tdQueueRef.current.length);
+          const r = await promiseTimeout(fn(), opts.timeoutMs);
           resolve(r);
         } catch (err) {
           reject(err);
         } finally {
           tdActiveCountRef.current -= 1;
           const next = tdQueueRef.current.shift();
-          if (next) next();
+          if (next) {
+            try { next(); } catch (e) {}
+          }
+          console.log('[tdEnqueue] done active=', tdActiveCountRef.current, 'queueLen=', tdQueueRef.current.length);
         }
       };
 
@@ -136,7 +160,7 @@ export default function HomeScreen() {
     });
   }, []);
 
-  // TdLib call wrapper with retries via semaphore
+  // TdLib call wrapper with retries via semaphore + timeout
   const tdCall = useCallback(
     async (method: string, ...args: any[]) => {
       const attemptCall = async (retries = 2): Promise<any> => {
@@ -150,7 +174,7 @@ export default function HomeScreen() {
           throw err;
         }
       };
-      return tdEnqueue(() => attemptCall());
+      return tdEnqueue(() => attemptCall(), { timeoutMs: 7000 });
     },
     [tdEnqueue]
   );
@@ -188,35 +212,30 @@ export default function HomeScreen() {
         return res;
       } catch (err: any) {
         clearTimeout(timer);
-        // if no retries left -> rethrow
         if (attempt > retries) {
           throw err;
         }
-        // backoff with jitter
         const backoff = backoffBase * Math.pow(2, attempt - 1);
         const jitter = Math.floor(Math.random() * 200);
         await delay(backoff + jitter);
-        // retry
       }
     }
   }
 
-  // wrapper for initial feed (used in initial load & refresh) => more aggressive retries
   const fetchFeedInitial = useCallback(
     (tab: string, uuid: string, ts: number) => {
       const url =
-        `http://10.124.97.115:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${encodeURIComponent(uuid)}` +
+        `https://cornerlive.ir:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${encodeURIComponent(uuid)}` +
         `&activeTab=${encodeURIComponent(tab)}&timestamp=${ts.toString()}`;
       return fetchWithRetry(url, { retries: 3, timeout: 8000, backoffBase: 400, fetchOptions: {} });
     },
     []
   );
 
-  // wrapper for load more (less aggressive)
   const fetchFeedMore = useCallback(
     (tab: string, uuid: string, ts: number) => {
       const url =
-        `http://10.124.97.115:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${encodeURIComponent(uuid)}` +
+        `https://cornerlive.ir:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${encodeURIComponent(uuid)}` +
         `&activeTab=${encodeURIComponent(tab)}&timestamp=${ts.toString()}`;
       return fetchWithRetry(url, { retries: 2, timeout: 7000, backoffBase: 300, fetchOptions: {} });
     },
@@ -264,31 +283,26 @@ export default function HomeScreen() {
   // prefetch key helper (namespaced by tab)
   const prefetchKey = (tab: string, batchIdx: number) => `${tab}:${batchIdx}`;
 
-  // -----------------------------
-  // === UUID helper (stable keys) ===
-  // - prefer deterministic `chatId-id` when available (stable across restarts)
-  // - otherwise generate uuidv4()
-  // This returns a NEW object if __uuid missing, otherwise returns original msg.
-  // -----------------------------
+  // ===================
+  // withUuid / dedupe
+  // ===================
   const withUuid = useCallback((msg: any) => {
     if (!msg || typeof msg !== "object") return msg;
     if (msg.__uuid) return msg;
     if (msg.chatId != null && msg.id != null) {
       return { ...msg, __uuid: `${msg.chatId}-${msg.id}` };
     }
-    return { ...msg, __uuid: uuid.v4() };
+    return { ...msg, __uuid: String(uuid.v4()) };
   }, []);
 
-  // dedupe helper — ensures items have __uuid and removes duplicates (keeps first occurrence)
   const dedupeByUuid = useCallback((items: any[]) => {
     const seen = new Set<string>();
     const out: any[] = [];
     for (const it of items) {
       if (!it || typeof it !== "object") continue;
-      // ensure __uuid exists
       if (!it.__uuid) {
         if (it.chatId != null && it.id != null) it.__uuid = `${it.chatId}-${it.id}`;
-        else it.__uuid = uuid.v4();
+        else it.__uuid = String(uuid.v4());
       }
       if (!seen.has(it.__uuid)) {
         seen.add(it.__uuid);
@@ -302,12 +316,10 @@ export default function HomeScreen() {
   const touchOpenedChat = useCallback((chatId: number) => {
     openedChats.current.delete(chatId);
     openedChats.current.set(chatId, Date.now());
-    // evict if over cap
     while (openedChats.current.size > MAX_OPENED_CHATS) {
       const firstKey = openedChats.current.keys().next().value;
       if (firstKey !== undefined) {
         const removing = firstKey;
-        // best-effort close
         tdCall("closeChat", removing).catch(() => {});
         openedChats.current.delete(removing);
       } else break;
@@ -331,7 +343,7 @@ export default function HomeScreen() {
         }
         const photo = chat.photo?.small;
         if (photo?.local?.isDownloadingCompleted && photo?.local?.path) info.photoUri = `file://${photo.local.path}`;
-        else if (photo?.id) info.fileId = photo.id; // MessageHeader can trigger download if wants
+        else if (photo?.id) info.fileId = photo.id;
         chatInfoRef.current.set(chatId, info);
         persistCachesDebounced();
         return info;
@@ -342,33 +354,20 @@ export default function HomeScreen() {
     [tdCall, persistCachesDebounced]
   );
 
-  // -----------------------------
-  // ensureRepliesForMessages
-  // find reply targets for given messages, fetch missing ones (cached), and return enriched array
-  // -----------------------------
+  // ensureRepliesForMessages (same as before)
   const ensureRepliesForMessages = useCallback(
     async (msgs: any[]) => {
       if (!msgs || msgs.length === 0) return msgs;
-      // collect unique reply targets
       const toFetchMap = new Map<string, { chatId: number | string; messageId: number | string }>();
       for (const m of msgs) {
-        // Detect possible reply metadata shapes:
-        // m.replyTo / m.replyToMessage / m.reply_to_message (normalized)
-        // sometimes the message contains reply_to_message_id or reply_to.message_id
         const r = m.replyTo || m.replyToMessage || m.reply_to_message || null;
         let rid = r?.id ?? r?.messageId ?? r?.message_id ?? null;
         let chatId = r?.chatId ?? r?.chat?.id ?? r?.chat_id ?? null;
-
-        // fallback: TDLib sometimes stores reply_to_message_id on the parent message
         if (!rid && (m.reply_to_message_id || m.replyToMessageId || m.replyTo?.message_id)) {
           rid = m.reply_to_message_id || m.replyToMessageId || (m.replyTo && m.replyTo.message_id);
         }
-
-        // If chatId missing, use message's chatId (most replies are within same chat)
         if (!chatId) chatId = m.chatId ?? m.chat?.id ?? null;
-
         if (!rid || !chatId) continue;
-
         const key = mk(chatId, rid);
         if (!messageCacheRef.current.has(key) && !toFetchMap.has(key)) {
           toFetchMap.set(key, { chatId, messageId: rid });
@@ -386,11 +385,9 @@ export default function HomeScreen() {
               const parsed = JSON.parse(res.raw);
               const k2 = mk(parsed.chatId ?? t.chatId, parsed.id);
               const stored = withUuid(parsed);
-              // store parsed into cache (with uuid)
               messageCacheRef.current.set(k2, stored);
               return stored;
             } catch (e) {
-              // ignore per-message errors
               return null;
             }
           }
@@ -398,22 +395,18 @@ export default function HomeScreen() {
         persistCachesDebounced();
       }
 
-      // now enrich original msgs with replyToMessage if available in cache
       const enriched = msgs.map((m) => {
         const r = m.replyTo || m.replyToMessage || m.reply_to_message || null;
         let rid = r?.id ?? r?.messageId ?? r?.message_id ?? null;
         let chatId = r?.chatId ?? r?.chat?.id ?? r?.chat_id ?? null;
-
         if (!rid && (m.reply_to_message_id || m.replyToMessageId || m.replyTo?.message_id)) {
           rid = m.reply_to_message_id || m.replyToMessageId || (m.replyTo && m.replyTo.message_id);
         }
         if (!chatId) chatId = m.chatId ?? m.chat?.id ?? null;
-
         if (rid && chatId) {
           const key = mk(chatId, rid);
           const cached = messageCacheRef.current.get(key);
           if (cached) {
-            // attach in a consistent property
             return { ...m, replyToMessage: cached };
           }
         }
@@ -425,9 +418,10 @@ export default function HomeScreen() {
     [tdCall, persistCachesDebounced, withUuid]
   );
 
-  // loadBatch: group by chat to reduce openChat churn
+  // loadBatch: group by chat to reduce openChat churn (uses openingChatsRef to prevent duplicate openChat calls)
   const loadBatch = useCallback(
     async (batchIdx: number) => {
+      console.log('[loadBatch] batchIdx=', batchIdx);
       const start = batchIdx * BATCH_SIZE;
       const metas = datasRef.current.slice(start, start + BATCH_SIZE);
       if (!metas.length) return [];
@@ -444,7 +438,6 @@ export default function HomeScreen() {
 
       if (toFetch.length === 0) return results;
 
-      // group toFetch by chat/channel
       const groups: Record<string, any[]> = {};
       for (const t of toFetch) {
         const gKey = t.chatId ? `c:${t.chatId}` : `ch:${t.channel}`;
@@ -454,15 +447,21 @@ export default function HomeScreen() {
 
       for (const gKey of Object.keys(groups)) {
         const group = groups[gKey];
-        // ensure open chat once per group (best-effort)
         let resolvedChatId: number | undefined;
         const sample = group[0];
         if (sample.chatId) {
           resolvedChatId = +sample.chatId;
           try {
-            if (!openedChats.current.has(resolvedChatId)) {
-              await tdCall("openChat", resolvedChatId);
-              openedChats.current.set(resolvedChatId, Date.now());
+            if (!openedChats.current.has(resolvedChatId) && !openingChatsRef.current.has(resolvedChatId)) {
+              openingChatsRef.current.add(resolvedChatId);
+              try {
+                await tdCall("openChat", resolvedChatId);
+                openedChats.current.set(resolvedChatId, Date.now());
+              } catch (e) {
+                // ignore
+              } finally {
+                openingChatsRef.current.delete(resolvedChatId);
+              }
             } else touchOpenedChat(resolvedChatId);
           } catch (e) {}
         } else if (sample.channel) {
@@ -471,9 +470,15 @@ export default function HomeScreen() {
             const fid = r?.id || r?.chat?.id || r?.chatId || +r;
             if (fid) {
               resolvedChatId = fid;
-              if (!openedChats.current.has(fid)) {
-                await tdCall("openChat", fid);
-                openedChats.current.set(fid, Date.now());
+              if (!openedChats.current.has(fid) && !openingChatsRef.current.has(fid)) {
+                openingChatsRef.current.add(fid);
+                try {
+                  await tdCall("openChat", fid);
+                  openedChats.current.set(fid, Date.now());
+                } catch (e) {
+                } finally {
+                  openingChatsRef.current.delete(fid);
+                }
               } else touchOpenedChat(fid);
             }
           } catch (e) {}
@@ -496,13 +501,18 @@ export default function HomeScreen() {
                 messageCacheRef.current.set(k2, stored);
                 return stored;
               } else {
-                // fallback: search per-meta
                 const r: any = await tdCall("searchPublicChat", meta.channel);
                 const fid = r?.id || r?.chat?.id || r?.chatId || +r;
                 if (fid) {
-                  if (!openedChats.current.has(fid)) {
-                    await tdCall("openChat", fid);
-                    openedChats.current.set(fid, Date.now());
+                  if (!openedChats.current.has(fid) && !openingChatsRef.current.has(fid)) {
+                    openingChatsRef.current.add(fid);
+                    try {
+                      await tdCall("openChat", fid);
+                      openedChats.current.set(fid, Date.now());
+                    } catch (e) {
+                    } finally {
+                      openingChatsRef.current.delete(fid);
+                    }
                   } else touchOpenedChat(fid);
                   const rr: any = await tdCall("getMessage", fid, +meta.messageId);
                   const parsed = JSON.parse(rr.raw);
@@ -524,7 +534,6 @@ export default function HomeScreen() {
 
       persistCachesDebounced();
 
-      // order results in same order as metas
       const ordered = metas
         .map((m) => results.find((r) => String(r.id) === String(m.messageId) && (!m.chatId || String(r.chatId) === String(m.chatId))))
         .filter(Boolean);
@@ -534,7 +543,7 @@ export default function HomeScreen() {
     [tdCall, touchOpenedChat, persistCachesDebounced, withUuid]
   );
 
-  // prefetch next batches with stagger (now ensures replies for prefetched)
+  // prefetch next batches with stagger
   const prefetchNextBatches = useCallback(
     async (fromBatchIdx: number) => {
       const tab = activeTabRef.current || activeTab;
@@ -569,7 +578,7 @@ export default function HomeScreen() {
       const pref = prefetchRef.current.get(key);
       let loaded: any[] = [];
       if (pref) {
-        const exist = new Set(messages.map((m: any) => `${m.chatId}:${m.id}`));
+        const exist = new Set(messagesRef.current.map((m: any) => `${m.chatId}:${m.id}`));
         const toAppend = pref.filter((m) => !exist.has(`${m.chatId}:${m.id}`));
         if (toAppend.length) {
           setMessages((prev) => dedupeByUuid([...prev, ...toAppend.map(withUuid)]));
@@ -579,7 +588,7 @@ export default function HomeScreen() {
       } else {
         const newLoaded = await loadBatch(nextBatchIdx);
         const enriched = await ensureRepliesForMessages(newLoaded);
-        const exist = new Set(messages.map((m: any) => `${m.chatId}:${m.id}`));
+        const exist = new Set(messagesRef.current.map((m: any) => `${m.chatId}:${m.id}`));
         const toAppend = enriched.filter((m) => !exist.has(`${m.chatId}:${m.id}`));
         if (toAppend.length) {
           setMessages((prev) => dedupeByUuid([...prev, ...toAppend.map(withUuid)]));
@@ -587,7 +596,6 @@ export default function HomeScreen() {
         loaded = enriched;
       }
 
-      // warm chatInfo for appended messages
       const chatIds = Array.from(new Set(loaded.map((m) => m.chatId).filter(Boolean)));
       await limitConcurrency(
         chatIds,
@@ -600,10 +608,10 @@ export default function HomeScreen() {
 
       return loaded.length;
     },
-    [loadBatch, messages, getAndCacheChatInfo, ensureRepliesForMessages, withUuid, dedupeByUuid]
+    [loadBatch, getAndCacheChatInfo, ensureRepliesForMessages, withUuid, dedupeByUuid]
   );
 
-  // helper: read stored user info (robust for multiple formats)
+  // get stored user info
   const getStoredUserInfo = useCallback(async (): Promise<{ uuid?: string; activeTab?: string }> => {
     try {
       const raw = await AsyncStorage.getItem("userId-corner");
@@ -613,9 +621,7 @@ export default function HomeScreen() {
         if (parsed && typeof parsed === "object") {
           if (parsed.uuid) return { uuid: String(parsed.uuid), activeTab: parsed.activeTab ? String(parsed.activeTab) : undefined };
         }
-      } catch (e) {
-        // not JSON — raw is a string (maybe combined)
-      }
+      } catch (e) {}
       const str = raw as string;
       const currentTab = activeTabRef.current;
       if (currentTab && str.endsWith(currentTab)) {
@@ -623,15 +629,11 @@ export default function HomeScreen() {
         return { uuid, activeTab: currentTab };
       }
       return { uuid: str };
-    } catch (e) {
-      return {};
-    }
+    } catch (e) { return {}; }
   }, []);
 
-  // notify server batch reached (keeps as in your original) — read activeTab from ref and uuid via helper
-  // keep track of sent batches per activeTab so tabs don't block each other
+  // notifyServerBatchReached
   const sentBatchesMapRef = useRef<Map<string, Set<number>>>(new Map());
-
   function hasSentBatchForTab(tab: string, batchIdx: number) {
     const key = tab || '__GLOBAL__';
     const s = sentBatchesMapRef.current.get(key);
@@ -640,57 +642,44 @@ export default function HomeScreen() {
   function markSentBatchForTab(tab: string, batchIdx: number) {
     const key = tab || '__GLOBAL__';
     let s = sentBatchesMapRef.current.get(key);
-    if (!s) {
-      s = new Set<number>();
-      sentBatchesMapRef.current.set(key, s);
-    }
+    if (!s) { s = new Set<number>(); sentBatchesMapRef.current.set(key, s); }
     s.add(batchIdx);
   }
 
-  const notifyServerBatchReached = useCallback(async (batchIdx: number) => {
-    const currentTab = activeTabRef.current || '';
+  // Changed: accept explicit tab to avoid stale-ref issues
+  const notifyServerBatchReached = useCallback(async (batchIdx: number, tab?: string) => {
+    const currentTab = (typeof tab === 'string' && tab.length > 0) ? tab : (activeTabRef.current || '');
     try {
       if (hasSentBatchForTab(currentTab, batchIdx)) return;
-
       const start = batchIdx * BATCH_SIZE;
       const metas = datasRef.current.slice(start, start + BATCH_SIZE);
       if (!metas.length) return;
       const ids: string[] = metas.map((m) => `${m.messageId}`);
-
       const parsed = await getStoredUserInfo();
       if (!parsed?.uuid) return;
-
       const params = new URLSearchParams();
       params.append("uuid", parsed.uuid);
-      // params.append("timestamp", timestamp.toString())
       ids.forEach((id) => params.append("messageIds", id));
       params.append("activeTab", currentTab);
-
-      // debug log (remove or lower verbosity later)
       console.log('[notify] sending seen-message', { tab: currentTab, batchIdx, idsLength: ids.length });
-
-      await fetch(`http://10.124.97.115:9000/feed-message/seen-message?${params.toString()}`, {
+      await fetch(`https://cornerlive.ir:9000/feed-message/seen-message?${params.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
-
-      // mark as sent for this tab
       markSentBatchForTab(currentTab, batchIdx);
     } catch (err) {
       console.warn('[notify] failed', err);
     }
 
     try {
-      console.log(batchIdx, "poopopopopo")
       if ((Date.now() / 1000) - timestamp < 3 * 60 || batchIdx < 4) return;
-      // <-- this call is NOT modified per your request (only initial/loadMore are modified)
-      const newMessages = await fetch(`http://10.124.97.115:9000/feed-message/new-messages?timestamp=${timestamp}&team=${currentTab}`)
+      const newMessages = await fetch(`https://cornerlive.ir:9000/feed-message/new-messages?timestamp=${timestamp}&team=${currentTab}`)
       const hasNewMessage = await newMessages.json()
       if (newMessages) setHasNewMessage(hasNewMessage)
     } catch (error) {
       console.error(error)
     }
-  }, [getStoredUserInfo]);
+  }, [getStoredUserInfo, timestamp]);
 
   // initial load effect
   useEffect(() => {
@@ -698,53 +687,37 @@ export default function HomeScreen() {
     (async () => {
       try {
         await loadPersistedCaches();
-
         if (!activeTab) return;
         setInitialLoading(true);
         setInitialError(false);
-
         const parsed = await getStoredUserInfo();
         const parsedUuid = parsed.uuid;
         if (!parsedUuid) return;
         const serverTab = activeTabRef.current || activeTab;
-
-        // <-- using fetchFeedInitial (with retry/timeout)
         const res = await fetchFeedInitial(serverTab, parsedUuid, timestamp);
         const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
-        if (!mounted) return;
-
-        const datas = datass.sort((a, b) => +b.messageId - +a.messageId).slice(0, 200);
         console.log(datass)
-        // set datas and clear any old prefetchs (namespaced)
+        if (!mounted) return;
+        const datas = datass.sort((a, b) => +b.messageId - +a.messageId).slice(0, 200);
         datasRef.current = datas;
         prefetchRef.current.clear();
         prefetchInFlightRef.current.clear();
-        // preserve other caches but clear UI items so first batch is cleanly loaded
         setMessages([]);
         setCurrentBatchIdx(0);
-
         const first = await loadBatch(0);
         if (!mounted) return;
-
-        // ensure replies for the first batch before setting state
         const enrichedFirst = await ensureRepliesForMessages(first);
         if (!mounted) return;
-
-        // ensure uuids for initial messages
         setMessages(dedupeByUuid(enrichedFirst.map(withUuid)));
         setCurrentBatchIdx(0);
-
         const chatIds = Array.from(new Set(enrichedFirst.map((m) => m.chatId).filter(Boolean)));
         await limitConcurrency(
           chatIds,
           2,
-          async (cid) => {
-            await getAndCacheChatInfo(+cid);
-            return null;
-          }
+          async (cid) => { await getAndCacheChatInfo(+cid); return null; }
         );
-
-        notifyServerBatchReached(0).catch(() => {});
+        // pass explicit tab to notify
+        notifyServerBatchReached(0, serverTab).catch(() => {});
         prefetchNextBatches(0);
         setInitialLoading(false);
       } catch (err) {
@@ -752,37 +725,29 @@ export default function HomeScreen() {
         setInitialLoading(false);
       }
     })();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [activeTab, loadBatch, getAndCacheChatInfo, prefetchNextBatches, loadPersistedCaches, notifyServerBatchReached, ensureRepliesForMessages, withUuid, fetchFeedInitial]);
 
   // poll visible messages (only when focused & visible)
   const pollVisibleMessages = useCallback(() => {
     if (!visibleIds.length) return;
     for (const id of visibleIds) {
-      const msg = messages.find((m) => m.id === id);
+      const msg = messagesRef.current.find((m) => m.id === id);
       if (!msg) continue;
       tdCall("getMessage", msg.chatId, msg.id)
         .then(async (raw: any) => {
           const full = JSON.parse(raw.raw);
-          // If the refreshed message contains a reply reference, ensure that reply is cached & attached
           const enrichedArray = await ensureRepliesForMessages([full]);
           const enrichedFull = enrichedArray[0] || full;
-
-          // store enriched into cache with uuid
           const key = mk(full.chatId || msg.chatId, full.id);
           const stored = withUuid(enrichedFull);
           messageCacheRef.current.set(key, stored);
           persistCachesDebounced();
-
           setMessages((prev) => {
             const copy = [...prev];
             const idx = copy.findIndex((m) => m.id === id);
             if (idx !== -1) {
-              // preserve existing item fields but replace with enriched stored (ensures __uuid)
               copy[idx] = { ...copy[idx], ...stored };
-              // ensure __uuid exists
               copy[idx] = withUuid(copy[idx]);
             }
             return dedupeByUuid(copy);
@@ -790,7 +755,7 @@ export default function HomeScreen() {
         })
         .catch(() => {});
     }
-  }, [visibleIds, messages, tdCall, persistCachesDebounced, ensureRepliesForMessages, withUuid, dedupeByUuid]);
+  }, [visibleIds, tdCall, persistCachesDebounced, ensureRepliesForMessages, withUuid, dedupeByUuid]);
 
   useEffect(() => {
     if (pollingIntervalRef.current) {
@@ -808,7 +773,7 @@ export default function HomeScreen() {
     };
   }, [isFocused, visibleIds, pollVisibleMessages]);
 
-  // DeviceEventEmitter updates (interactionInfo, message updates)
+  // DeviceEventEmitter updates
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener("tdlib-update", async (event) => {
       try {
@@ -828,36 +793,27 @@ export default function HomeScreen() {
 
         if (update.message) {
           const msg = update.message;
-          // Update cache & messages list; but make sure to resolve any reply references for this msg
           const key = mk(msg.chatId || msg.chat?.id, msg.id);
-          // store msg in cache with uuid
           messageCacheRef.current.set(key, withUuid(msg));
           persistCachesDebounced();
-
-          // enrich with reply if necessary and update UI list
           const enrichedArr = await ensureRepliesForMessages([msg]);
           const enriched = enrichedArr[0] || msg;
-
           setMessages((prev) => {
             const found = prev.findIndex((m) => m.id === msg.id);
             if (found !== -1) {
-              // update existing item, preserve/ensure __uuid
               const mapped = prev.map((m) => (m.id === msg.id ? withUuid({ ...m, ...enriched }) : m));
               return dedupeByUuid(mapped);
             } else {
-              // if the updated message isn't in the list, prepend it with uuid
               return dedupeByUuid([withUuid(enriched), ...prev]);
             }
           });
         }
-      } catch (e) {
-        // ignore malformed updates
-      }
+      } catch (e) {}
     });
     return () => subscription.remove();
   }, [persistCachesDebounced, ensureRepliesForMessages, tdCall, withUuid, dedupeByUuid]);
 
-  // onViewable changed — make deterministic and pick center item for activeDownloads
+  // onViewable changed
   const visibleIdsRef = useRef<number[]>([]);
   const onViewRef = useCallback(
     ({ viewableItems }: any) => {
@@ -866,14 +822,10 @@ export default function HomeScreen() {
         visibleIdsRef.current = [];
         return;
       }
-
-      // sort by index so order is deterministic
       const sorted = [...viewableItems].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
       const ids = sorted.map((vi: any) => vi.item.id);
-
       setVisibleIds(ids);
       visibleIdsRef.current = ids;
-
       for (const vi of sorted) {
         const msg = vi.item;
         if (msg.chatId && msg.id && !alreadyViewed.current.has(msg.id)) {
@@ -890,9 +842,7 @@ export default function HomeScreen() {
     useCallback(() => {
       return () => {
         setVisibleIds([]);
-        try {
-          visibleIdsRef.current.forEach((id) => DeviceEventEmitter.emit("pause-video", { messageId: id }));
-        } catch (e) {}
+        try { visibleIdsRef.current.forEach((id) => DeviceEventEmitter.emit("pause-video", { messageId: id })); } catch (e) {}
         visibleIdsRef.current = [];
       };
     }, [])
@@ -900,14 +850,13 @@ export default function HomeScreen() {
 
   const viewConfigRef = useRef({ itemVisiblePercentThreshold: 60 });
 
-  // --- ACTIVE DOWNLOADS: compute neighbors (center visible + 2 up + 2 down) ---
+  // activeDownloads
   const activeDownloads = useMemo(() => {
     if (!visibleIds.length) return [];
     const centerVisibleIndex = Math.floor(visibleIds.length / 2);
     const currentMessageId = visibleIds[centerVisibleIndex];
     const currentIndex = messages.findIndex((msg) => msg.id === currentMessageId);
     if (currentIndex === -1) return [];
-
     const selected: number[] = [];
     for (let offset = -2; offset <= 2; offset++) {
       const idx = currentIndex + offset;
@@ -916,7 +865,6 @@ export default function HomeScreen() {
     return selected;
   }, [visibleIds, messages]);
 
-  // ensure opened chats for activeDownloads (touch LRU; open minimal)
   useEffect(() => {
     (async () => {
       const currentChatIds = new Set<number>();
@@ -926,14 +874,10 @@ export default function HomeScreen() {
         const chatId = msg.chatId;
         currentChatIds.add(chatId);
         if (!openedChats.current.has(chatId)) {
-          try {
-            await tdCall("openChat", chatId);
-            openedChats.current.set(chatId, Date.now());
-          } catch (e) {}
+          try { await tdCall("openChat", chatId); openedChats.current.set(chatId, Date.now()); } catch (e) {}
         } else touchOpenedChat(chatId);
         tdCall("viewMessages", chatId, [msg.id], false).catch(() => {});
       }
-      // don't aggressively close here; LRU eviction will close if cap exceeded
     })();
   }, [activeDownloads, messages, tdCall, touchOpenedChat]);
 
@@ -946,7 +890,7 @@ export default function HomeScreen() {
         const key = prefetchKey(tab, nextBatchIdx);
         const pref = prefetchRef.current.get(key);
         if (pref) {
-          const exist = new Set(messages.map((m: any) => `${m.chatId}:${m.id}`));
+          const exist = new Set(messagesRef.current.map((m: any) => `${m.chatId}:${m.id}`));
           const toAppend = pref.filter((m) => !exist.has(`${m.chatId}:${m.id}`));
           if (toAppend.length) setMessages((prev) => dedupeByUuid([...prev, ...toAppend.map(withUuid)]));
           prefetchRef.current.delete(key);
@@ -954,17 +898,12 @@ export default function HomeScreen() {
           await appendNextBatch(nextBatchIdx);
         }
         setCurrentBatchIdx(nextBatchIdx);
-        notifyServerBatchReached(nextBatchIdx).catch(() => {});
+        // pass explicit tab so notify cannot be blocked by stale refs
+        notifyServerBatchReached(nextBatchIdx, tab).catch(() => {});
         prefetchNextBatches(nextBatchIdx);
-        const newStart = (nextBatchIdx + 1) * BATCH_SIZE;
-        if (newStart >= datasRef.current.length) {
-          // no-op; server will be queried on loadMore
-        }
-      } catch (err) {
-        // ignore
-      }
+      } catch (err) {}
     },
-    [appendNextBatch, prefetchNextBatches, messages, withUuid, notifyServerBatchReached, dedupeByUuid]
+    [appendNextBatch, prefetchNextBatches, notifyServerBatchReached]
   );
 
   const loadMore = useCallback(async () => {
@@ -974,6 +913,7 @@ export default function HomeScreen() {
     try {
       const nextBatchIdx = currentBatchIdx + 1;
       const start = nextBatchIdx * BATCH_SIZE;
+      console.log('[loadMore] nextBatch=', nextBatchIdx, 'start=', start, 'datasLen=', datasRef.current.length);
       if (start >= datasRef.current.length) {
         const parsed = await getStoredUserInfo();
         if (!parsed?.uuid) {
@@ -982,8 +922,6 @@ export default function HomeScreen() {
           return;
         }
         const tab = activeTabRef.current || activeTab;
-
-        // <-- use fetchFeedMore with retries/timeouts
         try {
           const res = await fetchFeedMore(tab, parsed.uuid, timestamp);
           const newDatas: { chatId: string; messageId: string; channel: string }[] = await res.json();
@@ -992,14 +930,12 @@ export default function HomeScreen() {
             isLoadingMoreRef.current = false;
             return;
           }
-          // dedupe and append into datasRef
           const combined = [...datasRef.current, ...newDatas];
           const unique = combined.filter((d, idx, arr) => arr.findIndex((x) => x.chatId === d.chatId && x.messageId === d.messageId) === idx);
           datasRef.current = unique;
           await appendAndAdvance(nextBatchIdx);
         } catch (err) {
           console.warn('[loadMore] fetch failed', err);
-          // show nothing except hide loader (you can set a toast/snackbar here if you want)
           setLoadingMore(false);
           isLoadingMoreRef.current = false;
           return;
@@ -1008,30 +944,25 @@ export default function HomeScreen() {
         await appendAndAdvance(nextBatchIdx);
       }
     } catch (e) {
-      // ignore
     } finally {
       setLoadingMore(false);
       isLoadingMoreRef.current = false;
     }
-  }, [currentBatchIdx, activeTab, appendAndAdvance, getStoredUserInfo, fetchFeedMore, timestamp]);
+  }, [currentBatchIdx, appendAndAdvance, getStoredUserInfo, fetchFeedMore, timestamp]);
 
-  const onEndReached = useCallback(() => {
-    loadMore();
-  }, [loadMore]);
+  const onEndReached = useCallback(() => { loadMore(); }, [loadMore]);
 
   // cleanup openedChats on blur/unmount
   useFocusEffect(
     useCallback(() => {
       return () => {
-        const promises = Array.from(openedChats.current.keys()).map((chatId) => {
-          return tdCall("closeChat", chatId).catch(() => {});
-        });
+        const promises = Array.from(openedChats.current.keys()).map((chatId) => tdCall("closeChat", chatId).catch(() => {}));
         Promise.all(promises).then(() => openedChats.current.clear());
       };
     }, [tdCall])
   );
 
-  // renderItem (pass chatInfo). NOTE: do NOT start downloads here; children handle downloads when they are visible.
+  // renderItem (pass chatInfo)
   const renderItem = useCallback(
     ({ item }: any) => {
       if (!item?.chatId) return null;
@@ -1043,7 +974,7 @@ export default function HomeScreen() {
     [visibleIds, activeDownloads]
   );
 
-  // header animation preserved but simplified (kept original behavior elsewhere)
+  // header animation preserved
   const DEFAULT_HEADER = 70;
   const [measuredHeaderHeight, setMeasuredHeaderHeight] = useState<number>(DEFAULT_HEADER);
   const translateY = useRef(new Animated.Value(0)).current;
@@ -1070,94 +1001,67 @@ export default function HomeScreen() {
     lastYRef.current = y;
     if (Math.abs(delta) < 0.5) return;
     if (Math.abs(delta) >= 40) {
-      if (delta > 0) {
-        hideHeader();
-      } else {
-        showHeader();
-      }
+      if (delta > 0) { hideHeader(); } else { showHeader(); }
       return;
     }
-    // keep previous threshold logic if desired...
     if (y <= 5) showHeader();
   };
 
-  // small helper to set activeTab and sync ref in one place
   const setActiveTabAndSync = useCallback((tab: string) => {
-    // switch tab: sync ref + state
     activeTabRef.current = tab;
     setActiveTab(tab);
-
-    // reset view/state relevant to the feed so we don't mix cached prefetched batches
     prefetchRef.current.clear();
     prefetchInFlightRef.current.clear();
-    // optional: clear sentBatches map for previous tab? (keeps per-tab tracking OK)
-    // clear messages and reset batch idx so we reload fresh
-    setMessages([]);
     datasRef.current = [];
+    setMessages([]);
     setCurrentBatchIdx(0);
-    // clear visible id tracking
     setVisibleIds([]);
     alreadyViewed.current.clear();
-  }, []);
 
+    // reset loading flags in case something was left set
+    isLoadingMoreRef.current = false;
+    setLoadingMore(false);
+
+    // clear notify bookkeeping for this tab so notifyServerBatchReached will run again when returning
+    try {
+      const key = tab || '__GLOBAL__';
+      if (sentBatchesMapRef.current.has(key)) {
+        sentBatchesMapRef.current.delete(key);
+      }
+    } catch (e) {}
+  }, []);
 
   const onRefresh = async () => {
     try {
-      // 1) پاک‌سازی state / prefetch تا تب از صفر شروع کنه
       prefetchRef.current.clear();
       prefetchInFlightRef.current.clear();
       datasRef.current = [];
       setMessages([]);
       setCurrentBatchIdx(0);
       alreadyViewed.current.clear();
-      // اگر می‌خوای badge رو هم خاموش کنیم (اختیاری)
-      // setHasNewMessage(false);
-
-      // 2) بزن لودینگ
       setInitialLoading(true);
       setInitialError(false);
-
-      // 3) بگیر uuid و داده‌های متا از سرور
       const parsed = await getStoredUserInfo();
-      if (!parsed?.uuid) {
-        // اگر کاربر لاگین نیست، لودینگ رو خاموش کن و برگرد
-        setInitialLoading(false);
-        return;
-      }
-
+      if (!parsed?.uuid) { setInitialLoading(false); return; }
       const tab = activeTabRef.current || activeTab;
-
-      // <-- use fetchFeedInitial for refresh too
       try {
         const res = await fetchFeedInitial(tab, parsed.uuid, timestamp);
         setHasNewMessage(false)
-
         const datass = await res.json();
         const datas = Array.isArray(datass)
           ? datass.sort((a: any, b: any) => +b.messageId - +a.messageId).slice(0, 200)
           : [];
-
-        // 4) ست‌کردن متادیتا و بارگذاری اولین بچ
         datasRef.current = datas;
-
-        const first = await loadBatch(0); // از همان فانکشن‌های موجود استفاده می‌کنیم
+        const first = await loadBatch(0);
         const enrichedFirst = await ensureRepliesForMessages(first);
-
         setMessages(dedupeByUuid(enrichedFirst.map(withUuid)));
         setCurrentBatchIdx(0);
-
-        // warm-up (اختیاری ولی مفید)
         const chatIds = Array.from(new Set(enrichedFirst.map((m: any) => m.chatId).filter(Boolean)));
         await limitConcurrency(
           chatIds,
           2,
-          async (cid) => {
-            await getAndCacheChatInfo(+cid);
-            return null;
-          }
+          async (cid) => { await getAndCacheChatInfo(+cid); return null; }
         );
-
-        // آماده‌سازی prefetch بعدی
         prefetchNextBatches(0);
       } catch (err) {
         console.warn('[onRefresh] fetch failed', err);
@@ -1167,16 +1071,11 @@ export default function HomeScreen() {
       console.warn('[onRefresh] failed', err);
       setInitialError(true);
     } finally {
-      // 5) خاموش کردن لودینگ
       setInitialLoading(false);
     }
   };
 
-
-  const handleTryAgain = () => {
-    setInitialError(false);
-    setInitialLoading(true)
-  }
+  const handleTryAgain = () => { setInitialError(false); setInitialLoading(true); }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -1217,10 +1116,9 @@ export default function HomeScreen() {
             onEndReached={onEndReached}
             onEndReachedThreshold={0.5}
             ListFooterComponent={
-              // Footer now shows loader only when loadingMore
               <View style={{ justifyContent: "center", alignItems: "center", paddingVertical: 20 }}><ActivityIndicator color="#888" size="small" /></View>
             }
-            removeClippedSubviews={false} // very important for keeping item state during fast scroll
+            //removeClippedSubviews={false}
           />
         )}
       </View>
