@@ -1,4 +1,3 @@
-// HomeScreen.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Text,
@@ -26,14 +25,15 @@ import uuid from 'react-native-uuid';
 const BATCH_SIZE = 5;
 const MAX_PREFETCH_BATCHES = 2;
 const PER_GROUP_CONCURRENCY = 3; // used inside loadBatch for group concurrency
-const TD_CONCURRENCY = 6; // global limit for TdLib calls
-const POLL_INTERVAL_MS = 3000;
-const MAX_OPENED_CHATS = 12; // LRU cap for opened chats
+const TD_CONCURRENCY = 10; // lowered global limit for TdLib calls (helps stability)
+const POLL_INTERVAL_MS = 700; // poll visible messages less frequently
+const MAX_OPENED_CHATS = 8; // LRU cap for opened chats
+const MAX_MESSAGE_CACHE = 1200; // protect memory by evicting oldest messages in cache
 
 // Warmup config (tune for your app; keep small for best UX)
 const TD_WARMUP_ENABLED = true;
-const TD_WARMUP_WAIT_MS_BEFORE_FETCH = 2000; // wait up to this ms for warmup before doing initial network fetch
-const TD_WARMUP_CALL_TIMEOUT_MS = 7000; // tdCall timeout used by default
+const TD_WARMUP_WAIT_MS_BEFORE_FETCH = 1000; // wait up to this ms for warmup before doing initial network fetch
+const TD_WARMUP_CALL_TIMEOUT_MS = 5000; // tdCall timeout used by default
 
 // storage keys
 const STORAGE_KEYS = {
@@ -157,6 +157,14 @@ export default function HomeScreen() {
 
   // *** NEW: FlatList ref so we can scroll to top after reset
   const listRef = useRef<FlatList<any> | null>(null);
+
+  // session guard to avoid stale async results when switching tabs
+  const loadSessionRef = useRef<{ token: number; tab: string | undefined }>({ token: 0, tab: undefined });
+  const startNewSession = useCallback((tab?: string) => {
+    const next = (loadSessionRef.current.token || 0) + 1;
+    loadSessionRef.current = { token: next, tab };
+    return loadSessionRef.current;
+  }, []);
 
   // ------------------
   // Stable tdEnqueue + tdCall with extra logging
@@ -296,6 +304,12 @@ export default function HomeScreen() {
       if (raw) {
         const o = JSON.parse(raw);
         for (const k of Object.keys(o)) messageCacheRef.current.set(k, o[k]);
+        // ensure cache size within limit after loading
+        while (messageCacheRef.current.size > MAX_MESSAGE_CACHE) {
+          const first = messageCacheRef.current.keys().next().value;
+          if (!first) break;
+          messageCacheRef.current.delete(first);
+        }
       }
     } catch (e) { console.warn('[loadPersistedCaches] message cache failed', e); }
     try {
@@ -316,9 +330,6 @@ export default function HomeScreen() {
   const withUuid = useCallback((msg: any) => {
     if (!msg || typeof msg !== "object") return msg;
     if (msg.__uuid) return msg;
-
-    // DO NOT coerce IDs to Number here — keep strings to avoid precision loss.
-    // If numeric conversion is required for tdCall, convert at call-site only.
 
     if (msg.chatId != null && msg.id != null) {
       const uu = `${msg.chatId}-${msg.id}`;
@@ -353,12 +364,27 @@ export default function HomeScreen() {
       const firstKey = openedChats.current.keys().next().value;
       if (firstKey !== undefined) {
         const removing = firstKey;
-        // close in background with tdEnqueue to avoid blocking
         tdCall("closeChat", removing).catch((e: any) => console.warn('[touchOpenedChat] closeChat failed', e));
         openedChats.current.delete(removing);
       } else break;
     }
   }, [tdCall]);
+
+  // helper to set cache with auto-evict
+  const cacheSetWithLimit = useCallback((key: string, value: any) => {
+    try {
+      if (messageCacheRef.current.has(key)) {
+        messageCacheRef.current.set(key, value);
+        return;
+      }
+      messageCacheRef.current.set(key, value);
+      while (messageCacheRef.current.size > MAX_MESSAGE_CACHE) {
+        const first = messageCacheRef.current.keys().next().value;
+        if (!first) break;
+        messageCacheRef.current.delete(first);
+      }
+    } catch (e) { console.warn('[cacheSetWithLimit] error', e); }
+  }, []);
 
   // get and cache chat info
   const getAndCacheChatInfo = useCallback(
@@ -415,12 +441,11 @@ export default function HomeScreen() {
           TD_CONCURRENCY,
           async (t) => {
             try {
-              // convert to Number only here where tdCall expects a number
               const res: any = await tdCall("getMessage", Number(t.chatId), Number(t.messageId));
               const parsed = JSON.parse(res.raw);
               const k2 = mk(parsed.chatId ?? t.chatId, parsed.id);
               const stored = withUuid(parsed);
-              messageCacheRef.current.set(k2, stored);
+              cacheSetWithLimit(k2, stored);
               return stored;
             } catch (e) {
               console.warn('[ensureReplies] getMessage failed', e);
@@ -450,7 +475,7 @@ export default function HomeScreen() {
       });
 
       return enriched;
-    }, [tdCall, persistCachesDebounced, withUuid]
+    }, [tdCall, persistCachesDebounced, withUuid, cacheSetWithLimit]
   );
 
   // loadBatch improved: try to resolve chat ids in parallel per group and reuse
@@ -530,7 +555,7 @@ export default function HomeScreen() {
                 const parsed = JSON.parse(r.raw);
                 const k2 = mk(parsed.chatId || cidToUse, parsed.id);
                 const stored = withUuid(parsed);
-                messageCacheRef.current.set(k2, stored);
+                cacheSetWithLimit(k2, stored);
                 return stored;
               } else {
                 return null;
@@ -549,13 +574,15 @@ export default function HomeScreen() {
         .filter(Boolean);
 
       return ordered;
-    }, [tdCall, touchOpenedChat, persistCachesDebounced, withUuid]
+    }, [tdCall, touchOpenedChat, persistCachesDebounced, withUuid, cacheSetWithLimit]
   );
 
-  // prefetch next batches staggered
+  // prefetch next batches staggered (session-aware)
   const prefetchNextBatches = useCallback(
     async (fromBatchIdx: number) => {
       const tab = activeTabRef.current || activeTab;
+      // capture current session token and tab
+      const sessionToken = loadSessionRef.current.token;
       for (let i = 1; i <= MAX_PREFETCH_BATCHES; i++) {
         const idx = fromBatchIdx + i;
         const key = prefetchKey(tab as string, idx);
@@ -563,19 +590,25 @@ export default function HomeScreen() {
         const start = idx * BATCH_SIZE;
         if (start >= datasRef.current.length) break;
         prefetchInFlightRef.current.add(key);
-        (async (batchIndex, waitMs, keyLocal) => {
+        (async (batchIndex, waitMs, keyLocal, capturedSessionToken, capturedTab) => {
           await delay(waitMs);
           try {
             const msgs = await loadBatch(batchIndex);
+            // drop if session changed
+            if (loadSessionRef.current.token !== capturedSessionToken || loadSessionRef.current.tab !== capturedTab) {
+              return;
+            }
             if (msgs && msgs.length) {
               const enriched = await ensureRepliesForMessages(msgs);
+              // check again
+              if (loadSessionRef.current.token !== capturedSessionToken || loadSessionRef.current.tab !== capturedTab) return;
               prefetchRef.current.set(keyLocal, enriched);
             }
           } catch (e) { /* ignore */ }
           prefetchInFlightRef.current.delete(keyLocal);
-        })(idx, i * 300, key);
+        })(idx, i * 300, key, sessionToken, tab);
       }
-    }, [loadBatch, ensureRepliesForMessages]
+    }, [loadBatch, ensureRepliesForMessages, activeTab]
   );
 
   // appendNextBatch uses prefetch if available
@@ -649,13 +682,24 @@ export default function HomeScreen() {
     s.add(batchIdx);
   }
 
-  const notifyServerBatchReached = useCallback(async (batchIdx: number, tab?: string) => {
+  // Modified: only notify the server when UI has the batch loaded (to avoid unnecessary notifications)
+  const notifyServerBatchReached = useCallback(async (batchIdx: number, tab?: string, opts: { force?: boolean } = {}) => {
     const currentTab = (typeof tab === 'string' && tab.length > 0) ? tab : (activeTabRef.current || '');
     try {
       if (hasSentBatchForTab(currentTab, batchIdx)) return;
       const start = batchIdx * BATCH_SIZE;
       const metas = datasRef.current.slice(start, start + BATCH_SIZE);
       if (!metas.length) return;
+
+      // If not forced, only notify when the last message of the batch is present in the messages list (i.e. UI has loaded that batch)
+      if (!opts.force) {
+        const lastMeta = metas[metas.length - 1];
+        if (!lastMeta) return;
+        const lastId = String(lastMeta.messageId);
+        const found = messagesRef.current.some(m => String(m.id) === lastId);
+        if (!found) return; // do not notify yet
+      }
+
       const ids: string[] = metas.map((m) => `${m.messageId}`);
       const parsed = await getStoredUserInfo();
       if (!parsed?.uuid) return;
@@ -674,7 +718,7 @@ export default function HomeScreen() {
 
     try {
       if ((Date.now() / 1000) - timestamp < 3 * 60 || batchIdx < 4) return;
-      const newMessages = await fetch(`https://cornerlive.ir:9000/feed-message/new-messages?timestamp=${timestamp}&team=${currentTab}`)
+      const newMessages = await fetch(`https://cornerlive.ir:9000/feed-message/new-messages?timestamp=${timestamp}&team=${activeTabRef.current || ''}`)
       const hasNewMessage = await newMessages.json();
       if (newMessages) setHasNewMessage(hasNewMessage);
     } catch (error) { console.error(error); }
@@ -689,7 +733,6 @@ export default function HomeScreen() {
     tdWarmupInFlightRef.current = true;
     try {
       console.log('[td-warmup] starting warmup');
-      // Try a few lightweight methods in order; any success => mark ready
       try {
         const r = await tdCall('getMe').catch(() => null);
         if (r) { console.log('[td-warmup] getMe ok'); tdReadyRef.current = true; return true; }
@@ -761,19 +804,16 @@ export default function HomeScreen() {
           continue;
         }
 
-        // Some TD updates may be UpdateNewMessage style with message payload at root
         if (t === 'UpdateNewMessage' && raw?.message) {
           fullMessages.push(raw.message);
           continue;
         }
 
-        // ignore other update types (cheap filter)
       } catch (e) {
         console.warn('[flushUpdateQueue] parse failed', e);
       }
     }
 
-    // Apply interaction updates: minimal in-place merges
     if (interactionUpdates.length > 0) {
       setMessages(prev => {
         if (!prev || prev.length === 0) return prev;
@@ -789,7 +829,7 @@ export default function HomeScreen() {
               next[idx] = merged;
               const cacheKey = mk(u.chatId, u.messageId);
               const cached = messageCacheRef.current.get(cacheKey);
-              if (cached) { cached.interactionInfo = merged.interactionInfo; messageCacheRef.current.set(cacheKey, cached); }
+              if (cached) { cached.interactionInfo = merged.interactionInfo; cacheSetWithLimit(cacheKey, cached); }
               changed = true;
             }
           } else {
@@ -800,7 +840,7 @@ export default function HomeScreen() {
               next[idx] = merged;
               const cacheKey = mk(existing.chatId, existing.id);
               const cached = messageCacheRef.current.get(cacheKey);
-              if (cached) { cached.interactionInfo = merged.interactionInfo; messageCacheRef.current.set(cacheKey, cached); }
+              if (cached) { cached.interactionInfo = merged.interactionInfo; cacheSetWithLimit(cacheKey, cached); }
               changed = true;
             }
           }
@@ -813,7 +853,6 @@ export default function HomeScreen() {
       });
     }
 
-    // Apply full messages (merge or prepend)
     if (fullMessages.length > 0) {
       setMessages(prev => {
         const next = [...prev];
@@ -823,12 +862,12 @@ export default function HomeScreen() {
           const key = `${String(chatId ?? 'ch')}:${String(fm.id)}`;
           const idx = msgIndexRef.current.get(key);
           const stored = withUuid(fm);
-          messageCacheRef.current.set(mk(chatId, fm.id), stored);
+          cacheSetWithLimit(mk(chatId, fm.id), stored);
           if (idx !== undefined) {
             next[idx] = { ...next[idx], ...stored };
             changed = true;
           } else {
-            next.unshift(stored); // newest-first assumed
+            next.unshift(stored);
             changed = true;
           }
         }
@@ -840,20 +879,17 @@ export default function HomeScreen() {
       });
     }
 
-    // telemetry: how many flushed
     console.log(`[td-flush] flushed items=${items.length} interactions=${interactionUpdates.length} fullMsgs=${fullMessages.length}`);
-  }, [withUuid, persistCachesDebounced, mk]);
+  }, [withUuid, persistCachesDebounced, mk, cacheSetWithLimit]);
 
   useEffect(() => {
     const handler = (event: any) => {
-      // cheap filter to avoid JSON.parse work if not needed
       try {
         const t = typeof event.raw === 'string' ? (() => { try { return JSON.parse(event.raw)?.type; } catch { return null; } })() : (event.raw?.type || null);
         if (t && !['UpdateMessageInteractionInfo', 'UpdateMessage', 'UpdateNewMessage'].includes(t)) {
-          // ignore unrelated updates right away
           return;
         }
-      } catch (e) { /* ignore parse error and push through */ }
+      } catch (e) { }
 
       updateQueueRef.current.push(event);
       if (updateFlushTimerRef.current == null) {
@@ -878,6 +914,7 @@ export default function HomeScreen() {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      const session = startNewSession(activeTabRef.current || activeTab);
       try {
         await loadPersistedCaches();
         if (!activeTab) {
@@ -885,17 +922,14 @@ export default function HomeScreen() {
           return;
         }
 
-        // Kick off warmup in background and also wait a short bounded time for it
         const warmupPromise = tryTdWarmup();
         if (TD_WARMUP_ENABLED) {
-          // wait up to configured ms for warmup to succeed
           const timed = Promise.race([
             warmupPromise,
             new Promise((res) => setTimeout(() => res(false), TD_WARMUP_WAIT_MS_BEFORE_FETCH)),
           ]);
           const ok = await timed;
           console.log('[initialLoad] tdWarmup ok=', ok);
-          // We DO NOT block longer than the configured wait — to preserve UX/perf.
         } else {
           console.log('[initialLoad] tdWarmup disabled');
         }
@@ -908,7 +942,13 @@ export default function HomeScreen() {
         const serverTab = activeTabRef.current || activeTab;
         const res = await fetchFeedInitial(serverTab as string, parsedUuid, timestamp);
         const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
-        if (!mounted) return;
+
+        // session check: if tab/token changed meanwhile, drop result
+        if (loadSessionRef.current.token !== session.token || loadSessionRef.current.tab !== session.tab) {
+          console.log('[initialLoad] aborted due to session change', session, loadSessionRef.current);
+          return;
+        }
+
         const datas = datass.sort((a, b) => +b.messageId - +a.messageId).slice(0, 200);
         datasRef.current = datas;
         prefetchRef.current.clear();
@@ -916,14 +956,27 @@ export default function HomeScreen() {
         setMessages([]);
         setCurrentBatchIdx(0);
         const first = await loadBatch(0);
-        if (!mounted) return;
+
+        // session check again before applying results
+        if (loadSessionRef.current.token !== session.token || loadSessionRef.current.tab !== session.tab) {
+          console.log('[initialLoad] aborted after loadBatch due to session change', session, loadSessionRef.current);
+          return;
+        }
+
         const enrichedFirst = await ensureRepliesForMessages(first);
         if (!mounted) return;
+
+        // final session check before setting messages
+        if (loadSessionRef.current.token !== session.token || loadSessionRef.current.tab !== session.tab) {
+          console.log('[initialLoad] aborted before setMessages due to session change', session, loadSessionRef.current);
+          return;
+        }
+
         setMessages(dedupeByUuid(enrichedFirst.map(withUuid)));
         setCurrentBatchIdx(0);
         const chatIds = Array.from(new Set(enrichedFirst.map((m) => m.chatId).filter(Boolean)));
         await limitConcurrency(chatIds, 2, async (cid) => { await getAndCacheChatInfo(+cid); return null; });
-        notifyServerBatchReached(0, serverTab).catch(() => { });
+        // DO NOT notify here immediately; defer until user scrolls or batch is visible
         prefetchNextBatches(0);
         setInitialLoading(false);
       } catch (err) {
@@ -933,7 +986,7 @@ export default function HomeScreen() {
       }
     })();
     return () => { mounted = false; };
-  }, [activeTab, loadBatch, getAndCacheChatInfo, prefetchNextBatches, loadPersistedCaches, notifyServerBatchReached, ensureRepliesForMessages, withUuid, fetchFeedInitial]);
+  }, [activeTab, loadBatch, getAndCacheChatInfo, prefetchNextBatches, loadPersistedCaches, ensureRepliesForMessages, withUuid, fetchFeedInitial, startNewSession]);
 
   // ------------------
   // POLLING VISIBLE
@@ -959,7 +1012,7 @@ export default function HomeScreen() {
           const enrichedFull = enrichedArray[0] || full;
           const key = mk(full.chatId || msg.chatId, full.id);
           const stored = withUuid(enrichedFull);
-          messageCacheRef.current.set(key, stored);
+          cacheSetWithLimit(key, stored);
           persistCachesDebounced();
           setMessages((prev) => {
             const idx = prev.findIndex((m) => m.id === id);
@@ -971,7 +1024,7 @@ export default function HomeScreen() {
         } catch (e:any) { console.warn('[pollVisibleMessages] getMessage failed', e); }
       }
     ).catch(() => {});
-  }, [visibleIds, tdCall, persistCachesDebounced, ensureRepliesForMessages, withUuid, dedupeByUuid]);
+  }, [visibleIds, tdCall, persistCachesDebounced, ensureRepliesForMessages, withUuid, dedupeByUuid, cacheSetWithLimit]);
 
   useEffect(() => {
     if (pollingIntervalRef.current) {
@@ -1016,13 +1069,19 @@ export default function HomeScreen() {
       }
 
       for (const [chatId, idsArr] of chatMap.entries()) {
-        if (!alreadyViewed.current.has(idsArr[0])) { // cheap guard: mark by first id only
+        if (!alreadyViewed.current.has(idsArr[0])) {
           tdCall("viewMessages", chatId, idsArr, false)
             .then(() => idsArr.forEach((i) => alreadyViewed.current.add(i)))
             .catch((e:any) => console.warn('[onViewRef] viewMessages failed', e));
         }
       }
-    }, [tdCall]
+
+      // after the batch becomes visible, try notifying server for the current batch
+      // small delay to allow setMessages to settle if this view change happened right after append
+      setTimeout(() => {
+        notifyServerBatchReached(currentBatchIdx, undefined).catch(() => {});
+      }, 150);
+    }, [tdCall, currentBatchIdx, notifyServerBatchReached]
   );
 
   useFocusEffect(
@@ -1069,12 +1128,13 @@ export default function HomeScreen() {
   }, [activeDownloads, messages, tdCall, touchOpenedChat]);
 
   // ------------------
-  // INTEGRATED FIX: resetAndFetchInitial
+  // INTEGRATED FIX: resetAndFetchInitial (session-aware)
   // ------------------
   const resetAndFetchInitial = useCallback(async (opts: { tab?: string } = {}) => {
     const tab = opts.tab ?? (activeTabRef.current || activeTab);
+    const session = startNewSession(tab);
+
     try {
-      // clear UI/state/prefetch caches
       prefetchRef.current.clear();
       prefetchInFlightRef.current.clear();
       datasRef.current = [];
@@ -1084,13 +1144,11 @@ export default function HomeScreen() {
       alreadyViewed.current.clear();
       setHasNewMessage(false);
 
-      // clear sent-batches bookkeeping for this tab so notifyServerBatchReached will run
       try {
         const key = tab || '__GLOBAL__';
         if (sentBatchesMapRef.current.has(key)) sentBatchesMapRef.current.delete(key);
       } catch (e) { console.warn('[reset] clearing sentBatchesMap failed', e); }
 
-      // update timestamp used for server queries
       const newTs = Math.floor(Date.now() / 1000);
       setTimestamp(newTs);
 
@@ -1099,42 +1157,57 @@ export default function HomeScreen() {
 
       const parsed = await getStoredUserInfo();
       if (!parsed?.uuid) {
-        setInitialLoading(false);
+        if (loadSessionRef.current.token === session.token) setInitialLoading(false);
         return;
       }
 
       const res = await fetchFeedInitial(tab as string, parsed.uuid, newTs);
       const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
+
+      // session check
+      if (loadSessionRef.current.token !== session.token || loadSessionRef.current.tab !== session.tab) {
+        console.log('[resetAndFetchInitial] aborted due to session change', session, loadSessionRef.current);
+        return;
+      }
+
       const datas = Array.isArray(datass) ? datass.sort((a: any, b: any) => +b.messageId - +a.messageId).slice(0, 200) : [];
       datasRef.current = datas;
 
-      // load first batch & populate messages
       const first = await loadBatch(0);
+
+      // session check
+      if (loadSessionRef.current.token !== session.token || loadSessionRef.current.tab !== session.tab) {
+        console.log('[resetAndFetchInitial] aborted after loadBatch due to session change', session, loadSessionRef.current);
+        return;
+      }
+
       const enrichedFirst = await ensureRepliesForMessages(first);
+
+      // session check again before setMessages
+      if (loadSessionRef.current.token !== session.token || loadSessionRef.current.tab !== session.tab) {
+        console.log('[resetAndFetchInitial] aborted before setMessages due to session change', session, loadSessionRef.current);
+        return;
+      }
+
       setMessages(dedupeByUuid(enrichedFirst.map(withUuid)));
       setCurrentBatchIdx(0);
 
-      // prime chat infos
       const chatIds = Array.from(new Set(enrichedFirst.map((m) => m.chatId).filter(Boolean)));
       await limitConcurrency(chatIds, 2, async (cid) => { await getAndCacheChatInfo(+cid); return null; });
 
-      // notify server & prefetch next
-      notifyServerBatchReached(0, tab).catch(() => {});
       prefetchNextBatches(0);
 
-      // optional: scroll to top so user sees newest messages
-      try { listRef.current?.scrollToOffset({ offset: 0, animated: true }); } catch (e) { /* ignore */ }
+      try { listRef.current?.scrollToOffset({ offset: 0, animated: true }); } catch (e) { }
     } catch (err) {
       console.warn('[resetAndFetchInitial] failed', err);
-      setInitialError(true);
+      if (loadSessionRef.current.token === session.token) setInitialError(true);
     } finally {
-      setInitialLoading(false);
+      if (loadSessionRef.current.token === session.token) setInitialLoading(false);
     }
-  }, [activeTab, getStoredUserInfo, fetchFeedInitial, loadBatch, ensureRepliesForMessages, withUuid, dedupeByUuid, getAndCacheChatInfo, notifyServerBatchReached, prefetchNextBatches]);
+  }, [activeTab, getStoredUserInfo, fetchFeedInitial, loadBatch, ensureRepliesForMessages, withUuid, dedupeByUuid, getAndCacheChatInfo, prefetchNextBatches, startNewSession]);
 
   // ------------------
   // infinite scroll / load more
-  // - small defensive change: if datasRef is empty, trigger a fresh reset fetch
   // ------------------
   const isLoadingMoreRef = useRef(false);
   const appendAndAdvance = useCallback(
@@ -1152,7 +1225,12 @@ export default function HomeScreen() {
           await appendNextBatch(nextBatchIdx);
         }
         setCurrentBatchIdx(nextBatchIdx);
-        notifyServerBatchReached(nextBatchIdx, tab as string).catch(() => {});
+
+        // small timeout to allow React state to settle before notifying server
+        setTimeout(() => {
+          notifyServerBatchReached(nextBatchIdx, tab).catch(() => {});
+        }, 120);
+
         prefetchNextBatches(nextBatchIdx);
       } catch (err) { console.warn('[appendAndAdvance] failed', err); }
     }, [appendNextBatch, prefetchNextBatches, notifyServerBatchReached]
@@ -1163,7 +1241,6 @@ export default function HomeScreen() {
     isLoadingMoreRef.current = true;
     setLoadingMore(true);
     try {
-      // Defensive: if we have no datas metadata, perform a full reset/fetch so loadMore can continue later
       if (!datasRef.current || datasRef.current.length === 0) {
         console.log('[loadMore] datasRef empty; performing full refresh via resetAndFetchInitial');
         await resetAndFetchInitial();
@@ -1217,10 +1294,21 @@ export default function HomeScreen() {
     useCallback(() => {
       return () => {
         const promises = Array.from(openedChats.current.keys()).map((chatId) => tdCall("closeChat", chatId).catch((e:any) => console.warn('[cleanup] closeChat failed', e)));
-        Promise.all(promises).then(() => openedChats.current.clear());
+        Promise.all(promises).then(() => openedChats.current.clear()).catch(() => openedChats.current.clear());
       };
     }, [tdCall])
   );
+
+  // Also clear timers and persist timer on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+      if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+      if (updateFlushTimerRef.current) clearTimeout(updateFlushTimerRef.current);
+      // best-effort close chats
+      Array.from(openedChats.current.keys()).forEach((chatId) => tdCall("closeChat", chatId).catch(() => {}));
+    };
+  }, [tdCall]);
 
   // renderItem (pass chatInfo)
   const renderItem = useCallback(
@@ -1257,7 +1345,7 @@ export default function HomeScreen() {
     const delta = y - lastYRef.current;
     lastYRef.current = y;
     if (Math.abs(delta) < 0.5) return;
-    if (scrollRafRef.current) return; // drop intermediate frames
+    if (scrollRafRef.current) return;
     scrollRafRef.current = requestAnimationFrame(() => {
       if (Math.abs(delta) >= 40) {
         if (delta > 0) hideHeader(); else showHeader();
@@ -1284,7 +1372,10 @@ export default function HomeScreen() {
       const key = tab || '__GLOBAL__';
       if (sentBatchesMapRef.current.has(key)) sentBatchesMapRef.current.delete(key);
     } catch (e) { console.warn('[setActiveTabAndSync] clear sent batches failed', e); }
-  }, []);
+
+    // start a fresh load for the newly selected tab (minimal change)
+    resetAndFetchInitial({ tab }).catch((e) => console.warn('[setActiveTabAndSync] resetAndFetchInitial failed', e));
+  }, [resetAndFetchInitial]);
 
   // ------------------
   // onRefresh now uses resetAndFetchInitial to fully reset state
