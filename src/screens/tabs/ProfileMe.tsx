@@ -14,12 +14,15 @@ import {
   NativeScrollEvent,
   TouchableOpacity,
 } from "react-native";
-import TdLib from "react-native-tdlib";
+import TdLib, { startTdLib } from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { teamImages } from "../setup/PickTeams";
 import { Edit2 } from "lucide-react-native";
 import { HeartIcon, LogoutIcon, PhoneIcon, UserIcon } from "../../assets/icons";
+import ModalMessage from "../../components/auth/ModalMessage";
+import { TelegramService } from "../../services/TelegramService";
+import RNRestart from 'react-native-restart'; 
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -31,7 +34,15 @@ export default function ProfileScreen({ navigation }: any) {
 
   const flatListRef = useRef<FlatList<string>>(null);
 
-  // Get Profile once (no loading needed)
+  // modal states
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
+
+  // error modal (single-button) state
+  const [errorModalVisible, setErrorModalVisible] = useState(false);
+  const [errorModalMessage, setErrorModalMessage] = useState<string>("");
+
+  // Get Profile once
   useEffect(() => {
     (async () => {
       try {
@@ -45,7 +56,7 @@ export default function ProfileScreen({ navigation }: any) {
     })();
   }, []);
 
-  // Get Profile Photos (with loading only for photos)
+  // Get Profile Photos
   useEffect(() => {
     if (!profile?.id) return;
 
@@ -66,7 +77,6 @@ export default function ProfileScreen({ navigation }: any) {
           }
         }
 
-        // keep natural order and show first image (index 0) by default
         setPhotos(uris);
         setCurrentIndex(0);
 
@@ -124,7 +134,6 @@ export default function ProfileScreen({ navigation }: any) {
 
     const firstLetter = profile?.firstName?.[0]?.toUpperCase();
 
-    // IMPORTANT: do NOT put ActivityIndicator inside <Text>
     if (firstLetter) {
       return (
         <View style={styles.placeholder}>
@@ -147,7 +156,6 @@ export default function ProfileScreen({ navigation }: any) {
           <PhoneIcon color={"#999"} />
           <View>
             <Text style={styles.infoValue}>
-              {/* if phone doesn't start with +, prepend it */}
               {String(profile.phoneNumber).startsWith("+") ? profile.phoneNumber : `${profile.phoneNumber}+`}
             </Text>
             <Text style={styles.infoLabel}>شماره تماس</Text>
@@ -234,6 +242,32 @@ export default function ProfileScreen({ navigation }: any) {
     );
   };
 
+  // perform logout when user presses "باشه" in modal
+  const handleLogoutConfirm = async () => {
+    if (logoutLoading) return; // prevent double calls
+
+    try {
+      setLogoutLoading(true);
+
+      // optional: clear app storage (or clear specific keys instead)
+
+      await TdLib.logout();
+      await TdLib.destroy();
+      await AsyncStorage.clear();
+      RNRestart.Restart();
+
+      // // navigate to Intro and reset history
+      // navigation.reset({ index: 0, routes: [{ name: 'Auth' }] } as any);
+    } catch (err: any) {
+      console.error("❌ Logout failed:", err);
+      // show error modal (single-button OK). modalMessage will show one OK button because onNavigate isn't provided.
+      setErrorModalMessage(err?.message || "خطا در خروج. دوباره تلاش کنید.");
+      setErrorModalVisible(true);
+    } finally {
+      setLogoutLoading(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="#000" barStyle="light-content" />
@@ -280,7 +314,6 @@ export default function ProfileScreen({ navigation }: any) {
         renderFallback()
       )}
 
-      {/* اسم کاربر - راست چین شده و روی عکس قرار گرفته */}
       <Text style={styles.nameText}>
         {profile?.firstName} {profile?.lastName}
       </Text>
@@ -289,11 +322,44 @@ export default function ProfileScreen({ navigation }: any) {
       {renderFavoriteTeams()}
 
       <View style={{ backgroundColor: "#111", paddingVertical: 10, paddingHorizontal: 10, marginTop: 15 }}>
-        <TouchableOpacity style={{ gap: 6, alignItems: "center", flexDirection: "row" }}>
+        <TouchableOpacity
+          style={{ gap: 6, alignItems: "center", flexDirection: "row" }}
+          onPress={() => setLogoutModalVisible(true)}
+        >
           <LogoutIcon color={"#999"} />
           <Text style={{ fontSize: 13.5, fontFamily: "SFArabic-Regular", color: "#ddd" }}>خروج از حساب کاربری</Text>
         </TouchableOpacity>
       </View>
+
+      {/* confirmation modal (uses existing ModalMessage API — no change to modal file) 
+          - navigateText + onNavigate => modal shows single button with text navigateText which calls onNavigate() then onClose()
+          - onClose here only hides the modal (interpreted as cancel when user taps backdrop) */}
+      <ModalMessage
+        visible={logoutModalVisible}
+        title="خروج"
+        errorMessage="آیا از خروج از حساب خود مطمئن هستید؟"
+        navigateText="بله"
+        onNavigate={handleLogoutConfirm}
+        onClose={() => setLogoutModalVisible(false)}
+      />
+
+      {/* error modal (single OK button) */}
+      <ModalMessage
+        visible={errorModalVisible}
+        title="خطا"
+        errorMessage={errorModalMessage}
+        onClose={() => setErrorModalVisible(false)}
+      />
+
+      {/* loading overlay shown while logout is in progress */}
+      {logoutLoading && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={"#ddd"} />
+            <Text style={{ color: "#fff", marginTop: 10, fontFamily: "SFArabic-Regular" }}>در حال خروج...</Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -324,7 +390,7 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 25,
     position: "absolute",
-    left: 20, // use right for RTL layout
+    left: 20,
     top: 325,
     fontFamily: "SFArabic-Heavy",
   },
@@ -427,5 +493,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     fontFamily: 'SFArabic-Regular',
+  },
+
+  /* loading overlay */
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingBox: {
+    backgroundColor: "#222",
+    padding: 20,
+    borderRadius: 8,
+    alignItems: "center",
   },
 });

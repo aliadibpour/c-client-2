@@ -97,7 +97,7 @@ const getReplyPreviewText = (rm: any) => {
 function MessageItem({ data, isVisible, activeDownload, chatInfo }: Props) {
   const navigation: any = useNavigation();
   const message = data ?? {};
-  // console.log(data)
+  //console.log(data)
 
   const content = message?.content;
   const captionText = content?.caption?.text || "";

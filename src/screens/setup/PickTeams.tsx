@@ -51,19 +51,17 @@ export default function PickTeamsScreen({ navigation }: any) {
 
   useEffect(() => {
     const backAction = () => {
-      if (backPressCount.current === 0) {
-        backPressCount.current = 1;
-        ToastAndroid.show('برای خروج دوباره کلیک کنید', ToastAndroid.SHORT);
-        setTimeout(() => { backPressCount.current = 0; }, 2000);
-        return true;
-      } else {
-        BackHandler.exitApp();
-        return true;
-      }
+      // فقط یک بار فشار -> خارج شدن از اپ
+      BackHandler.exitApp();
+      return true;
     };
 
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
-    return () => backHandler.remove();
+
+    return () => {
+      // حذف کامل لیسنر وقتی از صفحه خارج شد
+      backHandler.remove();
+    };
   }, []);
 
   const isLeaguePicked = (league: string) =>
@@ -87,9 +85,9 @@ export default function PickTeamsScreen({ navigation }: any) {
     }
 
     if (favorites.length === 1) {
-      await AsyncStorage.setItem("auth-status", JSON.stringify("home"))
-      await AsyncStorage.setItem("teams", JSON.stringify({team1: favorites[0].name}))
-      navigation.navigate('Tabs');
+      await AsyncStorage.setItem("auth-status", JSON.stringify({ status: 'home' }))
+      await AsyncStorage.setItem("teams", JSON.stringify({team1: favorites[0].name, team2:null, team3: null}))
+      await navigation.navigate('Tabs');
     } else {
       navigation.navigate('Priority', { favorites });
     }

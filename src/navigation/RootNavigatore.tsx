@@ -12,6 +12,7 @@ import FullPhotoScreen from '../screens/tabs/FullPhotoScreen';
 import ChannelScreen from '../screens/tabs/Channel';
 import ChannelDetailScreen from '../screens/tabs/ChannelDetail.Screen';
 import ProfileUser from '../screens/tabs/ProfileUser';
+import TdLib from 'react-native-tdlib';
 
 const Stack = createNativeStackNavigator<any>();
 
@@ -49,7 +50,7 @@ export default function RootNavigator() {
   useEffect(() => {
     const checkAuth = async () => {
       //await AsyncStorage.removeItem("auth-status")
-      await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "home" }))
+      //await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "home" }))
       const authStatus = await AsyncStorage.getItem('auth-status');
       const teams = await AsyncStorage.getItem("teams")
       const userId = await AsyncStorage.getItem("userId-corner")

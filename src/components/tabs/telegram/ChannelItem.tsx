@@ -6,164 +6,71 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
-import TdLib from "react-native-tdlib";
-import { Buffer } from "buffer";
 import { useNavigation } from "@react-navigation/native";
 
 type ChannelProp = string | number | any;
 
-// simple module-level cache to avoid re-downloading same remoteId
-const remoteDownloadCache = new Map<string, string | null>();
-const DEBUG = false;
+// caches / inflight
+const downloadCache = new Map<string, string | null>();
+const inflightFetch = new Map<string, Promise<string | null>>();
+const DEBUG = true;
+
+// make URL: supports fetching by chatId or remoteId
+function makeProfileUrl({ chatId, remoteId }: { chatId?: any; remoteId?: any }) {
+  // if (remoteId) return `https://cornerlive:9000/feed-channel?remoteId=${encodeURIComponent(String(remoteId))}`;
+  // if (chatId) return `https://cornerlive:9000/feed-channel?chatId=${encodeURIComponent(String(chatId))}`;
+  return `https://cornerlive:9000/feed-channel`;
+}
+function makeServerKey(chatId?: any, remoteId?: any) {
+  if (remoteId) return `r:${String(remoteId)}`;
+  if (chatId) return `s:${String(chatId)}`;
+  return `s:unknown`;
+}
 
 export default function ChannelItem({
   channel,
-  onPress,
   onReady,
 }: {
   channel: ChannelProp;
-  onPress?: (c: any) => void;
-  onReady?: (uniqueId: string | number | null | undefined) => void;
+  onReady?: (id: string | number | null | undefined) => void;
 }) {
   const navigation: any = useNavigation();
-  //console.log(channel)
   const [title, setTitle] = useState<string>("");
-  const [avatarUri, setAvatarUri] = useState<string | null>(null);
-  const [miniAvatarUri, setMiniAvatarUri] = useState<string | null>(null);
+  const [avatarUri, setAvatarUri] = useState<string | null>(null); // final avatar
+  const [miniAvatarUri, setMiniAvatarUri] = useState<string | null>(null); // small immediate avatar
   const [lastMessagePreview, setLastMessagePreview] = useState<string>("");
   const [lastMsgThumbUri, setLastMsgThumbUri] = useState<string | null>(null);
   const [resolvedChatId, setResolvedChatId] = useState<number | string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  const calledReadyRef = useRef(false);
   const mountedRef = useRef(true);
+  const calledReadyRef = useRef(false);
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
-  // ---------- helpers ----------
-  function log(...args: any[]) {
-    if (DEBUG) console.log('[ChannelItem]', ...args);
-  }
-
-  function safeParseRaw(res: any) {
-    if (!res) return null;
-    // if native wrapper returns { raw: "..." }
-    if (typeof res === 'object' && res.raw && typeof res.raw === 'string') {
-      try {
-        return JSON.parse(res.raw);
-      } catch (e) {
-        // fallthrough
-      }
-    }
-    // if res itself is JSON string
-    if (typeof res === 'string') {
-      try {
-        return JSON.parse(res);
-      } catch (e) {
-        return null;
-      }
-    }
-    // already parsed object
-    if (typeof res === 'object') return res;
-    return null;
-  }
-
-  function extractLocalPath(parsed: any): string | undefined {
-    if (!parsed) return undefined;
-    // check common shapes:
-    // parsed.local.path
-    if (parsed.local && parsed.local.path) return parsed.local.path;
-    // parsed.path
-    if (parsed.path) return parsed.path;
-    // parsed.file && parsed.file.local.path
-    if (parsed.file && parsed.file.local && parsed.file.local.path) return parsed.file.local.path;
-    // parsed.file_path
-    if (parsed.file_path) return parsed.file_path;
-    // sometimes wrapper returns nested in file object
-    if (parsed.result && parsed.result.local && parsed.result.local.path) return parsed.result.local.path;
-    return undefined;
-  }
-
-  function normalizeToFileUri(p?: string | null) {
-    if (!p) return null;
-    if (p.startsWith('file://')) return p;
-    return `file://${p}`;
-  }
-
-  // robust download using native wrapper result parsing + cache + small retry
-  const tryDownloadRemoteFile = async (remoteId: string): Promise<string | null> => {
-    if (!remoteId) return null;
-
-    // return cached value if present (could be null for known-failed)
-    if (remoteDownloadCache.has(remoteId)) {
-      log('cache hit for', remoteId, remoteDownloadCache.get(remoteId));
-      return remoteDownloadCache.get(remoteId) ?? null;
-    }
-
-    // small helper to call native and parse
-    const callAndParse = async (): Promise<string | null> => {
-      try {
-        log('calling TdLib.downloadFileByRemoteId for', remoteId);
-        const res: any = await TdLib.downloadFileByRemoteId(remoteId);
-        log('raw response from native:', res);
-        const parsed = safeParseRaw(res);
-        log('parsed download response:', parsed);
-        const localPath = extractLocalPath(parsed);
-        if (localPath) {
-          const uri = normalizeToFileUri(localPath);
-          return uri;
-        }
-        // fallback: sometimes native returns top-level path string
-        if (typeof res === 'string' && res.length > 0) {
-          return normalizeToFileUri(res);
-        }
-        // sometimes native returns { path: '...' } directly
-        if (res && typeof res === 'object' && (res.path || res.local?.path)) {
-          const p = res.path ?? res.local?.path;
-          return normalizeToFileUri(p);
-        }
-        return null;
-      } catch (e: any) {
-        log('downloadFileByRemoteId error:', e?.message ?? e);
-        return null;
-      }
-    };
-
-    // try up to 2 attempts (first attempt often succeeds if underlying flow already prepared)
-    let attempts = 0;
-    let result: string | null = null;
-    while (attempts < 2 && !result) {
-      attempts++;
-      result = await callAndParse();
-      if (result) break;
-      // small delay before retry
-      await new Promise((r) => setTimeout(r, 250 * attempts));
-    }
-
-    // cache result (including null to avoid rapid retries)
-    remoteDownloadCache.set(remoteId, result);
-    log('download finished for', remoteId, '->', result);
-    return result;
-  };
-
-  // ---------- UI logic (unchanged mostly) ----------
   const setMiniFromBase64 = (b64: string | null | undefined, setter: (s: string | null) => void) => {
     if (!b64) { setter(null); return; }
     if (b64.startsWith("data:")) { setter(b64); return; }
-    try {
-      const trimmed = b64.trim();
-      if (trimmed.length > 0) {
-        setter(`data:image/jpeg;base64,${trimmed}`);
-        return;
-      }
-    } catch { setter(null); return; }
+    const trimmed = b64.trim();
+    if (trimmed.length > 0) setter(`data:image/jpeg;base64,${trimmed}`);
+    else setter(null);
   };
 
+  // normalize keys from the shape you pasted
+  const normalize = (ch: any) => ({
+    title: ch?.title ?? ch?.name ?? ch?.username ?? null,
+    chatId: ch?.chatId ?? ch?.id ?? null,
+    username: ch?.username ?? null,
+    avatarRemoteId: ch?.avatarRemoteId ?? ch?.avatar_remote_id ?? null,
+    avatarSmallBase64: ch?.avatarSmallBase64 ?? ch?.avatar_small_base64 ?? null,
+    miniThumbnailBase64: ch?.miniThumbnailBase64 ?? ch?.miniThumbnail ?? ch?.miniThumbnailBase64 ?? ch?.miniThumbnailBase64 ?? null,
+    lastMessageMiniThumbnail: ch?.lastMessageMiniThumbnail ?? ch?.lastMessage_mini_thumbnail ?? null,
+    lastMessageText: ch?.lastMessageText ?? ch?.lastMessage ?? null,
+    profileBase64: ch?.profileBase64 ?? ch?.avatarBase64 ?? null,
+  });
+
   const extractPreviewAndThumb = (obj: any) => {
-    const msgText = obj?.lastMessageText ?? obj?.lastMessage ?? null;
+    const msgText = obj?.lastMessageText ?? null;
     if (msgText && typeof msgText === "string") {
       const cleaned = msgText.replace(/\s+/g, " ").trim();
       const max = 60;
@@ -172,84 +79,127 @@ export default function ChannelItem({
       setLastMessagePreview("");
     }
 
-    const lThumb = obj?.lastMessageMiniThumbnail ?? null;
+    const thumb = obj?.lastMessageMiniThumbnail ?? obj?.miniThumbnailBase64 ?? null;
     setLastMsgThumbUri(null);
-    if (typeof lThumb === "string" && lThumb.length > 0) {
-      if (lThumb.startsWith("data:")) {
-        setLastMsgThumbUri(lThumb);
-      } else if (lThumb.startsWith("/9j") || lThumb.length > 100) {
-        setMiniFromBase64(lThumb, setLastMsgThumbUri);
-      } else {
-        (async () => {
-          const p = await tryDownloadRemoteFile(lThumb);
-          if (p && mountedRef.current) {
-            setLastMsgThumbUri(p);
-          }
-        })();
+    if (typeof thumb === "string" && thumb.length > 0) {
+      setMiniFromBase64(thumb, setLastMsgThumbUri);
+    }
+  };
+
+  // fetch helper (tries cache, inflight reuse)
+  async function fetchProfileFromServer(chatId?: any, remoteId?: any): Promise<string | null> {
+    const key = makeServerKey(chatId, remoteId);
+    if (DEBUG) console.log("[fetchProfileFromServer] key:", key, { chatId, remoteId });
+
+    if (downloadCache.has(key)) {
+      if (DEBUG) console.log("[fetchProfileFromServer] cache hit", key);
+      return downloadCache.get(key) ?? null;
+    }
+    if (inflightFetch.has(key)) {
+      if (DEBUG) console.log("[fetchProfileFromServer] join inflight", key);
+      return inflightFetch.get(key)!;
+    }
+
+    const promise = (async () => {
+      try {
+        const url = makeProfileUrl({ chatId, remoteId });
+        if (DEBUG) console.log("[fetchProfileFromServer] fetching:", url);
+        const res = await fetch(url, { method: "GET" });
+        if (!res.ok) { downloadCache.set(key, null); return null; }
+        const text = await res.text();
+        if (!text) { downloadCache.set(key, null); return null; }
+        const trimmed = text.trim();
+        if (trimmed.length === 0) { downloadCache.set(key, null); return null; }
+        // server might return a data: uri already; handle both
+        const dataUri = trimmed.startsWith("data:") ? trimmed : `data:image/jpeg;base64,${trimmed}`;
+        downloadCache.set(key, dataUri);
+        if (DEBUG) console.log("[fetchProfileFromServer] saved to cache", key);
+        return dataUri;
+      } catch (e: any) {
+        if (DEBUG) console.warn("[fetchProfileFromServer] error", e?.message ?? e);
+        downloadCache.set(key, null);
+        return null;
+      } finally {
+        inflightFetch.delete(key);
       }
-    }
-  };
+    })();
+    inflightFetch.set(key, promise);
+    return promise;
+  }
 
-  const applyServerChannel = (ch: any) => {
+  // apply incoming channel object (supports the exact keys you provided)
+  const applyChannel = (ch: any) => {
     if (!ch) return;
-    if (ch.title) setTitle(ch.title);
+    const n = normalize(ch);
+    if (n.title) setTitle(n.title);
+    if (n.chatId !== null && n.chatId !== undefined) setResolvedChatId(n.chatId);
 
-    const chatIdVal = ch.chatId ?? ch.id ?? ch.username ?? null;
-    if (chatIdVal !== null && chatIdVal !== undefined) setResolvedChatId(chatIdVal);
+    // last message preview & thumb
+    extractPreviewAndThumb({ lastMessageText: n.lastMessageText, lastMessageMiniThumbnail: n.lastMessageMiniThumbnail });
 
-    if (ch.miniThumbnailBase64) {
-      setMiniFromBase64(ch.miniThumbnailBase64, setMiniAvatarUri);
-    } else {
-      setMiniAvatarUri(null);
+    // 1) if full profile base64 provided, use it as final avatar
+    if (n.profileBase64) {
+      setMiniFromBase64(n.profileBase64, (val) => { setAvatarUri(val); setMiniAvatarUri(null); });
+      setLoading(false);
+      return;
     }
 
-    if (ch.avatarRemoteId) {
-      // background download; use cached/inflight behavior inside tryDownloadRemoteFile
-      (async () => {
-        const p = await tryDownloadRemoteFile(ch.avatarRemoteId);
-        if (p && mountedRef.current) {
-          setAvatarUri(p);
-        }
-      })();
-    } else {
-      setAvatarUri(null);
+    // 2) If small base64 present, show immediately as mini
+    if (n.avatarSmallBase64) {
+      setMiniFromBase64(n.avatarSmallBase64, setMiniAvatarUri);
+      // don't return — we still may try server fetch to replace with better image
+      setLoading(false);
+    } else if (n.miniThumbnailBase64) {
+      setMiniFromBase64(n.miniThumbnailBase64, setMiniAvatarUri);
+      setLoading(false);
     }
 
-    extractPreviewAndThumb(ch);
-    setLoading(false);
+    // 3) attempt server fetch using remoteId first, then chatId
+    const tryFetch = async () => {
+      const remoteId = n.avatarRemoteId ?? null;
+      const cid = n.chatId ?? null;
+      // prefer remoteId if available
+      if (remoteId) {
+        const data = await fetchProfileFromServer(undefined, remoteId);
+        if (!mountedRef.current) return;
+        if (data) { setAvatarUri(data); setMiniAvatarUri(null); setLoading(false); return; }
+      }
+      if (cid) {
+        const data = await fetchProfileFromServer(cid, undefined);
+        if (!mountedRef.current) return;
+        if (data) { setAvatarUri(data); setMiniAvatarUri(null); setLoading(false); return; }
+      }
+      // nothing from server; we're done (keep mini if any)
+      if (mountedRef.current) setLoading(false);
+    };
+
+    // kick off background fetch but don't block UI
+    tryFetch();
   };
 
+  // init
   useEffect(() => {
-    let mounted = true;
     setLoading(true);
     calledReadyRef.current = false;
-
-    const init = async () => {
-      if (typeof channel === "object" && channel !== null) {
-        applyServerChannel(channel);
-        return;
-      }
-      if (typeof channel === "string" || typeof channel === "number") {
-        setTitle(String(channel));
-        setResolvedChatId(channel);
-        setMiniAvatarUri(null);
-        setAvatarUri(null);
-        setLastMessagePreview("");
-        setLastMsgThumbUri(null);
-        setLoading(false);
-        return;
-      }
+    if (typeof channel === "object" && channel !== null) {
+      if (DEBUG) console.log("[ChannelItem] channel object:", channel);
+      applyChannel(channel);
+    } else if (typeof channel === "string" || typeof channel === "number") {
+      setTitle(String(channel));
+      setResolvedChatId(channel);
+      setMiniAvatarUri(null);
+      setAvatarUri(null);
+      setLastMessagePreview("");
+      setLastMsgThumbUri(null);
+      setLoading(false);
+    } else {
       setTitle("بدون عنوان");
       setMiniAvatarUri(null);
       setAvatarUri(null);
       setLastMessagePreview("");
       setLastMsgThumbUri(null);
       setLoading(false);
-    };
-
-    if (mounted) init();
-
-    return () => { mounted = false; };
+    }
   }, [channel]);
 
   useEffect(() => {
@@ -260,20 +210,22 @@ export default function ChannelItem({
   }, [loading, resolvedChatId, channel, onReady]);
 
   const handlePress = async() => {
-    console.log(channel)
-    navigation.navigate("Channel", { chatId: +channel.chatId, cache: true, username: channel.username });
+    try {
+      navigation.navigate("Channel", { chatId: +channel?.chatId, cache: true, username: channel?.username });
+    } catch (e) { if (DEBUG) console.log("navigate error", e); }
   };
 
-  if (loading) return null;
-  if (!miniAvatarUri) return null;
+  // render: if neither image is available, bail (same behavior you had)
+  if (loading) {
+    // small window only — we set loading=false as soon as a mini exists or background fetch finishes
+    return null;
+  }
+  if (!avatarUri && !miniAvatarUri) return null;
 
   return (
     <TouchableOpacity style={styles.container} onPress={handlePress}>
-      {avatarUri || miniAvatarUri ? (
-        <Image
-          source={{ uri: avatarUri || miniAvatarUri || '' }}
-          style={styles.avatar}
-        />
+      {(avatarUri || miniAvatarUri) ? (
+        <Image source={{ uri: avatarUri || miniAvatarUri || "" }} style={styles.avatar} />
       ) : null}
       <View style={{ flex: 1, marginRight: 8 }}>
         <Text numberOfLines={1} style={styles.title}>
@@ -283,9 +235,7 @@ export default function ChannelItem({
           <Text numberOfLines={1} style={styles.lastMessage}>
             {lastMessagePreview}
           </Text>
-          {lastMsgThumbUri ? (
-            <Image source={{ uri: lastMsgThumbUri }} style={styles.lastThumb} />
-          ) : null}
+          {lastMsgThumbUri ? <Image source={{ uri: lastMsgThumbUri }} style={styles.lastThumb} /> : null}
         </View>
       </View>
     </TouchableOpacity>

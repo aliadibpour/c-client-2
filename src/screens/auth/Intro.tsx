@@ -52,6 +52,9 @@ export default function IntroScreen({ navigation }: any) {
   const [isAnimating, setIsAnimating] = useState(false);
   const blackOverlay = useRef(new Animated.Value(0)).current;
 
+  // <-- تغییر: ارتفاع بر اساس عرض صفحه محاسبه می‌شود (به جای مقدار ثابت 547)
+  const IMAGE_CONTAINER_HEIGHT = Math.round(width * 1.4);
+
   const handleNext = async () => {
     if (isAnimating) return;
 
@@ -62,6 +65,8 @@ export default function IntroScreen({ navigation }: any) {
         'auth-status',
         JSON.stringify({ register: false, route: 'login' })
       );
+      // برگشت isAnimating تا دکمه قفل نماند
+      setIsAnimating(false);
       navigation.navigate("Login");
     } else {
       Animated.timing(blackOverlay, {
@@ -87,7 +92,9 @@ export default function IntroScreen({ navigation }: any) {
     <View style={{ flex: 1 }}>
       <View style={styles.slide}>
         <StepProgressBar currentStep={currentIndex + 1} totalSteps={5} />
-        <View style={styles.imageContainer}>
+
+        {/* <-- تغییر: ارتفاع کانتینر به صورت داینامیک و نه ثابت */}
+        <View style={[styles.imageContainer, { height: IMAGE_CONTAINER_HEIGHT }]}>
           <LinearGradient
             colors={['black', 'rgba(0,0,0,0.01)', 'transparent']}
             style={styles.gradientOverlayTop}
@@ -95,15 +102,20 @@ export default function IntroScreen({ navigation }: any) {
           <Image source={slide.image} style={styles.image} resizeMode="cover" />
           <LinearGradient
             colors={['transparent', 'rgba(0,0,0,0.77)', 'black']}
-            style={styles.gradientOverlayBottom}
+            style={[styles.gradientOverlayBottom, { height: IMAGE_CONTAINER_HEIGHT * 0.28 }]}
           />
         </View>
 
-        {/* نمایش لوگو فقط در اسلاید اول */}
+        {/* نمایش لوگو فقط در اسلاید اول - موقعیت و اندازه لوگو با نسبت به عرض/ارتفاع محاسبه می‌شود */}
         {slide.key === 'slide1' && (
           <Image
             source={require('../../assets/images/cornerLogo.jpg')}
-            style={styles.logo}
+            style={{
+              ...styles.logo,
+              bottom: Math.round(IMAGE_CONTAINER_HEIGHT * 0.34),
+              width: Math.round(width * 0.16),
+              height: Math.round(width * 0.16),
+            }}
             resizeMode="contain"
           />
         )}
@@ -120,7 +132,6 @@ export default function IntroScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
       </View>
-
 
       <Animated.View
         pointerEvents="none"
@@ -139,8 +150,10 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     width: width,
-    height: 547,
+    // height حذف شد (دیگر ثابت نیست)
     justifyContent: 'flex-end',
+    position: 'relative',
+    overflow: 'hidden',
   },
   image: {
     width: '100%',
@@ -150,7 +163,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     width: '100%',
-    height: 155,
   },
   gradientOverlayTop: {
     position: 'absolute',
@@ -201,10 +213,7 @@ const styles = StyleSheet.create({
     marginVertical: 7,
   },
   logo: {
-    width: 66,
-    height: 66,
-    borderRadius: 80,
     position: 'absolute',
-    bottom: 190,
+    borderRadius: 80,
   },
 });

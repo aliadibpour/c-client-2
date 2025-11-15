@@ -28,7 +28,7 @@ const STALL_TIMEOUT_MS = 8000;
 const CONTROLS_AUTOHIDE_MS = 3000;
 
 // Thresholds & debounce
-const VISIBILITY_THRESHOLD = 50; // percent
+const VISIBILITY_THRESHOLD = 65; // percent
 const ENTER_DEBOUNCE_MS = 350; // require >=50% for this ms to autoplay
 const EXIT_DEBOUNCE_MS = 200; // require <50% for this ms to pause
 

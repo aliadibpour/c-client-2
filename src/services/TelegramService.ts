@@ -13,8 +13,8 @@ export class TelegramService {
   }
 
   private static parameters = {
-    api_id: 19661737,
-    api_hash: "28b0dd4e86b027fd9a2905d6c343c6bb"
+    api_id: 33104773,
+    api_hash: "67d4090c8e5fe84d5b600751d6df55fc"
   } as TdLibParameters;
 
   static async start(): Promise<Result<void>> {
@@ -122,7 +122,7 @@ export class TelegramService {
   static async restart(): Promise<Result<void>> {
     console.log('🔄 Restarting TDLib...');
     await this.close();
-    await this.delay(1000);
+    await this.delay(300);
     return await this.start();
   }
 

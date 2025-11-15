@@ -1,21 +1,10 @@
+// VerifyScreen.tsx
 import { useState, useEffect, useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-  I18nManager,
-  useWindowDimensions,
-  ToastAndroid,
-  BackHandler,
-  TouchableOpacity,
+  View, Text, StyleSheet, ActivityIndicator, Alert, useWindowDimensions, ToastAndroid, BackHandler, TouchableOpacity,
 } from 'react-native';
 import {
-  CodeField,
-  Cursor,
-  useBlurOnFulfill,
-  useClearByFocusCell,
+  CodeField, Cursor, useBlurOnFulfill, useClearByFocusCell,
 } from 'react-native-confirmation-code-field';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Keyboard } from '../../components/auth/Keyboard';
@@ -23,7 +12,6 @@ import { TelegramService } from '../../services/TelegramService';
 import { RouteProp, useRoute } from '@react-navigation/native';
 import ModalMessage from '../../components/auth/ModalMessage';
 
-I18nManager.forceRTL(true);
 
 const CELL_COUNT = 5;
 type VerifyScreenRouteProp = RouteProp<{ Verify: { phoneNumber: string } }, 'Verify'>;
@@ -36,16 +24,20 @@ export default function VerifyScreen({ navigation }: any) {
   const [modalMessage, setModalMessage] = useState('');
 
   const route = useRoute<VerifyScreenRouteProp>();
-  //const { phoneNumber } = route.params;
-  const [phoneNumber, setPhoneNumber] = useState()
+  const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
+
   useEffect(() => {
     const getNumber = async () => {
-      const phone = await AsyncStorage.getItem("phone-number")
-      setPhoneNumber(JSON.parse(phone || "{phoneNumber: false}").phoneNumber)
-      console.log(phoneNumber)
-    }
-    getNumber()
-  }, [])
+      try {
+        const phone = await AsyncStorage.getItem("phone-number");
+        if (phone) {
+          const parsed = JSON.parse(phone);
+          setPhoneNumber(parsed?.phoneNumber ?? null);
+        }
+      } catch (e) { /* ignore */ }
+    };
+    getNumber();
+  }, []);
 
   const ref = useBlurOnFulfill({ value, cellCount: CELL_COUNT });
   const [props, getCellOnLayoutHandler] = useClearByFocusCell({ value, setValue });
@@ -55,25 +47,39 @@ export default function VerifyScreen({ navigation }: any) {
   const backPressCount = useRef(0);
   useEffect(() => {
     const backAction = () => {
-      if (backPressCount.current === 0) {
-        backPressCount.current = 1;
-        ToastAndroid.show('برای خروج دوباره کلیک کنید', ToastAndroid.SHORT);
-        setTimeout(() => { backPressCount.current = 0; }, 2000);
-        return true;
-      } else {
-        BackHandler.exitApp();
-        return true;
-      }
+      // فقط یک بار فشار -> خارج شدن از اپ
+      BackHandler.exitApp();
+      return true;
     };
 
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
-    return () => backHandler.remove();
+
+    return () => {
+      // حذف کامل لیسنر وقتی از صفحه خارج شد
+      backHandler.remove();
+    };
   }, []);
+
+  // Prevent duplicate submissions
+  const submitLockRef = useRef(false);
 
   useEffect(() => {
     if (value.length === CELL_COUNT) {
-      checkAuthState()
-      verifyCode();
+      // avoid duplicate triggers
+      if (submitLockRef.current) {
+        console.log('[VerifyScreen] submit already in progress, skipping duplicate');
+        return;
+      }
+      submitLockRef.current = true;
+      (async () => {
+        try {
+          // optional: check auth state before verify
+          await checkAuthState();
+          await verifyCode();
+        } finally {
+          submitLockRef.current = false;
+        }
+      })();
     }
   }, [value]);
 
@@ -95,7 +101,7 @@ export default function VerifyScreen({ navigation }: any) {
       return true;
     }
 
-    return false; // یعنی این ارور مربوط به FloodWait نبود
+    return false;
   };
 
   const extractWaitTime = (message: string): number => {
@@ -104,18 +110,21 @@ export default function VerifyScreen({ navigation }: any) {
   };
 
   const verifyCode = async () => {
-    //navigation.navigate("PickTeams");
+    if (loading) {
+      console.log('[verifyCode] already loading, skip');
+      return;
+    }
     setLoading(true);
     try {
-      const verifyCode = await TelegramService.verifyCode(value);
-      console.log(verifyCode);
-      
-      if (verifyCode.success === true) {
+      const verifyRes = await TelegramService.verifyCode(value);
+      console.log('[verifyCode] result', verifyRes);
+
+      if (verifyRes?.success === true) {
         setIsValid(true);
-        await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "pick-team"}));
+        await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "pick-team" }));
         navigation.navigate("PickTeams");
       } else {
-        const isFlood = handleFloodWaitError(verifyCode.error, setModalMessage, setModalVisible);
+        const isFlood = handleFloodWaitError(verifyRes?.error, setModalMessage, setModalVisible);
         if (isFlood) {
           setLoading(false);
           return;
@@ -127,6 +136,7 @@ export default function VerifyScreen({ navigation }: any) {
         }, 1500);
       }
     } catch (err: any) {
+      console.warn('[verifyCode] caught', err);
       Alert.alert('خطا', 'کد وارد شده اشتباه است');
     } finally {
       setLoading(false);
@@ -134,31 +144,49 @@ export default function VerifyScreen({ navigation }: any) {
   };
 
   const checkAuthState = async() => {
+    try {
       const authState: any = await TelegramService.getAuthState();
-      const authType = JSON.parse(authState.data)["@type"];
-      console.log("Auth State:", authType);
-        
-      if (authType !== "authorizationStateWaitCode") {
-        setModalMessage("کد تایید شما منقضی شده. لطفا دوباره شماره تلفن را ارسال کنید")
-        setModalVisible(true)
+      // authState.data may be string or object
+      let parsedData: any = authState;
+      if (authState && typeof authState === 'object' && authState.data) {
+        try {
+          parsedData = typeof authState.data === 'string' ? JSON.parse(authState.data) : authState.data;
+        } catch (e) {
+          parsedData = authState.data;
+        }
+      } else if (typeof authState === 'string') {
+        try { parsedData = JSON.parse(authState); } catch (e) { parsedData = authState; }
       }
-  }
+
+      const authType = parsedData?.["@type"] ?? parsedData?.type ?? null;
+      console.log('[checkAuthState] Auth State:', authType);
+
+      if (authType !== "authorizationStateWaitCode") {
+        setModalMessage("کد تایید شما منقضی شده. لطفا دوباره شماره تلفن را ارسال کنید");
+        setModalVisible(true);
+      }
+    } catch (e) {
+      console.warn('[checkAuthState] failed', e);
+    }
+  };
 
   const editNumber = async () => {
-    await AsyncStorage.removeItem("auth-status")
-    await AsyncStorage.removeItem("phone-number")
-    navigation.navigate("Login")
-  }
+    await AsyncStorage.removeItem("auth-status");
+    await AsyncStorage.removeItem("phone-number");
+    navigation.navigate("Login");
+  };
 
-  //chack the code is expire or no
+  // initial check (on mount) — optional
   useEffect(() => {
-    checkAuthState()
-  },[])
+    (async () => {
+      await checkAuthState();
+    })();
+  }, []);
 
   return (
     <View style={[styles.container, { paddingHorizontal: width * 0.08 }]}>
       <Text style={styles.title}>برنامه تلگرامتون رو چک کنید</Text>
-      <Text style={styles.description}>{`ما کد رو فرستادیم به برنامه تلگرام با شماره ی ${phoneNumber}`}</Text>
+      <Text style={styles.description}>{`ما کد رو فرستادیم به برنامه تلگرام با شماره ی ${phoneNumber ?? ''}`}</Text>
 
       <CodeField
         ref={ref}
@@ -168,7 +196,7 @@ export default function VerifyScreen({ navigation }: any) {
         cellCount={CELL_COUNT}
         rootStyle={styles.codeFieldRoot}
         editable={false}
-        showSoftInputOnFocus={false} 
+        showSoftInputOnFocus={false}
         textContentType="oneTimeCode"
         renderCell={({ index, symbol, isFocused }) => {
           const isError = isValid === false;
@@ -184,11 +212,7 @@ export default function VerifyScreen({ navigation }: any) {
           ];
 
           return (
-            <View
-              key={index}
-              style={cellStyle}
-              onLayout={getCellOnLayoutHandler(index)}
-            >
+            <View key={index} style={cellStyle} onLayout={getCellOnLayoutHandler(index)}>
               <Text style={styles.cellText}>
                 {symbol || (isFocused ? <Cursor /> : null)}
               </Text>
@@ -218,64 +242,15 @@ export default function VerifyScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-    marginTop: 100,
-  },
-  title: {
-    fontSize: 24,
-    fontFamily: "SFArabic-Regular",
-    color: '#fff',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  description: {
-    fontSize: 15,
-    lineHeight: 24,
-    color: '#aaa',
-    textAlign: 'center',
-    marginBottom: 22,
-    fontFamily: "SFArabic-Regular",
-  },
-  codeFieldRoot: {
-    justifyContent: "center",
-    flexDirection: 'row',
-    gap: 12,
-    direction: "ltr",
-  },
-  cell: {
-    width: 39,
-    height: 39,
-    borderRadius: 5,
-    borderWidth: 1.5,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#333',
-    borderColor: '#333',
-  },
-  filledCell: {
-    borderColor: '#444',
-  },
-  cellText: {
-    color: '#fff',
-    fontSize: 20,
-    fontFamily: 'vazir',
-  },
-  focusCell: {
-    borderColor: '#555',
-  },
-  errorCell: {
-    borderColor: '#ff4d4f',
-  },
-  successCell: {
-    borderColor: '#00aaffff',
-  },
-  editNumber: {
-    color: "#54afff",
-    fontFamily: "SFArabic-Regular",
-    fontSize:15,
-    textAlign: "center",
-    marginTop: 22
-  }
+  container: { flex: 1, backgroundColor: '#000' },
+  title: { fontSize: 24, fontFamily: "SFArabic-Regular", color: '#fff', textAlign: 'center', marginBottom:8, marginTop: 95 },
+  description: { fontSize: 15, lineHeight: 24, color: '#aaa', textAlign: 'center', marginBottom: 22, fontFamily: "SFArabic-Regular" },
+  codeFieldRoot: { justifyContent: "center", flexDirection: 'row', gap: 12, direction: "ltr" },
+  cell: { width: 39, height: 39, borderRadius: 5, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center', backgroundColor: '#333', borderColor: '#333' },
+  filledCell: { borderColor: '#444' },
+  cellText: { color: '#fff', fontSize: 20, fontFamily: 'vazir' },
+  focusCell: { borderColor: '#555' },
+  errorCell: { borderColor: '#ff4d4f' },
+  successCell: { borderColor: '#00aaffff' },
+  editNumber: { color: "#54afff", fontFamily: "SFArabic-Regular", fontSize:15, textAlign: "center", marginTop: 22 }
 });

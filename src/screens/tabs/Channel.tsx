@@ -35,6 +35,7 @@ const isValidMessage = (m: any) => !!(m && (m.id || m.message?.id));
 
 export default function ChannelScreen({ route }: any) {
   const { chatId, focusMessageId, cache, username } = route.params;
+  console.log(chatId)
 
   const [messages, setMessages] = useState<any[]>([]);
   const [lastMessage, setLastMessage] = useState<any | null>(null);
@@ -146,7 +147,7 @@ export default function ChannelScreen({ route }: any) {
       try {
         if (cache) {
           await TdLib.searchPublicChat(username).catch(() => null);
-          await TdLib.getChat(chatId).catch(() => null);
+          //await TdLib.getChat(chatId).catch(() => null);
         }
 
         const chat = await getChat(chatId).catch(() => null);
@@ -445,7 +446,7 @@ export default function ChannelScreen({ route }: any) {
 
   return (
     <ImageBackground
-      source={require("../../assets/images/background.jpg")}
+      source={require("../../assets/images/q.jpg")}
       resizeMode="cover"
       style={styles.background}
     >

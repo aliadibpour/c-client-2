@@ -212,7 +212,7 @@ const TelegramHeader: React.FC<Props> = ({ onTeamChange, initialTeam, selectedSl
   return (
     <View style={styles.headerContainer}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
-      <Image source={require("../../../assets/images/corner-logo.png")} style={styles.logo} />
+      <Image source={require("../../../assets/images/cornerLogoCopy.jpg")} style={styles.logo} />
 
       <FlatList
         ref={flatListRef}
@@ -238,8 +238,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#000",
   },
   logo: {
-    width: 21,
-    height: 21,
+    width: 35,
+    height: 35,
     borderRadius: 5,
     alignSelf: "center",
   },

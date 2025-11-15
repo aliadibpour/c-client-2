@@ -360,7 +360,7 @@ export default function LiveMatchScreen() {
                 listRef={(r: any) => (listRefs.current[item.id] = r)}
                 extraDataForList={matches}
               />
-              {isFailed && matches ? (
+              {/* {isFailed && matches ? (
                 <View style={{ position: "absolute", bottom: 12, right: 12 }}>
                   <TouchableOpacity
                     onPress={() => {
@@ -372,7 +372,7 @@ export default function LiveMatchScreen() {
                     <Text style={{ color: "#fff", fontSize: 12 }}>مرور مجدد</Text>
                   </TouchableOpacity>
                 </View>
-              ) : null}
+              ) : null} */}
             </View>
           );
         }}

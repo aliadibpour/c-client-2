@@ -1,42 +1,52 @@
-// MessageHeader.tsx
-import AsyncStorage from "@react-native-async-storage/async-storage";
+// MessageHeaderBest.tsx
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { View, Text, Image, StyleSheet, TouchableOpacity } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import TdLib from "react-native-tdlib";
 import { Buffer } from "buffer";
-import { useNavigation } from "@react-navigation/native";
 
 /**
- * Improvements:
- * - module-level in-memory cache (chatMetaCache) to avoid repeated TdLib.getChat/downloadFile
- * - fast path when chatInfo prop is provided
- * - React.memo to avoid re-renders when chatId/chatInfo unchanged
- * - isMounted ref to avoid setState after unmount
+ * Behavior:
+ *  - If chatInfo prop exists -> use it and do nothing expensive
+ *  - Else:
+ *     * apply module cache if available
+ *     * concurrently try server (avatar) and TdLib.getChat (title + minithumbnail)
+ *     * only update state from the latest request (requestId guard + AbortController for fetch)
+ *  - Cache is keyed by string(chatId) so numeric or string ids are OK.
  */
 
-// Module-level cache shared across component instances
 type ChatMeta = {
   title?: string;
-  photoUri?: string; // file:// path or data:...
-  minithumbnailUri?: string;
-  fileId?: number;
+  photoUri?: string; // data:... or file://...
+  minithumbnailUri?: string; // data:...
 };
-const chatMetaCache = new Map<number, ChatMeta>();
+
+const chatMetaCache = new Map<string, ChatMeta>();
 
 function shallowEqualChatInfo(a: any, b: any) {
-  // cheap check: same reference or same title + fileId
   if (a === b) return true;
   if (!a || !b) return false;
-  return a.title === b.title && a.fileId === b.fileId && a.photoUri === b.photoUri && a.minithumbnailUri === b.minithumbnailUri;
+  return a.title === b.title && a.photoUri === b.photoUri && a.minithumbnailUri === b.minithumbnailUri;
 }
 
-function MessageHeaderInner({ chatId, chatInfo }: any) {
+function normalizeBase64Input(input?: string) {
+  if (!input) return null;
+  const idx = input.indexOf("base64,");
+  if (idx !== -1) return input.slice(idx + 7);
+  return input.replace(/^"(.*)"$/, "$1");
+}
+
+export default function MessageHeaderInner({ chatId, chatInfo }: { chatId: number | string; chatInfo?: ChatMeta }) {
+  const nav:any = useNavigation();
+  const key = String(chatId);
+  const isMounted = useRef(false);
+
   const [title, setTitle] = useState<string>(chatInfo?.title || "");
   const [photoUri, setPhotoUri] = useState<string>(chatInfo?.photoUri || "");
   const [minithumbnailUri, setMinithumbnailUri] = useState<string>(chatInfo?.minithumbnailUri || "");
-  const [fileId, setFileId] = useState<number | null>(chatInfo?.fileId ?? null);
-  const navigation: any = useNavigation();
-  const isMounted = useRef(true);
+
+  // request token to guard races
+  const latestRequestId = useRef(0);
 
   useEffect(() => {
     isMounted.current = true;
@@ -45,108 +55,168 @@ function MessageHeaderInner({ chatId, chatInfo }: any) {
     };
   }, []);
 
-  // If parent provided chatInfo, prefer that (fast path)
+  // Fast path: if parent provides chatInfo, apply and cache it, skip everything else.
   useEffect(() => {
+    if (!chatId) return;
     if (chatInfo) {
-      if (chatInfo.title) setTitle(chatInfo.title);
-      if (chatInfo.photoUri) setPhotoUri(chatInfo.photoUri);
-      else if (chatInfo.minithumbnailUri) setMinithumbnailUri(chatInfo.minithumbnailUri);
-      if (chatInfo.fileId) setFileId(chatInfo.fileId);
-      return;
+      setTitle(chatInfo.title || "");
+      setPhotoUri(chatInfo.photoUri || "");
+      setMinithumbnailUri(chatInfo.minithumbnailUri || "");
+      // merge into cache
+      const prev = chatMetaCache.get(key) || {};
+      chatMetaCache.set(key, { ...prev, ...chatInfo });
+    } else {
+      // If no prop, try to fill from cache immediately (so UI shows asap)
+      const cached = chatMetaCache.get(key);
+      if (cached) {
+        if (cached.title) setTitle(cached.title);
+        if (cached.photoUri) setPhotoUri(cached.photoUri);
+        if (cached.minithumbnailUri) setMinithumbnailUri(cached.minithumbnailUri);
+      }
     }
+  }, [chatId, chatInfo, key]);
 
-    // fallback: try module-level cache first
-    let numericChatId = typeof chatId === "number" ? chatId : Number(chatId);
-    if (!numericChatId || isNaN(numericChatId)) return;
+  // Heavy path: only run when chatInfo is missing or some fields are missing
+  useEffect(() => {
+    if (!chatId) return;
+    if (chatInfo) return; // don't fetch if parent provided meta
 
-    const cached = chatMetaCache.get(numericChatId);
-    if (cached) {
-      if (cached.title) setTitle(cached.title);
-      if (cached.photoUri) setPhotoUri(cached.photoUri);
-      else if (cached.minithumbnailUri) setMinithumbnailUri(cached.minithumbnailUri || "");
-      if (cached.fileId) setFileId(cached.fileId);
-      return;
-    }
+    // Determine what we still need
+    const needTitle = !title;
+    const needPhoto = !photoUri;
+    const needMini = !minithumbnailUri;
 
-    // If not cached, call TdLib.getChat once and cache result
-    (async () => {
+    // If nothing is needed, do nothing
+    if (!needTitle && !needPhoto && !needMini) return;
+
+    const thisRequestId = ++latestRequestId.current;
+    let abort = false;
+    const ac = typeof AbortController !== "undefined" ? new AbortController() : null;
+
+    const fetchProfileFromServer = async (): Promise<string | null> => {
+      // server returns either { avatarSmallBase64: '...' } or raw base64 string
+      const url = `https://cornerlive.ir:9000/feed-channel/profile?chatId=${encodeURIComponent(key)}`;
       try {
-        const res: any = await TdLib.getChat(numericChatId);
-        const chat = typeof res.raw === "string" ? JSON.parse(res.raw) : res;
-        if (!isMounted.current) return;
-
-        const meta: ChatMeta = {};
-        if (chat.title) {
-          meta.title = chat.title;
-          setTitle(chat.title);
+        const res = await fetch(url, { signal: ac?.signal });
+        if (!res.ok) {
+          // non-ok -> ignore
+          return null;
         }
-        if (chat.photo?.minithumbnail?.data) {
+        // try JSON parse
+        try {
+          const json = await res.json();
+          if (!json) return null;
+          if (typeof json === "string") return normalizeBase64Input(json);
+          if (typeof json === "object" && json.avatarSmallBase64) return normalizeBase64Input(json.avatarSmallBase64);
+          return null;
+        } catch {
+          // fallback to text
+          const txt = await res.text();
+          return normalizeBase64Input(txt);
+        }
+      } catch (e) {
+        if ((e as any)?.name === "AbortError") {
+          // aborted; ignore
+          return null;
+        }
+        // network error -> ignore
+        return null;
+      }
+    };
+
+    const tryTdLibGetChat = async (): Promise<Partial<ChatMeta> | null> => {
+      try {
+        // numeric chatId may be required by TdLib - try to coerce
+        const numeric = Number(chatId);
+        const res: any = await TdLib.getChat(Number.isNaN(numeric) ? chatId : numeric);
+        const chat = typeof res?.raw === "string" ? JSON.parse(res.raw) : res;
+        if (!chat) return null;
+
+        const meta: Partial<ChatMeta> = {};
+        // title
+        if (needTitle && chat.title) {
+          meta.title = chat.title;
+        }
+
+        // minithumbnail (try several shapes)
+        const mini = chat.photo?.minithumbnail?.data;
+        if (needMini && mini) {
           try {
-            const buffer = Buffer.from(chat.photo.minithumbnail.data);
-            const base64 = buffer.toString("base64");
-            meta.minithumbnailUri = `data:image/jpeg;base64,${base64}`;
-            setMinithumbnailUri(meta.minithumbnailUri);
-          } catch (e) {
-            // ignore
+            let base64: string | null = null;
+            if (typeof mini === "string") {
+              base64 = normalizeBase64Input(mini);
+            } else if (Array.isArray(mini) || ArrayBuffer.isView(mini)) {
+              base64 = Buffer.from(mini as any).toString("base64");
+            } else if (mini?.data && typeof mini.data === "string") {
+              base64 = normalizeBase64Input(mini.data);
+            }
+
+            if (base64) {
+              meta.minithumbnailUri = `data:image/jpeg;base64,${base64}`;
+            }
+          } catch {
+            // ignore minithumbnail parse error
           }
         }
-        const photo = chat.photo?.small;
-        if (photo?.local?.isDownloadingCompleted && photo?.local?.path) {
-          meta.photoUri = `file://${photo.local.path}`;
-          setPhotoUri(meta.photoUri);
-        } else if (photo?.id) {
-          meta.fileId = photo.id;
-          setFileId(photo);
-        }
-        // store in module-level cache for future instances
-        chatMetaCache.set(numericChatId, meta);
-      } catch (err) {
-        console.error("MessageHeader.getChat error:", err);
+
+        // NOTE: we do not download full file here (heavy). server handles full avatar base64.
+        return meta;
+      } catch (e) {
+        // TdLib failed -> ignore
+        return null;
       }
-    })();
-  }, [chatId, chatInfo]);
+    };
 
-  // If we have a fileId and no photoUri, download only once and cache result
-  useEffect(() => {
-    if (!fileId) return;
-    // check cache again to avoid duplicate downloads across mounts
-    const numericChatId = Number(chatId);
-    const cached = chatMetaCache.get(numericChatId);
-    if (cached && cached.photoUri) {
-      setPhotoUri(cached.photoUri);
-      return;
-    }
-
-    let cancelled = false;
     (async () => {
-      try {
-        const res: any = await TdLib.downloadFileByRemoteId("fileId");
-        const file = typeof res.raw === "string" ? JSON.parse(res.raw) : res;
-        if (cancelled || !isMounted.current) return;
-        if (file.local?.isDownloadingCompleted && file.local.path) {
-          const uri = `file://${file.local.path}`;
-          setPhotoUri(uri);
-          // update module cache
-          const exist = chatMetaCache.get(Number(chatId)) || {};
-          exist.photoUri = uri;
-          chatMetaCache.set(Number(chatId), exist);
+      // run both in parallel but set states only if thisRequestId is still latest
+      const serverPromise = needPhoto ? fetchProfileFromServer() : Promise.resolve<string | null>(null);
+      const tdlibPromise = (needTitle || needMini) ? tryTdLibGetChat() : Promise.resolve<Partial<ChatMeta> | null>(null);
+
+      const [serverBase64, tdMeta] = await Promise.all([serverPromise, tdlibPromise]);
+
+      // if this is not the latest request or unmounted, ignore results
+      if (abort || !isMounted.current || thisRequestId !== latestRequestId.current) {
+        ac?.abort?.();
+        return;
+      }
+
+      // apply server avatar if present
+      if (serverBase64) {
+        const uri = `data:image/jpeg;base64,${serverBase64}`;
+        setPhotoUri(uri);
+        // merge into cache
+        const prev = chatMetaCache.get(key) || {};
+        chatMetaCache.set(key, { ...prev, photoUri: uri });
+      }
+
+      // apply tdlib meta if present
+      if (tdMeta) {
+        if (tdMeta.title) {
+          setTitle(tdMeta.title);
         }
-      } catch (err) {
-        console.log("MessageHeader.downloadFile error:", err);
+        if (tdMeta.minithumbnailUri) {
+          setMinithumbnailUri(tdMeta.minithumbnailUri);
+        }
+        // merge into cache
+        const prev = chatMetaCache.get(key) || {};
+        chatMetaCache.set(key, { ...prev, ...tdMeta });
       }
     })();
 
     return () => {
-      cancelled = true;
+      abort = true;
+      latestRequestId.current++;
+      ac?.abort?.();
     };
-  }, [fileId, chatId]);
+  }, [chatId, chatInfo, title, photoUri, minithumbnailUri, key]);
 
   const handlePress = useCallback(() => {
-    navigation.navigate("Channel", { chatId });
-  }, [navigation, chatId]);
+    // navigate to channel screen
+    nav.navigate("Channel" as any, { chatId });
+  }, [nav, chatId]);
 
   return (
-    <TouchableOpacity onPress={handlePress} style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
+    <TouchableOpacity onPress={handlePress} style={styles.container}>
       <Image source={{ uri: photoUri || minithumbnailUri || undefined }} style={styles.avatar} />
       <Text numberOfLines={1} style={styles.title}>
         {title || "کانال"}
@@ -155,17 +225,8 @@ function MessageHeaderInner({ chatId, chatInfo }: any) {
   );
 }
 
-// wrap in React.memo with simple comparator to prevent unnecessary re-renders
-export default React.memo(MessageHeaderInner, (prevProps, nextProps) => {
-  // if chatId or chatInfo reference changed -> re-render, otherwise skip
-  if (prevProps.chatId !== nextProps.chatId) return false;
-  const a = prevProps.chatInfo;
-  const b = nextProps.chatInfo;
-  // if both missing, ok (use cache), if shallow equal, skip
-  return shallowEqualChatInfo(a, b);
-});
-
 const styles = StyleSheet.create({
+  container: { flexDirection: "row", alignItems: "center", marginBottom: 2 },
   avatar: {
     width: 35,
     height: 35,

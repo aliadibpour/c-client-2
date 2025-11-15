@@ -71,7 +71,7 @@ const styles = StyleSheet.create({
   },
   container: {
     backgroundColor: '#2B2B2B',
-    padding: 20,
+    padding: 15,
     borderRadius: 8,
     width: '84%',
   },
@@ -81,9 +81,9 @@ const styles = StyleSheet.create({
     fontFamily: "SFArabic-Regular"
   },
   message: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#CCCCCC',
-    paddingVertical: 22,
+    paddingVertical: 15,
     fontFamily: "SFArabic-Regular"
   },
   buttons: {

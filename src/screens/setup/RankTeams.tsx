@@ -160,7 +160,7 @@ export default function RankTeamsScreen({ route, navigation }: any) {
       ? 'بین این دو تیم محتوای کدوم رو بیشتر دوست داری ببینی؟'
       : round === 2
       ? 'بین این دو تیم کدوم رو ترجیح می‌دی؟'
-      : 'بین این دو تیم برای تعیین مقام دوم کدوم؟';
+      : 'بین این دو؟';
 
   return (
     <View style={styles.container}>
@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   title: {
-    fontSize: 18,
+    fontSize: 16.5,
     fontFamily: 'SFArabic-Regular',
     marginBottom: 30,
     color: '#fff',

@@ -1,24 +1,8 @@
-// HomeHeader.tsx
+// HomeHeader.tsx (ویرایش شده)
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Redo } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
 import { View, Text, Image, StyleSheet, TouchableOpacity } from "react-native";
-
-const teamImages: { [key: string]: any } = {
-  'پرسپولیس': require('../../../assets/teams/perspolis.png'),
-  'استقلال': require('../../../assets/teams/ss.png'),
-  'سپاهان': require('../../../assets/teams/sepahan.png'),
-  'تراکتور': require('../../../assets/teams/Tractor.png'),
-  'بارسلونا': require('../../../assets/teams/barcelona.webp'),
-  'رئال مادرید': require('../../../assets/teams/realmadrid.png'),
-  'آرسنال': require('../../../assets/teams/arsenal.webp'),
-  'منچستر یونایتد': require('../../../assets/teams/man.webp'),
-  'لیورپول': require('../../../assets/teams/liverpool.webp'),
-  'چلسی': require('../../../assets/teams/Chelsea.png'),
-  'بایرن': require('../../../assets/teams/munich.png'),
-  'اینتر': require('../../../assets/teams/inter.png'),
-  'میلان': require('../../../assets/teams/milan.png'),
-};
 
 const teamRecord : { [key: string]: string } = {
   'پرسپولیس': 'perspolis',
@@ -39,52 +23,40 @@ export const pepe = (team:string) => {
   return teamRecord[team];
 }
 
-export default function HomeHeader({ activeTab, setActiveTab, hasNewMessage, onRefresh }: any) {
+function HomeHeaderInner({ activeTab, setActiveTab, hasNewMessage, onRefresh }: any) {
   const [teams, setTeams] = useState<string[]>([]);
 
   useEffect(() => {
+    let mounted = true;
     const getTeams = async () => {
       try {
         const raw = await AsyncStorage.getItem("teams");
         if (!raw) return;
-
         const parsed = JSON.parse(raw);
-
-        // parsed ممکنه به صورت شیء {team1,team2,team3} یا آرایه باشد.
         let values: (string | null)[] = [];
-
         if (Array.isArray(parsed)) {
           values = parsed.map((v: any) => (typeof v === 'string' ? v : v?.name ?? null));
         } else if (typeof parsed === 'object' && parsed !== null) {
-          // ترتیب مهمه: team1, team2, team3
           values = [parsed.team1 ?? null, parsed.team2 ?? null, parsed.team3 ?? null];
         }
-
-        // فیلتر کردن مقادیر null/'' — اما اگر خواستی جای‌خالی نمایش داده شود بگو
         const final = values.filter(v => v && typeof v === 'string') as string[];
-
-        // اگر فقط یک تیم هم بوده، آن را نمایش می‌دهیم (درخواست شما)
-        setTeams(final);
+        if (mounted) setTeams(final);
       } catch (e) {
         console.warn("HomeHeader: failed to read teams from AsyncStorage", e);
       }
     };
-
     getTeams();
+    return () => { mounted = false; };
   }, []);
 
-  // محاسبهٔ عرض هر تب براساس تعداد تیم‌ها
   const widthPercent: any = teams.length === 0 ? 'auto' : `${Math.max(1, Math.floor(100 / teams.length * 1000) / 1000)}%`;
-  // توضیح: ضرب و تقسیم برای دقت بیشتر در درصدِ اعشاری (مثلاً 33.333)
 
   return (
     <View style={styles.headerContainer}>
-      <Image source={require("../../../assets/images/corner-logo.png")} style={[styles.logo, teams.length > 1 ? {marginBottom: 0}: {marginBottom:7}]} />
+      <Image source={require("../../../assets/images/cornerLogoCopy.jpg")} style={[styles.logo, teams.length > 1 ? {marginBottom: 0}: {marginBottom:0}]} />
 
-      {/* Tabs grid: supports 1,2,3 items (each fills 100%/50%/33.333%) */}
       <View style={styles.tabsRow}>
-        {teams.length > 1 && 
-          (
+        {teams.length > 1 &&
           teams.slice(0, 3).map((item: string, idx: number) => {
             const isActive = activeTab === pepe(item);
             return (
@@ -98,18 +70,18 @@ export default function HomeHeader({ activeTab, setActiveTab, hasNewMessage, onR
                   isActive && styles.activeTab,
                 ]}
               >
-                {/* اگر می‌خواهی لوگو نمایش داده شود می‌توانی از teamImages[item] استفاده کنی */}
                 <Text style={[styles.tabText, isActive && styles.activeTabText]}>
                   {item}
                 </Text>
               </TouchableOpacity>
             );
           })
-        )}
+        }
       </View>
 
+      {/* این باکس خارج از جریانِ layout قرار گرفته تا هیچ shift ای ایجاد نکند */}
       {hasNewMessage && (
-        <TouchableOpacity style={styles.hasNewbox} onPress={() => onRefresh()}>
+        <TouchableOpacity style={styles.hasNewboxAbsolute} onPress={() => onRefresh()}>
           <Text style={styles.hasNewText}>جدیدترین ها</Text>
           <Redo width={15}/>
         </TouchableOpacity>
@@ -118,18 +90,24 @@ export default function HomeHeader({ activeTab, setActiveTab, hasNewMessage, onR
   );
 }
 
+// memo با مقایسه‌ی propsِ ضروری
+export default React.memo(HomeHeaderInner, (prev, next) => {
+  return prev.activeTab === next.activeTab && prev.hasNewMessage === next.hasNewMessage;
+});
+
 const styles = StyleSheet.create({
   headerContainer: {
     borderColor: "#111",
     borderBottomWidth: 0.7,
     gap: 6,
     paddingTop: 5,
-    backgroundColor: "#000000ef",
+    backgroundColor: "#000000ff",
+    minHeight: 50,
     // paddingHorizontal: 8,
   },
   logo: {
-    width: 21,
-    height: 21,
+    width: 35,
+    height: 35,
     borderRadius: 5,
     alignSelf: "center",
   },
@@ -138,12 +116,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     width: "100%",
     alignItems: "center",
-    // justifyContent: "space-between", // حذف شد تا هر تب دقیقاً عرض مشخص را بگیرد
     paddingHorizontal: 6,
+    paddingTop:1
   },
 
   tabItemGrid: {
-    // هر تب با عرض درصدی که بالا محاسبه می‌کنیم قرار می‌گیرد
     paddingVertical: 6,
     alignItems: "center",
     borderBottomWidth: 2,
@@ -165,27 +142,24 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  emptyBox: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-
-  hasNewbox:{
+  hasNewboxAbsolute:{
+    position: "absolute",
+    right: 6,
+    bottom: 6,
     backgroundColor: "#fffffff6",
-    padding:3,
+    paddingHorizontal:8,
+    paddingVertical:4,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    alignSelf: "flex-end",
-    marginTop: 8,
-    marginRight: 6,
     borderRadius: 6,
+    // elevation/ shadow اگر خواستی اضافه کن برای برجسته شدن
   },
   hasNewText:{
     color: "#000",
     fontFamily: "SFArabic-Regular",
     fontSize: 12,
     marginRight: 6,
+    textAlign: "center",
   }
 });

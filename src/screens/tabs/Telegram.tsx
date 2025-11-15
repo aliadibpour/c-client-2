@@ -24,6 +24,7 @@ function arraysEqual(a: string[] | undefined, b: string[] | undefined) {
 }
 
 export default function TelegramScreen() {
+  
   // cache channels per team
   const [channelsByTeam, setChannelsByTeam] = useState<Record<string, any[]>>({});
   const [globalLoading, setGlobalLoading] = useState<boolean>(false);
@@ -118,7 +119,7 @@ export default function TelegramScreen() {
     const isActive = teamsSlugs[selectedIndex] === slug;
 
     // reverse on render if server sends reversed order (do NOT mutate original)
-    const displayChannels = REVERSE_CHANNEL_ITEMS ? teamChannels.slice().reverse() : teamChannels;
+    const displayChannels = teamChannels;
 
     return (
       <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
@@ -129,7 +130,7 @@ export default function TelegramScreen() {
             (item?.username && String(item.username)) ||
             `${slug}_${index}`
           }
-          renderItem={({ item }) => <ChannelItem channel={item} onReady={() => {}} />}
+          renderItem={({ item, index }) => <ChannelItem channel={item} onReady={() => {}} />}
           initialNumToRender={6}
           windowSize={7}
           removeClippedSubviews={true}

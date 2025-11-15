@@ -37,6 +37,7 @@ export default function Comments() {
   const route = useRoute();
   const navigation:any = useNavigation();
   const { chatId, messageId }: any = route.params || {};
+  
 
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
   const [comments, setComments] = useState<commentStateType>({comments: [], start: 0, end:0});
@@ -1105,7 +1106,7 @@ const handleSend = async (textToSend: string) => {
     >
       <StatusBar backgroundColor="#000" barStyle="light-content" />
       <ImageBackground
-        source={require("../../assets/images/background.jpg")}
+        source={require("../../assets/images/q.jpg")}
         resizeMode="cover"
         style={styles.background}
       >
@@ -1149,6 +1150,7 @@ const handleSend = async (textToSend: string) => {
                 onStartReached={handleStartReached}
                 removeClippedSubviews={false}
                 drawDistance={1000}
+                  extraData={highlightedId}
 
                 // 🔽 دوباره اضافه کن
                 ListHeaderComponent={
