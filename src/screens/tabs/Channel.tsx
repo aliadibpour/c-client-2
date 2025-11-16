@@ -1,3 +1,4 @@
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import {
   View,
   FlatList,
@@ -11,8 +12,8 @@ import {
   NativeScrollEvent,
   StatusBar,
   DeviceEventEmitter,
+  InteractionManager,
 } from "react-native";
-import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import TdLib from "react-native-tdlib";
 import ChannelMessageItem from "../../components/tabs/channel/ChannelMessageItem";
 import { ViewToken } from "react-native";
@@ -35,7 +36,7 @@ const isValidMessage = (m: any) => !!(m && (m.id || m.message?.id));
 
 export default function ChannelScreen({ route }: any) {
   const { chatId, focusMessageId, cache, username } = route.params;
-  console.log(chatId)
+  console.log("ChannelScreen chatId:", chatId)
 
   const [messages, setMessages] = useState<any[]>([]);
   const [lastMessage, setLastMessage] = useState<any | null>(null);
@@ -308,8 +309,12 @@ export default function ChannelScreen({ route }: any) {
 
   useEffect(() => {
     if (!loading && listRendered && messages.length > 0 && !hasScrolledToBottom.current) {
-      listRef.current?.scrollToOffset({ offset: 0, animated: false });
-      hasScrolledToBottom.current = true;
+      try {
+        listRef.current?.scrollToOffset({ offset: 0, animated: false });
+        hasScrolledToBottom.current = true;
+      } catch (err) {
+        console.warn("initial scrollToOffset failed:", err);
+      }
     }
   }, [loading, listRendered, messages]);
 
@@ -330,9 +335,14 @@ export default function ChannelScreen({ route }: any) {
     }
     prevContentHeight.current = contentHeightRef.current;
     pendingContentAdjustment.current = true;
-    const data = await getChatHistory(chatId, lastId).catch(() => []);
-    if (data && data.length) setMessages(prev => [...(Array.isArray(prev) ? prev : []), ...data]);
-    setLoadingMore(false);
+    try {
+      const data = await getChatHistory(chatId, lastId).catch(() => []);
+      if (data && data.length) setMessages(prev => [...(Array.isArray(prev) ? prev : []), ...data]);
+    } catch (err) {
+      console.warn("handleEndReached getChatHistory failed", err);
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
   const activeDownloads = useMemo(() => {
@@ -354,6 +364,7 @@ export default function ChannelScreen({ route }: any) {
   const scrollToFocusMessage = useCallback(() => {
     if (hasScrolledToFocus.current || !focusMessageId || groupedMessages.length === 0) return;
 
+    // find grouped index safely
     const focusIndex = groupedMessages.findIndex((item) => {
       if (!item) return false;
       if (item.type === "single") return safeId(item.message) === focusMessageId;
@@ -361,10 +372,36 @@ export default function ChannelScreen({ route }: any) {
       return false;
     });
 
-    if (focusIndex !== -1) {
-      listRef.current?.scrollToIndex({ index: focusIndex, animated: false, viewPosition: 0.5 });
-      hasScrolledToFocus.current = true;
+    if (focusIndex === -1) {
+      // not present yet
+      return;
     }
+
+    // clamp index to valid range
+    const safeIndex = Math.max(0, Math.min(focusIndex, groupedMessages.length - 1));
+
+    // wait until interactions finished & list layout hopefully ready
+    InteractionManager.runAfterInteractions(() => {
+      if (!listRef.current) return;
+
+      try {
+        // guard: only call if index in range
+        if (safeIndex >= 0 && safeIndex < groupedMessages.length) {
+          listRef.current?.scrollToIndex({ index: safeIndex, animated: false, viewPosition: 0.5 });
+          hasScrolledToFocus.current = true;
+        }
+      } catch (err) {
+        console.warn("scrollToIndex failed — fallback to scrollToOffset", err);
+
+        // fallback: try a safe offset instead of index (e.g. top)
+        try {
+          listRef.current?.scrollToOffset({ offset: 0, animated: false });
+          hasScrolledToFocus.current = true;
+        } catch (err2) {
+          console.warn("scrollToOffset also failed", err2);
+        }
+      }
+    });
   }, [focusMessageId, groupedMessages]);
 
   useEffect(() => {
@@ -374,7 +411,11 @@ export default function ChannelScreen({ route }: any) {
   const scrollBottomHandler = async () => {
     const lastId = safeId(lastMessage);
     if (lastId !== undefined && messages.some(m => safeId(m) === lastId)) {
-      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      try {
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      } catch (err) {
+        console.warn("scrollBottomHandler scrollToOffset failed", err);
+      }
       return;
     }
 
@@ -382,7 +423,9 @@ export default function ChannelScreen({ route }: any) {
     const data = (lastId !== undefined) ? await getChatHistory(chatId, lastId, 50, -2).catch(() => []) : [];
     if (Array.isArray(data) && data.length) setMessages(data);
     // small delay then scroll
-    setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 100);
+    setTimeout(() => {
+      try { listRef.current?.scrollToOffset({ offset: 0, animated: true }); } catch (err) { console.warn("post-fetch scroll failed", err); }
+    }, 100);
     setShowScrollToBottom(false);
   };
 
@@ -415,10 +458,10 @@ export default function ChannelScreen({ route }: any) {
         (item.type === "album" && Array.isArray(item.messages) && item.messages.some((m: any) => safeId(m) === messageId))
       );
       if (groupedIndex !== -1) {
-        listRef.current?.scrollToIndex({ index: groupedIndex, animated: true, viewPosition: .5 });
+        try { listRef.current?.scrollToIndex({ index: groupedIndex, animated: true, viewPosition: .5 }); } catch (err) { console.warn("clickReply scrollToIndex failed", err); }
       } else {
         const index = messages.findIndex(i => safeId(i) === messageId);
-        if (index !== -1) listRef.current?.scrollToIndex({ index, animated: true, viewPosition: .5 });
+        if (index !== -1) try { listRef.current?.scrollToIndex({ index, animated: true, viewPosition: .5 }); } catch (err) { console.warn("clickReply scrollToIndex fallback failed", err); }
       }
     } else {
       prevContentHeight.current = contentHeightRef.current;
@@ -438,8 +481,20 @@ export default function ChannelScreen({ route }: any) {
           (item.type === "album" && Array.isArray(item.messages) && item.messages.some((m: any) => safeId(m) === pendingScrollId))
         );
         const finalIndex = groupedIndex !== -1 ? groupedIndex : index;
-        listRef.current?.scrollToIndex({ index: finalIndex, animated: true, viewPosition: .5 });
-        setPendingScrollId(null);
+        const safeIndex = Math.max(0, Math.min(finalIndex, groupedMessages.length - 1));
+
+        InteractionManager.runAfterInteractions(() => {
+          try {
+            if (safeIndex >= 0 && safeIndex < groupedMessages.length) {
+              listRef.current?.scrollToIndex({ index: safeIndex, animated: true, viewPosition: .5 });
+            }
+          } catch (err) {
+            console.warn("pending scroll scrollToIndex failed, fallback:", err);
+            try { listRef.current?.scrollToOffset({ offset: 0, animated: true }); } catch (e) { /* ignore */ }
+          } finally {
+            setPendingScrollId(null);
+          }
+        });
       }
     }
   }, [messages, pendingScrollId, groupedMessages]);
@@ -486,6 +541,8 @@ export default function ChannelScreen({ route }: any) {
             }
           }}
           inverted
+          // Note: maintainVisibleContentPosition sometimes interferes with programmatic scrolls in release builds.
+          // If you still see crashes, try removing the prop below.
           maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
           contentContainerStyle={{ paddingBottom: 24, paddingTop: 4, opacity: loading || !listRendered ? 0 : 1 }}
           onViewableItemsChanged={onViewableItemsChanged.current}
@@ -503,6 +560,8 @@ export default function ChannelScreen({ route }: any) {
           ) : null}
           removeClippedSubviews={false}
           maxToRenderPerBatch={10}
+          // update content height so we can use it for scroll preservation if needed
+          onContentSizeChange={(w, h) => { contentHeightRef.current = h; }}
         />
       </View>
 

@@ -166,7 +166,7 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
 
         {video && (
           <View style={{ width: "100%" }}>
-            <MessageVideo video={video} isVisible={isVisible} context="channel" activeDownload={isActiveDownload} />
+            <MessageVideo video={video}  context="channel" activeDownload={isActiveDownload} />
           </View>
         )}
 
