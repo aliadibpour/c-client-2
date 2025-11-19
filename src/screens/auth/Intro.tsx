@@ -102,7 +102,7 @@ export default function IntroScreen({ navigation }: any) {
           <Image source={slide.image} style={styles.image} resizeMode="cover" />
           <LinearGradient
             colors={['transparent', 'rgba(0,0,0,0.77)', 'black']}
-            style={[styles.gradientOverlayBottom, { height: IMAGE_CONTAINER_HEIGHT * 0.28 }]}
+            style={[styles.gradientOverlayBottom, { height: IMAGE_CONTAINER_HEIGHT * 0.31 }]}
           />
         </View>
 
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
   },
   gradientOverlayBottom: {
     position: 'absolute',
-    bottom: 0,
+    bottom: -2,
     width: '100%',
   },
   gradientOverlayTop: {
@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#e8e8e8',
     paddingVertical: 10,
     borderRadius: 10,
-    width: '85%',
+    width: '88%',
     alignSelf: 'center',
   },
   buttonText: {

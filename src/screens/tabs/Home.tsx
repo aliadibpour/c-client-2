@@ -159,6 +159,14 @@ export default function HomeScreen() {
   const listRef = useRef<FlatList<any> | null>(null);
 
   // ------------------
+  // New: generation + search promise-cache + stagger config (burst control)
+  // ------------------
+  const activeTabGenRef = useRef<number>(0); // bump on tab change to cancel older in-flight work
+  const searchPublicChatPromiseRef = useRef<Map<string, Promise<number | null>>>(new Map());
+  const STAGGER_BASE_MS = 30;
+  const STAGGER_WINDOW_MS = 120;
+
+  // ------------------
   // Stable tdEnqueue + tdCall with extra logging
   // ------------------
   const tdEnqueue = useCallback((fn: () => Promise<any>, opts = { timeoutMs: TD_WARMUP_CALL_TIMEOUT_MS }) => {
@@ -392,6 +400,8 @@ export default function HomeScreen() {
   const ensureRepliesForMessages = useCallback(
     async (msgs: any[]) => {
       if (!msgs || msgs.length === 0) return msgs;
+      const myGen = activeTabGenRef.current;
+
       const toFetchMap = new Map<string, { chatId: number | string; messageId: number | string }>();
       for (const m of msgs) {
         const r = m.replyTo || m.replyToMessage || m.reply_to_message || null;
@@ -415,8 +425,11 @@ export default function HomeScreen() {
           TD_CONCURRENCY,
           async (t) => {
             try {
+              // generation check: abort if tab changed
+              if (myGen !== activeTabGenRef.current) return null;
               // convert to Number only here where tdCall expects a number
               const res: any = await tdCall("getMessage", Number(t.chatId), Number(t.messageId));
+              if (myGen !== activeTabGenRef.current) return null;
               const parsed = JSON.parse(res.raw);
               const k2 = mk(parsed.chatId ?? t.chatId, parsed.id);
               const stored = withUuid(parsed);
@@ -453,9 +466,32 @@ export default function HomeScreen() {
     }, [tdCall, persistCachesDebounced, withUuid]
   );
 
+  // ------------------
+  // New helper: resolveChannelToChatId with in-flight promise cache (prevent duplicate searchPublicChat)
+  // ------------------
+  async function resolveChannelToChatId(channel: string, genAtCall: number): Promise<number | null> {
+    if (!channel) return null;
+    const existing = searchPublicChatPromiseRef.current.get(channel);
+    if (existing) return existing;
+    const p = (async () => {
+      try {
+        if (genAtCall !== activeTabGenRef.current) return null;
+        const r: any = await tdCall('searchPublicChat', channel).catch(() => null);
+        if (genAtCall !== activeTabGenRef.current) return null;
+        const fid = r?.id || r?.chat?.id || r?.chatId || (typeof r === 'number' ? r : undefined);
+        return fid ? Number(fid) : null;
+      } finally {
+        setTimeout(() => { searchPublicChatPromiseRef.current.delete(channel); }, 0);
+      }
+    })();
+    searchPublicChatPromiseRef.current.set(channel, p);
+    return p;
+  }
+
   // loadBatch improved: try to resolve chat ids in parallel per group and reuse
   const loadBatch = useCallback(
     async (batchIdx: number) => {
+      const myGen = activeTabGenRef.current;
       const start = batchIdx * BATCH_SIZE;
       const metas = datasRef.current.slice(start, start + BATCH_SIZE);
       if (!metas.length) return [];
@@ -480,6 +516,9 @@ export default function HomeScreen() {
       }
 
       for (const gKey of Object.keys(groups)) {
+        // abort early if tab changed
+        if (myGen !== activeTabGenRef.current) return [];
+
         const group = groups[gKey];
         let resolvedChatId: number | undefined;
         const sample = group[0];
@@ -487,9 +526,9 @@ export default function HomeScreen() {
         // attempt to resolve chat id once per group (non-blocking if fails)
         if (sample.channel) {
           try {
-            const r: any = await tdCall('searchPublicChat', sample.channel);
-            const fid = r?.id || r?.chat?.id || r?.chatId || (typeof r === 'number' ? r : undefined);
-            if (fid) resolvedChatId = Number(fid);
+            const r: any = await resolveChannelToChatId(sample.channel, myGen);
+            if (myGen !== activeTabGenRef.current) return [];
+            if (r) resolvedChatId = Number(r);
           } catch (e) { /* ignore - continue */ }
         }
         if (!resolvedChatId && sample.chatId) resolvedChatId = Number(sample.chatId);
@@ -499,8 +538,11 @@ export default function HomeScreen() {
             if (!openedChats.current.has(resolvedChatId) && !openingChatsRef.current.has(resolvedChatId)) {
               openingChatsRef.current.add(resolvedChatId);
               try {
-                await tdCall('openChat', resolvedChatId);
-                openedChats.current.set(resolvedChatId, Date.now());
+                if (myGen !== activeTabGenRef.current) { openingChatsRef.current.delete(resolvedChatId); }
+                else {
+                  await tdCall('openChat', resolvedChatId);
+                  openedChats.current.set(resolvedChatId, Date.now());
+                }
               } catch (e) { /* ignore */ } finally { openingChatsRef.current.delete(resolvedChatId); }
             } else {
               touchOpenedChat(resolvedChatId);
@@ -508,25 +550,37 @@ export default function HomeScreen() {
           } catch (e) { /* ignore */ }
         }
 
+        // prepare stagger for this group
+        const perItemStagger = Math.floor(STAGGER_WINDOW_MS / Math.max(1, group.length));
+        group.forEach((g, idx) => { (g as any)._stagger = Math.min(STAGGER_WINDOW_MS, idx * perItemStagger || 0); });
+
         const fetched = await limitConcurrency(
           group,
           PER_GROUP_CONCURRENCY,
           async (meta) => {
+            if (myGen !== activeTabGenRef.current) return null;
             const kk = mk(meta.chatId ?? meta.channel, meta.messageId);
             const c = messageCacheRef.current.get(kk);
             if (c) return c;
             try {
+              const s = (meta as any)._stagger || Math.floor(Math.random() * STAGGER_BASE_MS);
+              if (s) await delay(s);
+
+              if (myGen !== activeTabGenRef.current) return null;
+
               let cidToUse = resolvedChatId || (meta.chatId ? Number(meta.chatId) : undefined);
               if (!cidToUse && meta.channel) {
                 try {
-                  const r2: any = await tdCall('searchPublicChat', meta.channel);
-                  const fid2 = r2?.id || r2?.chat?.id || r2?.chatId || (typeof r2 === 'number' ? r2 : undefined);
-                  if (fid2) cidToUse = Number(fid2);
+                  const r2: any = await resolveChannelToChatId(meta.channel, myGen);
+                  if (myGen !== activeTabGenRef.current) return null;
+                  if (r2) cidToUse = Number(r2);
                 } catch (e) { /* ignore */ }
               }
 
               if (cidToUse) {
+                if (myGen !== activeTabGenRef.current) return null;
                 const r: any = await tdCall('getMessage', Number(cidToUse), Number(meta.messageId));
+                if (myGen !== activeTabGenRef.current) return null;
                 const parsed = JSON.parse(r.raw);
                 const k2 = mk(parsed.chatId || cidToUse, parsed.id);
                 const stored = withUuid(parsed);
@@ -535,11 +589,14 @@ export default function HomeScreen() {
               } else {
                 return null;
               }
-            } catch (e) { return null; }
+            } catch (e) { console.warn('[loadBatch group fetch] failed', e); return null; }
           }
         );
 
         for (const f of fetched) if (f) results.push(f);
+
+        // small yield
+        await delay(0);
       }
 
       persistCachesDebounced();
@@ -563,17 +620,25 @@ export default function HomeScreen() {
         const start = idx * BATCH_SIZE;
         if (start >= datasRef.current.length) break;
         prefetchInFlightRef.current.add(key);
-        (async (batchIndex, waitMs, keyLocal) => {
+
+        // capture generation for this prefetch
+        const myGen = activeTabGenRef.current;
+        (async (batchIndex, waitMs, keyLocal, genAtStart) => {
           await delay(waitMs);
           try {
+            // abort if tab changed during wait
+            if (genAtStart !== activeTabGenRef.current) { prefetchInFlightRef.current.delete(keyLocal); return; }
             const msgs = await loadBatch(batchIndex);
+            // abort if tab changed after load
+            if (genAtStart !== activeTabGenRef.current) { prefetchInFlightRef.current.delete(keyLocal); return; }
             if (msgs && msgs.length) {
               const enriched = await ensureRepliesForMessages(msgs);
+              if (genAtStart !== activeTabGenRef.current) { prefetchInFlightRef.current.delete(keyLocal); return; }
               prefetchRef.current.set(keyLocal, enriched);
             }
           } catch (e) { /* ignore */ }
           prefetchInFlightRef.current.delete(keyLocal);
-        })(idx, i * 300, key);
+        })(idx, i * 300, key, myGen);
       }
     }, [loadBatch, ensureRepliesForMessages]
   );
@@ -1269,6 +1334,9 @@ export default function HomeScreen() {
   };
 
   const setActiveTabAndSync = useCallback((tab: string) => {
+    // bump generation so in-flight work for previous tab aborts quickly
+    activeTabGenRef.current += 1;
+
     activeTabRef.current = tab;
     setActiveTab(tab);
     prefetchRef.current.clear();

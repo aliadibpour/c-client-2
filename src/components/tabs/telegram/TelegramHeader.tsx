@@ -157,7 +157,11 @@ const TelegramHeader: React.FC<Props> = ({ onTeamChange, initialTeam, selectedSl
       // only call if different from what we already emitted / parent selectedSlug
       if (lastEmittedSlugRef.current !== slug && slug !== selectedSlug) {
         lastEmittedSlugRef.current = slug;
-        onTeamChange(slug);
+        try {
+          onTeamChange(slug);
+        } catch (err) {
+          console.warn("onTeamChange callback error", err);
+        }
       }
     }
 

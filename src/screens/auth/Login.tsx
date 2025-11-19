@@ -48,6 +48,7 @@ const LoginScreen = ({ navigation }: any) => {
     };
 
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    
 
     return () => {
       // حذف کامل لیسنر وقتی از صفحه خارج شد
@@ -258,9 +259,19 @@ const LoginScreen = ({ navigation }: any) => {
           )}
         </TouchableOpacity>
 
-        <Text style={styles.tipText}>
+        <View>
+          <Text style={styles.tipText}>
           برای دریافت کد تایید تلگرام، حتما فیلترشکن (VPN) موبایل خود را روشن کنید!
         </Text>
+        <TouchableOpacity 
+          
+          onPress={() => navigation.navigate("Privacy")} >
+          <Text
+            style={styles.privacy}>
+            حریم خصوصی
+          </Text>
+        </TouchableOpacity>
+        </View>
       </View>
 
       <ModalMessage
@@ -288,6 +299,7 @@ const styles = StyleSheet.create({
   tipText: { color: '#999', textAlign: 'left', fontSize: 14, padding:4, lineHeight: 20, fontFamily: "SFArabic-Regular" },
   Button: { backgroundColor: "#e8e8e8", alignItems: "center", height: 55, justifyContent: "center", borderRadius: 8 },
   ButtonText: { color: "#000", fontSize: 17, fontFamily: "SFArabic-Regular" },
+  privacy: {color: "#00aeffff", fontSize: 14, fontFamily: "SFArabic-Regular", textDecorationLine: 'underline', textAlign:"center"}
 });
 
 export default LoginScreen;

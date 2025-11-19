@@ -13,6 +13,7 @@ import ChannelScreen from '../screens/tabs/Channel';
 import ChannelDetailScreen from '../screens/tabs/ChannelDetail.Screen';
 import ProfileUser from '../screens/tabs/ProfileUser';
 import TdLib from 'react-native-tdlib';
+import PrivacyPolicyScreen from '../screens/auth/Privacy';
 
 const Stack = createNativeStackNavigator<any>();
 
@@ -40,6 +41,7 @@ function RootStack({ isAuth }: { isAuth: string }) {
       <Stack.Screen name="ProfileUser" component={ProfileUser} />
       <Stack.Screen name="Channel" component={ChannelScreen} />
       <Stack.Screen name="ChannelDetail" component={ChannelDetailScreen} />
+      <Stack.Screen name="Privacy" component={PrivacyPolicyScreen} />
     </Stack.Navigator>
   );
 }

@@ -39,7 +39,7 @@ export default function TelegramScreen() {
   useEffect(() => { selectedIndexRef.current = selectedIndex; }, [selectedIndex]);
 
   const latestFetchForTeamRef = useRef<string | null>(null);
-  const scrollRef = useRef<Animated.FlatList<any>>(null);
+  const scrollRef = useRef<any>(null); // Animated.FlatList ref (use any to access scrollToIndex)
   const scrollX = useRef(new Animated.Value(0)).current;
 
   // keep selectedIndex valid when teamsSlugs changes (avoid infinite loops)
@@ -91,22 +91,39 @@ export default function TelegramScreen() {
     }
   };
 
-  // header tapped -> find slug and set selectedIndex & scroll (guarded)
+  // header tapped -> find slug and set selectedIndex & scroll (guarded & robust)
   const onHeaderTeamChange = (slug: string) => {
     if (!slug) return;
     const logicalIdx = teamsSlugs.indexOf(slug);
     if (logicalIdx === -1) return;
     if (logicalIdx === selectedIndexRef.current) return;
+
+    // set selected index (so internal state aligns)
     setSelectedIndex(logicalIdx);
-    scrollRef.current?.scrollToOffset({ offset: logicalIdx * SCREEN_WIDTH, animated: true });
+
+    // fetch immediately to reduce visible loading time
+    fetchForTeam(slug);
+
+    // scroll to index robustly (try scrollToIndex first)
+    try {
+      scrollRef.current?.scrollToIndex({ index: logicalIdx, animated: true });
+    } catch (err) {
+      // fallback to offset if needed
+      try {
+        scrollRef.current?.scrollToOffset({ offset: logicalIdx * SCREEN_WIDTH, animated: true });
+      } catch {
+        // ignore if both fail
+      }
+    }
   };
 
   // viewability API for robust detection of active page (guard setState)
   const viewConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (!viewableItems || viewableItems.length === 0) return;
-    const first = viewableItems[0];
-    if (first.index == null) return;
+    // find first viewable item that has an index
+    const first = viewableItems.find((v: any) => v && v.index != null);
+    if (!first) return;
     const visualIdx = first.index;
     const logicalIdx = visualIdx; // logical === visual because teamsSlugs built from orderedPersianTeams
     if (logicalIdx !== selectedIndexRef.current) {

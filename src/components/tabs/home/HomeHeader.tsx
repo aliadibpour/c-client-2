@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
   headerContainer: {
     borderColor: "#111",
     borderBottomWidth: 0.7,
-    gap: 6,
+    gap: 0,
     paddingTop: 5,
     backgroundColor: "#000000ff",
     minHeight: 50,
@@ -144,8 +144,8 @@ const styles = StyleSheet.create({
 
   hasNewboxAbsolute:{
     position: "absolute",
-    right: 6,
-    bottom: 6,
+    left: 6,
+    top: 7,
     backgroundColor: "#fffffff6",
     paddingHorizontal:8,
     paddingVertical:4,
