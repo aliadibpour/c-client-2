@@ -11,6 +11,7 @@ import {
 import LinearGradient from 'react-native-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StepProgressBar from '../../components/auth/StepProgressBar';
+import AppText from '../../components/ui/AppText';
 
 const { width } = Dimensions.get('window');
 
@@ -120,15 +121,15 @@ export default function IntroScreen({ navigation }: any) {
           />
         )}
 
-        <View style={styles.titleContainer}>
-          <Text style={styles.title}>{slide.title}</Text>
-          <Text style={styles.text}>{slide.text}</Text>
-        </View>
+       <View style={styles.titleContainer}>
+          <AppText style={styles.title}>{slide.title}</AppText>
+          <AppText style={styles.text}>{slide.text}</AppText>
+       </View>
         <View style={styles.buttonContainer}>
           <TouchableOpacity onPress={handleNext} style={styles.button} disabled={isAnimating}>
-            <Text style={styles.buttonText}>
+            <AppText style={styles.buttonText}>
               {currentIndex === slides.length - 1 ? 'شروع' : 'بعدی'}
-            </Text>
+            </AppText>
           </TouchableOpacity>
         </View>
       </View>

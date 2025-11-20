@@ -7,6 +7,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import AppText from "../../ui/AppText";
 
 type ChannelProp = string | number | any;
 
@@ -228,13 +229,13 @@ export default function ChannelItem({
         <Image source={{ uri: avatarUri || miniAvatarUri || "" }} style={styles.avatar} />
       ) : null}
       <View style={{ flex: 1, marginRight: 8 }}>
-        <Text numberOfLines={1} style={styles.title}>
+        <AppText numberOfLines={1} style={styles.title}>
           {title || (typeof channel === "string" ? channel : "بدون عنوان")}
-        </Text>
+        </AppText>
         <View style={styles.lastRow}>
-          <Text numberOfLines={1} style={styles.lastMessage}>
+          <AppText numberOfLines={1} style={styles.lastMessage}>
             {lastMessagePreview}
-          </Text>
+          </AppText>
           {lastMsgThumbUri ? <Image source={{ uri: lastMsgThumbUri }} style={styles.lastThumb} /> : null}
         </View>
       </View>

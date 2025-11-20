@@ -7,6 +7,7 @@ import { useNavigation } from "@react-navigation/native";
 import { Eye, ReplyIcon } from "lucide-react-native";
 import { ArrowLeftIcon } from "../../../assets/icons";
 import TdLib from "react-native-tdlib";
+import AppText from "../../ui/AppText";
 
 interface ChannelMessageItemProps {
   data: any;
@@ -144,16 +145,16 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
             <TouchableOpacity style={styles.replyBox} onPress={() => clickReply(reply.id)}>
               <ReplyIcon width={18} height={18} color={`#999`} />
               <MessagePhoto photo={replyContent.photo} activeDownload={isActiveDownload} width={35} height={25} />
-              <Text numberOfLines={1} style={styles.replyText}>
+              <AppText numberOfLines={1} style={styles.replyText}>
                 {replyCaption.slice(0, 30)}
-              </Text>
+              </AppText>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity style={styles.replyBox} onPress={() => clickReply(reply.id)}>
               <ReplyIcon width={18} height={18} color={`#999`} />
-              <Text numberOfLines={1} style={styles.replyText}>
+              <AppText numberOfLines={1} style={styles.replyText}>
                 🔁 {replyText.slice(0, 30)}
-              </Text>
+              </AppText>
             </TouchableOpacity>
           )
         ) : null}
@@ -170,8 +171,8 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
           </View>
         )}
 
-        {!!captionText && <Text style={styles.text}>{captionText}</Text>}
-        {!!messageText && <Text style={styles.text}>{messageText}</Text>}
+        {!!captionText && <AppText style={styles.text}>{captionText}</AppText>}
+        {!!messageText && <AppText style={styles.text}>{messageText}</AppText>}
 
         {messageData?.interactionInfo?.reactions?.reactions?.length > 0 && (
           <MessageReactions
@@ -195,11 +196,11 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
         )}
 
         <View style={styles.footer}>
-          {authorName ? <Text style={styles.author}>{authorName}</Text> : <View />}
+          {authorName ? <AppText style={styles.author}>{authorName}</AppText> : <View />}
           <View style={styles.rightFooter}>
             <Eye size={14} color="#888" style={{ marginRight: 4 }} />
-            <Text style={styles.views}>{viewCount}</Text>
-            <Text style={styles.time}> · {timeString}</Text>
+            <AppText style={styles.views}>{viewCount}</AppText>
+            <AppText style={styles.time}> · {timeString}</AppText>
           </View>
         </View>
 
@@ -213,7 +214,7 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
             }
             style={styles.commentBox}
           >
-            <Text style={styles.commentText}>{messageData.interactionInfo.replyInfo.replyCount} کامنت</Text>
+            <AppText style={styles.commentText}>{messageData.interactionInfo.replyInfo.replyCount} کامنت</AppText>
             <ArrowLeftIcon style={{ color: "#54afff" }} width={14.5} />
           </TouchableOpacity>
         )}

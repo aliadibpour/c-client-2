@@ -16,6 +16,7 @@ import TdLib from "react-native-tdlib";
 import { fromByteArray } from "base64-js";
 import { useRoute } from "@react-navigation/native";
 import { Phone, User } from "lucide-react-native";
+import AppText from "../../components/ui/AppText";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -231,7 +232,7 @@ export default function ProfileScreen() {
 
     return (
       <View style={styles.placeholder}>
-        <Text style={styles.initial}>{profile?.firstName?.[0]?.toUpperCase() || "?"}</Text>
+        <AppText style={styles.initial}>{profile?.firstName?.[0]?.toUpperCase() || "?"}</AppText>
       </View>
     );
   };
@@ -284,7 +285,7 @@ export default function ProfileScreen() {
           />
         ) : (
           <View style={styles.placeholder}>
-            <Text style={styles.initial}>{profile?.firstName?.[0]?.toUpperCase() || "?"}</Text>
+            <AppText style={styles.initial}>{profile?.firstName?.[0]?.toUpperCase() || "?"}</AppText>
           </View>
         )}
 
@@ -350,9 +351,9 @@ export default function ProfileScreen() {
           {renderLineIndicator()}
 
           {/* name fixed on top of FlatList so it doesn't scroll */}
-          <Text style={styles.nameText} pointerEvents="none">
+          <AppText style={styles.nameText} pointerEvents="none">
             {profile?.firstName} {profile?.lastName}
-          </Text>
+          </AppText>
         </View>
       ) : (
         renderFallback()
@@ -363,10 +364,10 @@ export default function ProfileScreen() {
           <View style={{ flexDirection: "row", gap: 5, alignItems: "flex-start" }}>
             <Phone color={"#999"} width={15} />
             <View>
-              <Text style={styles.infoValue}>
+              <AppText style={styles.infoValue}>
                 {profile.phoneNumber.startsWith("+") ? profile.phoneNumber : `${profile.phoneNumber}+`}
-              </Text>
-              <Text style={styles.infoLabel}>شماره تماس</Text>
+              </AppText>
+              <AppText style={styles.infoLabel}>شماره تماس</AppText>
             </View>
           </View>
         )}
@@ -375,8 +376,8 @@ export default function ProfileScreen() {
           <View style={{ flexDirection: "row", gap: 5, alignItems: "flex-start" }}>
             <User color={"#999"} width={15} />
             <View>
-              <Text style={styles.infoValue}>@{profile.usernames.activeUsernames[0]}</Text>
-              <Text style={styles.infoLabel}>نام کاربری</Text>
+              <AppText style={styles.infoValue}>@{profile.usernames.activeUsernames[0]}</AppText>
+              <AppText style={styles.infoLabel}>نام کاربری</AppText>
             </View>
           </View>
         )}
@@ -384,10 +385,10 @@ export default function ProfileScreen() {
         {/* Bio display (try several possible field names) */}
         {(profile?.bio || profile?.about || profile?.description || profile?.aboutText) && (
           <View style={{ marginTop: 6 }}>
-            <Text style={[styles.infoValue, { fontSize: 13 }]}>
+            <AppText style={[styles.infoValue, { fontSize: 13 }]}>
               {profile?.bio || profile?.about || profile?.description || profile?.aboutText}
-            </Text>
-            <Text style={styles.infoLabel}>بیو</Text>
+            </AppText>
+            <AppText style={styles.infoLabel}>بیو</AppText>
           </View>
         )}
       </View>

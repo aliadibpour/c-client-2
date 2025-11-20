@@ -23,6 +23,7 @@ import { HeartIcon, LogoutIcon, PhoneIcon, UserIcon } from "../../assets/icons";
 import ModalMessage from "../../components/auth/ModalMessage";
 import { TelegramService } from "../../services/TelegramService";
 import RNRestart from 'react-native-restart'; 
+import AppText from "../../components/ui/AppText";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -137,7 +138,7 @@ export default function ProfileScreen({ navigation }: any) {
     if (firstLetter) {
       return (
         <View style={styles.placeholder}>
-          <Text style={styles.initial}>{firstLetter}</Text>
+          <AppText style={styles.initial}>{firstLetter}</AppText>
         </View>
       );
     }
@@ -155,10 +156,10 @@ export default function ProfileScreen({ navigation }: any) {
         <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 4 }}>
           <PhoneIcon color={"#999"} />
           <View>
-            <Text style={styles.infoValue}>
+            <AppText style={styles.infoValue}>
               {String(profile.phoneNumber).startsWith("+") ? profile.phoneNumber : `${profile.phoneNumber}+`}
-            </Text>
-            <Text style={styles.infoLabel}>شماره تماس</Text>
+            </AppText>
+            <AppText style={styles.infoLabel}>شماره تماس</AppText>
           </View>
         </View>
       )}
@@ -167,8 +168,8 @@ export default function ProfileScreen({ navigation }: any) {
         <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 4 }}>
           <UserIcon color={"#999"} />
           <View>
-            <Text style={styles.infoValue}>@{profile.usernames.activeUsernames[0]}</Text>
-            <Text style={styles.infoLabel}>نام کاربری</Text>
+            <AppText style={styles.infoValue}>@{profile.usernames.activeUsernames[0]}</AppText>
+            <AppText style={styles.infoLabel}>نام کاربری</AppText>
           </View>
         </View>
       )}
@@ -213,7 +214,7 @@ export default function ProfileScreen({ navigation }: any) {
       <View style={styles.favoritesBox}>
         <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
           <HeartIcon color={"#999"} />
-          <Text style={styles.favoritesTitle}>تیم‌های مورد علاقه</Text>
+          <AppText style={styles.favoritesTitle}>تیم‌های مورد علاقه</AppText>
         </View>
         <View style={styles.favoritesList}>
           {items.map((teamName, index) => {
@@ -221,7 +222,7 @@ export default function ProfileScreen({ navigation }: any) {
               return (
                 <TouchableOpacity key="edit" style={styles.teamItem} onPress={() => navigation.navigate("PickTeams")}>
                   <Edit2 color={"#999"} width={16} />
-                  <Text style={styles.teamName}>ویرایش</Text>
+                  <AppText style={styles.teamName}>ویرایش</AppText>
                 </TouchableOpacity>
               );
             }
@@ -233,7 +234,7 @@ export default function ProfileScreen({ navigation }: any) {
                 ) : (
                   <View style={{ width: 24, height: 24, backgroundColor: "#444", borderRadius: 6 }} />
                 )}
-                <Text numberOfLines={1} style={styles.teamName}>{teamName}</Text>
+                <AppText numberOfLines={1} style={styles.teamName}>{teamName}</AppText>
               </View>
             );
           })}
@@ -314,9 +315,9 @@ export default function ProfileScreen({ navigation }: any) {
         renderFallback()
       )}
 
-      <Text style={styles.nameText}>
+      <AppText style={styles.nameText}>
         {profile?.firstName} {profile?.lastName}
-      </Text>
+      </AppText>
 
       {renderInformation()}
       {renderFavoriteTeams()}
@@ -327,7 +328,7 @@ export default function ProfileScreen({ navigation }: any) {
           onPress={() => setLogoutModalVisible(true)}
         >
           <LogoutIcon color={"#999"} />
-          <Text style={{ fontSize: 13.5, fontFamily: "SFArabic-Regular", color: "#ddd" }}>خروج از حساب کاربری</Text>
+          <AppText style={{ fontSize: 13.5, fontFamily: "SFArabic-Regular", color: "#ddd" }}>خروج از حساب کاربری</AppText>
         </TouchableOpacity>
       </View>
 
@@ -356,7 +357,7 @@ export default function ProfileScreen({ navigation }: any) {
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingBox}>
             <ActivityIndicator size="large" color={"#ddd"} />
-            <Text style={{ color: "#fff", marginTop: 10, fontFamily: "SFArabic-Regular" }}>در حال خروج...</Text>
+            <AppText style={{ color: "#fff", marginTop: 10, fontFamily: "SFArabic-Regular" }}>در حال خروج...</AppText>
           </View>
         </View>
       )}

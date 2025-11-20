@@ -7,6 +7,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import AppText from "../../ui/AppText";
 
 interface Day {
   id: number;
@@ -60,7 +61,7 @@ const DaySelector: React.FC<Props> = ({ days, selectedIndex, onSelect, scrollX }
         borderBottomWidth:1
       }}
     >
-      <Text
+      <AppText
         style={{
           color: index === selectedIndex ? "#fff" : "#888",
           fontSize: 14,
@@ -68,7 +69,7 @@ const DaySelector: React.FC<Props> = ({ days, selectedIndex, onSelect, scrollX }
         }}
       >
         {item.title}
-      </Text>
+      </AppText>
     </Pressable>
   );
 

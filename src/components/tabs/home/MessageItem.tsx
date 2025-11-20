@@ -9,6 +9,7 @@ import MessageReactions from "./MessageReaction";
 import { ArrowLeftIcon } from "../../../assets/icons";
 import { ReplyIcon } from "lucide-react-native";
 import { normalizeReplyPreview } from "../../../hooks";
+import AppText from "../../ui/AppText";
 
 const cleanText = (text: string): string => {
   if (!text || typeof text !== "string") return "";
@@ -128,7 +129,7 @@ function MessageItem({ data, isVisible, activeDownload, chatInfo }: Props) {
         <TouchableOpacity onPress={() => handleOpenChannel(message.chatId, message.id)} activeOpacity={0.85} style={{ flex: 1 }}>
           <View style={styles.headerInner}>
             <MessageHeader chatId={message.chatId} chatInfo={chatInfo} />
-            <Text style={styles.timeInline}>{getRelativeTime(message.date)}</Text>
+            <AppText style={styles.timeInline}>{getRelativeTime(message.date)}</AppText>
           </View>
         </TouchableOpacity>
       </View>
@@ -158,7 +159,7 @@ function MessageItem({ data, isVisible, activeDownload, chatInfo }: Props) {
               />
             </View>
           ) : null }
-          <Text
+          <AppText
             numberOfLines={1}
             ellipsizeMode="tail"   // keep end of text, trim start
             style={styles.replyText}
@@ -167,14 +168,14 @@ function MessageItem({ data, isVisible, activeDownload, chatInfo }: Props) {
               getReplyPreviewText(replyMsg) || getReplyPreviewText(message.replyTo) || "",
               { charLimit: 100 }
             ) || "پاسخ به پیام"}
-          </Text>
+          </AppText>
         </TouchableOpacity>
       ) : null}
 
       {/* body */}
       <TouchableOpacity onPress={() => handleOpenChannel(message.chatId, message.id)} activeOpacity={0.9}>
-        {!!cleanedCaption && <Text style={styles.bodyText}>{cleanedCaption}</Text>}
-        {!!cleanedText && <Text style={styles.bodyText}>{cleanedText}</Text>}
+        {!!cleanedCaption && <AppText style={styles.bodyText}>{cleanedCaption}</AppText>}
+        {!!cleanedText && <AppText style={styles.bodyText}>{cleanedText}</AppText>}
         {content?.photo && (
           <View style={{marginVertical: 4}}>
             <PhotoMessage photo={content.photo} activeDownload={activeDownload} context="explore" />
@@ -205,7 +206,7 @@ function MessageItem({ data, isVisible, activeDownload, chatInfo }: Props) {
       {message.interactionInfo?.replyInfo?.replyCount > 0 && (
         <TouchableOpacity onPress={handleOpenComments}>
           <View style={styles.commentsRow}>
-            <Text style={styles.commentsText}>{message.interactionInfo.replyInfo.replyCount} کامنت</Text>
+            <AppText style={styles.commentsText}>{message.interactionInfo.replyInfo.replyCount} کامنت</AppText>
             {openingComments ? (
               <ActivityIndicator style={{ marginLeft: 2 }} size="small" color="#adadad" />
             ) : (

@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { View, Text, Image, StyleSheet, TouchableOpacity } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import TdLib from "react-native-tdlib"; // ensure this is available in your project
+import AppText from "../../ui/AppText";
 
 type ChatMeta = {
   title?: string;
@@ -143,9 +144,9 @@ function MessageHeaderInner({ chatId, chatInfo }: { chatId: number | string; cha
   return (
     <TouchableOpacity onPress={handlePress} style={styles.container}>
       <Image source={{ uri: photoUri || minithumbnailUri || undefined }} style={styles.avatar} />
-      <Text numberOfLines={1} style={styles.title}>
+      <AppText numberOfLines={1} style={styles.title}>
         {title || "کانال"}
-      </Text>
+      </AppText>
     </TouchableOpacity>
   );
 }

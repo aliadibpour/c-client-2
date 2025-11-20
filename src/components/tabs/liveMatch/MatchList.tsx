@@ -9,6 +9,7 @@ import {
   StyleSheet,
   // ImagePropertiesSourceOptions,
 } from "react-native";
+import AppText from "../../ui/AppText";
 
 interface Match {
   id?: string;
@@ -127,11 +128,11 @@ const MatchList: React.FC<Props> = ({ data }) => {
 
         {/* میزبان */}
         <View style={styles.teamContainerRight}>
-          <Text style={styles.teamText} numberOfLines={1} ellipsizeMode="tail">
+          <AppText style={styles.teamText} numberOfLines={1} ellipsizeMode="tail">
             {item.homeTeam && item.homeTeam.length > 17
               ? item.homeTeam.slice(0, 14) + "…"
               : item.homeTeam}
-          </Text>
+          </AppText>
           <Image
             source={ { uri: item.homeTeamImage ? item.homeTeamImage : "" } }
             style={styles.teamImage}
@@ -141,21 +142,21 @@ const MatchList: React.FC<Props> = ({ data }) => {
 
         {/* وسط: امتیاز و دقیقه/وضعیت */}
         <View style={styles.center}>
-          <Text style={styles.scoreText}>{toPersianDigits(score)}</Text>
+          <AppText style={styles.scoreText}>{toPersianDigits(score)}</AppText>
 
           {item.matchFinish ? (
             // اگر matchFinish یک رشته توضیحیه (مثلاً "پایان") نمایش می‌دهیم، در غیر اینصورت "پایان" فارسی
-            <Text style={styles.finishText}>
+            <AppText style={styles.finishText}>
               {typeof item.matchFinish === "string" && item.matchFinish
                 ? item.matchFinish
                 : "پایان"}
-            </Text>
+            </AppText>
           ) : item.matchAdjournment ? (
-            <Text style={styles.adjournText}>تعلیق</Text>
+            <AppText style={styles.adjournText}>تعلیق</AppText>
           ) : item.matchCancel ? (
-            <Text style={styles.cancelText}>لغو</Text>
+            <AppText style={styles.cancelText}>لغو</AppText>
           ) : displayMinutes ? (
-            <Text style={styles.minuteText}>{toPersianDigits(displayMinutes)}</Text>
+            <AppText style={styles.minuteText}>{toPersianDigits(displayMinutes)}</AppText>
           ) : (
             null
           )}
@@ -168,11 +169,11 @@ const MatchList: React.FC<Props> = ({ data }) => {
             style={styles.teamImage}
             resizeMode="cover"
           />
-          <Text style={styles.teamText} numberOfLines={1} ellipsizeMode="tail">
+          <AppText style={styles.teamText} numberOfLines={1} ellipsizeMode="tail">
             {item.awayTeam && item.awayTeam.length > 18
               ? item.awayTeam.slice(0, 14) + "…"
               : item.awayTeam}
-          </Text>
+          </AppText>
         </View>
       </View>
     );
@@ -188,9 +189,9 @@ const MatchList: React.FC<Props> = ({ data }) => {
             source={ { uri: item.leagueImage ? item.leagueImage : "" } }
             style={styles.leagueImage}
           />
-          <Text numberOfLines={1} style={styles.leagueTitle}>
+          <AppText numberOfLines={1} style={styles.leagueTitle}>
             {item.league}
-          </Text>
+          </AppText>
         </View>
 
         <FlatList

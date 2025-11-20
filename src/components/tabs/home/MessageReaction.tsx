@@ -12,6 +12,7 @@ import {
 import TdLib from "react-native-tdlib";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useIsFocused } from "@react-navigation/native";
+import AppText from "../../ui/AppText";
 
 interface Reaction {
   type: { emoji: string };
@@ -288,12 +289,12 @@ export default function MessageReactions({
             onPress={() => handleReact(reaction.type.emoji)}
             activeOpacity={0.7}
           >
-            <Text style={[styles.emoji, customStyles?.emoji]}>
+            <AppText style={[styles.emoji, customStyles?.emoji]}>
               {reaction.type.emoji}
-            </Text>
-            <Text style={[styles.count, customStyles?.count]}>
+            </AppText>
+            <AppText style={[styles.count, customStyles?.count]}>
               {formatCount(reaction.totalCount)}
-            </Text>
+            </AppText>
           </TouchableOpacity>
         );
       })}

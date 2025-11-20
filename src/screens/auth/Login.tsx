@@ -6,6 +6,7 @@ import parsePhoneNumberFromString from 'libphonenumber-js';
 import { Keyboard } from '../../components/auth/Keyboard';
 import ModalMessage from '../../components/auth/ModalMessage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import AppText from '../../components/ui/AppText';
 
 const LoginScreen = ({ navigation }: any) => {
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -234,17 +235,17 @@ const LoginScreen = ({ navigation }: any) => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>خوش آمدی👋</Text>
-      <Text style={styles.subtitle}>
+      <AppText style={styles.title}>خوش آمدی👋</AppText>
+      <AppText style={styles.subtitle}>
         شماره ای را وارد کنید که حساب فعال تلگرام داشته باشد
-      </Text>
+      </AppText>
 
       <View style={styles.inputWrapper}>
         <View style={styles.phoneContainer}>
           <View style={styles.phoneBox}>
-            <Text style={styles.phoneText}>{phoneNumber}</Text>
+            <AppText style={styles.phoneText}>{phoneNumber}</AppText>
           </View>
-          <Text style={styles.countryRow}>🇮🇷 +98</Text>
+          <AppText style={styles.countryRow}>🇮🇷 +98</AppText>
         </View>
 
         <TouchableOpacity
@@ -255,21 +256,21 @@ const LoginScreen = ({ navigation }: any) => {
           {loading ? (
             <ActivityIndicator color="#222" />
           ) : (
-            <Text style={styles.ButtonText}>ورود با تلگرام</Text>
+            <AppText style={styles.ButtonText}>ورود با تلگرام</AppText>
           )}
         </TouchableOpacity>
 
         <View>
-          <Text style={styles.tipText}>
+          <AppText style={styles.tipText}>
           برای دریافت کد تایید تلگرام، حتما فیلترشکن (VPN) موبایل خود را روشن کنید!
-        </Text>
+        </AppText>
         <TouchableOpacity 
           
           onPress={() => navigation.navigate("Privacy")} >
-          <Text
+          <AppText
             style={styles.privacy}>
             حریم خصوصی
-          </Text>
+          </AppText>
         </TouchableOpacity>
         </View>
       </View>

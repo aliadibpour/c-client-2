@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Redo } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
 import { View, Text, Image, StyleSheet, TouchableOpacity } from "react-native";
+import AppText from "../../ui/AppText";
 
 const teamRecord : { [key: string]: string } = {
   'پرسپولیس': 'perspolis',
@@ -70,9 +71,9 @@ function HomeHeaderInner({ activeTab, setActiveTab, hasNewMessage, onRefresh }: 
                   isActive && styles.activeTab,
                 ]}
               >
-                <Text style={[styles.tabText, isActive && styles.activeTabText]}>
+                <AppText style={[styles.tabText, isActive && styles.activeTabText]}>
                   {item}
-                </Text>
+                </AppText>
               </TouchableOpacity>
             );
           })
@@ -82,7 +83,7 @@ function HomeHeaderInner({ activeTab, setActiveTab, hasNewMessage, onRefresh }: 
       {/* این باکس خارج از جریانِ layout قرار گرفته تا هیچ shift ای ایجاد نکند */}
       {hasNewMessage && (
         <TouchableOpacity style={styles.hasNewboxAbsolute} onPress={() => onRefresh()}>
-          <Text style={styles.hasNewText}>جدیدترین ها</Text>
+          <AppText style={styles.hasNewText}>جدیدترین ها</AppText>
           <Redo width={15}/>
         </TouchableOpacity>
       )}
@@ -100,7 +101,7 @@ const styles = StyleSheet.create({
     borderColor: "#111",
     borderBottomWidth: 0.7,
     gap: 0,
-    paddingTop: 5,
+    paddingTop: 2,
     backgroundColor: "#000000ff",
     minHeight: 50,
     // paddingHorizontal: 8,

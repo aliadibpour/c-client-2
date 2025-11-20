@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Modal from 'react-native-modal';
+import AppText from '../ui/AppText';
 
 type Props = {
   visible: boolean;
@@ -44,17 +45,17 @@ export default function ModalMessage({
       style={styles.modal}
     >
       <View style={styles.container}>
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.message}>{errorMessage}</Text>
+        <AppText style={styles.title}>{title}</AppText>
+        <AppText style={styles.message}>{errorMessage}</AppText>
 
         <View style={styles.buttons}>
           {showNavigateOnly ? (
             <Pressable onPress={handleNavigate} style={styles.secondaryButton}>
-              <Text style={styles.secondaryText}>{navigateText}</Text>
+              <AppText style={styles.secondaryText}>{navigateText}</AppText>
             </Pressable>
           ) : (
             <Pressable onPress={onClose} style={styles.okButton}>
-              <Text style={styles.okText}>باشه</Text>
+              <AppText style={styles.okText}>باشه</AppText>
             </Pressable>
           )}
         </View>

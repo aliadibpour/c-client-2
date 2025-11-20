@@ -1,26 +1,22 @@
-// src/components/AppText.tsx
 import React from 'react';
-import { Text, TextProps, StyleSheet } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
+import { RFValue } from "react-native-responsive-fontsize";
 
-const AppText = (props: TextProps) => {
+export default function AppText({ style, children, ...rest }:any) {
+  const newStyle = [
+    style,
+    style?.fontSize ? { fontSize: RFValue(style.fontSize -1.67) } : {}
+  ];
+
   return (
-    <Text
-      {...props}
-      style={[styles.text, props.style]}
-    >
-      {props.children}
+    <Text style={[styles.text, newStyle]} {...rest}>
+      {children}
     </Text>
   );
-};
+}
 
 const styles = StyleSheet.create({
   text: {
-    fontFamily: 'SFArabic-Regular',
-    fontSize: 16,
-    color: '#ffffff',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-});
-
-export default AppText;
+    fontFamily: "SFArabic-Regular"
+  }
+})

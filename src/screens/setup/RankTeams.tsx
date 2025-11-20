@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { teamImages } from './PickTeams';
+import AppText from '../../components/ui/AppText';
 
 type TeamObj = { name?: string | null };
 
@@ -144,10 +145,10 @@ export default function RankTeamsScreen({ route, navigation }: any) {
           <Image source={imgSource} style={styles.logo} resizeMode='contain' />
         ) : (
           <View style={styles.logoPlaceholder}>
-            <Text style={styles.logoPlaceholderText}>?</Text>
+            <AppText style={styles.logoPlaceholderText}>?</AppText>
           </View>
         )}
-        <Text style={styles.teamName}>{name}</Text>
+        <AppText style={styles.teamName}>{name}</AppText>
       </TouchableOpacity>
     );
   }
@@ -164,7 +165,7 @@ export default function RankTeamsScreen({ route, navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{title}</Text>
+      <AppText style={styles.title}>{title}</AppText>
 
       <View style={styles.matchupContainer}>
         {/* If teamA or teamB are null, still render placeholders to avoid layout shift */}

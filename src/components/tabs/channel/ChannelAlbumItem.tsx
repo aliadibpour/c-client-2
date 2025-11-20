@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Eye } from "lucide-react-native";
 import MessagePhoto from "../home/MessagePhoto";
 import MessageReactions from "../home/MessageReaction";
+import AppText from "../../ui/AppText";
 
 const screenWidth = Dimensions.get("window").width;
 const PADDING = 10;
@@ -196,7 +197,7 @@ export default function ChannelAlbumItem({ data, activeDownloads }: { data: any[
       <View style={[styles.card, { width: CARD_WIDTH }]}>
         <View style={styles.albumContainer}>{renderRows()}</View>
 
-        {!!captionText && <Text style={styles.caption}>{captionText}</Text>}
+        {!!captionText && <AppText style={styles.caption}>{captionText}</AppText>}
 
         {firstMsg?.interactionInfo?.reactions?.reactions?.length > 0 && (
           <MessageReactions
@@ -220,11 +221,11 @@ export default function ChannelAlbumItem({ data, activeDownloads }: { data: any[
         )}
 
         <View style={styles.footer}>
-          {authorName ? <Text style={styles.author}>{authorName}</Text> : <View />}
+          {authorName ? <AppText style={styles.author}>{authorName}</AppText> : <View />}
           <View style={styles.rightFooter}>
             <Eye size={14} color="#888" style={{ marginRight: 4 }} />
-            <Text style={styles.views}>{viewCount}</Text>
-            <Text style={styles.time}> · {timeString}</Text>
+            <AppText style={styles.views}>{viewCount}</AppText>
+            <AppText style={styles.time}> · {timeString}</AppText>
           </View>
         </View>
       </View>

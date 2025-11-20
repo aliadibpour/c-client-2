@@ -4,6 +4,7 @@ import {
   View, Text, FlatList, TouchableOpacity,
   StyleSheet, Image, BackHandler, ToastAndroid
 } from 'react-native';
+import AppText from '../../components/ui/AppText';
 
 export const teamImages: { [key: string]: any } = {
   'پرسپولیس': require('../../assets/teams/perspolis.png'),
@@ -95,7 +96,7 @@ export default function PickTeamsScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>طرفدار کدام تیم ها هستید؟ (مهم)</Text>
+      <AppText style={styles.title}>طرفدار کدام تیم ها هستید؟ (مهم)</AppText>
 
       <FlatList
         data={favorites}
@@ -105,9 +106,9 @@ export default function PickTeamsScreen({ navigation }: any) {
         renderItem={({ item }) => (
           <View style={styles.favoriteItem}>
             <Image source={item.image} style={styles.favoriteLogo} resizeMode='contain'/>
-            <Text style={styles.favoriteText}>{item.name}</Text>
+            <AppText style={styles.favoriteText}>{item.name}</AppText>
             <TouchableOpacity onPress={() => removeTeam(item.name)} style={styles.removeBtn}>
-              <Text style={styles.removeBtnText}>✕</Text>
+              <AppText style={styles.removeBtnText}>✕</AppText>
             </TouchableOpacity>
           </View>
         )}
@@ -135,14 +136,14 @@ export default function PickTeamsScreen({ navigation }: any) {
             >
               <View style={styles.blurOverlay} />
               <Image source={item.image} style={styles.teamLogo} resizeMode='contain' />
-              <Text style={styles.teamName}>{item.name}</Text>
+              <AppText style={styles.teamName}>{item.name}</AppText>
             </TouchableOpacity>
           );
         }}
       />
 
       <TouchableOpacity style={styles.Button} onPress={handleStart}>
-        <Text style={styles.ButtonText}>تمام</Text>
+        <AppText style={styles.ButtonText}>تمام</AppText>
       </TouchableOpacity>
     </View>
   );

@@ -1,5 +1,6 @@
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Vibration } from 'react-native';
+import AppText from "../ui/AppText";
 
 export const Keyboard = ({ setState }: { setState: React.Dispatch<React.SetStateAction<string>> }) => {
     const keyboard = [
@@ -15,7 +16,7 @@ export const Keyboard = ({ setState }: { setState: React.Dispatch<React.SetState
           style={digit ? styles.keyButton : { opacity: 0, width: '30%' }}
           onPress={() => handleKeyPress(digit)}
         >
-          <Text style={styles.keyText}>{digit === 'back' ? '⌫' : digit}</Text>
+          <AppText style={styles.keyText}>{digit === 'back' ? '⌫' : digit}</AppText>
         </TouchableOpacity>
     );
 

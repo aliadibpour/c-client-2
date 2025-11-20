@@ -20,6 +20,7 @@ import { VisibilitySensor } from '@futurejj/react-native-visibility-sensor';
 import { Download, Pause, Play, X, Maximize2, Minimize2 } from "lucide-react-native";
 import { startDownload, cancelDownload, subscribeToFile } from "../../../hooks/useMediaDownloadManager";
 import { useIsFocused } from "@react-navigation/native";
+import AppText from "../../ui/AppText";
 
 // ---------- Config ----------
 const screenWidth = Dimensions.get("window").width;
@@ -577,7 +578,7 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
                 </TouchableOpacity>
 
                 <View style={styles.smallProgContainer}>
-                  <Text style={styles.smallProgText}>{progress}%</Text>
+                  <AppText style={styles.smallProgText}>{progress}%</AppText>
                 </View>
               </View>
             )}
@@ -587,7 +588,7 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
                 <TouchableOpacity style={styles.smallCircle} onPress={() => start()}>
                   <Download width={14} height={14} color="#fff" />
                 </TouchableOpacity>
-                <Text style={styles.sizeLabel}>{(size / (1024 * 1024)).toFixed(1)} MB</Text>
+                <AppText style={styles.sizeLabel}>{(size / (1024 * 1024)).toFixed(1)} MB</AppText>
               </View>
             )}
 
@@ -603,7 +604,7 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
               <View style={styles.progressBarBg}>
                 <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
               </View>
-              <Text style={styles.bottomText}>{progress}%</Text>
+              <AppText style={styles.bottomText}>{progress}%</AppText>
             </View>
           )}
 
@@ -656,7 +657,7 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
                   <View style={[styles.seekFill, { left: 0, width: `${(currentTime / Math.max(1, duration)) * 100}%` }]} />
                 </View>
               </Pressable>
-              <Text style={styles.timeText}>{formatTime(currentTime)} / {formatTime(duration)}</Text>
+              <AppText style={styles.timeText}>{formatTime(currentTime)} / {formatTime(duration)}</AppText>
             </View>
 
             <TouchableOpacity onPress={() => { if (!isFullscreen) openFullscreen(); else closeFullscreen(); }} style={styles.fullscreenBtn}>
@@ -712,7 +713,7 @@ export default function MessageVideo({ video, context = "channel", activeDownloa
                             <View style={[styles.seekFill, { left: 0, width: `${(currentTime / Math.max(1, duration)) * 100}%` }]} />
                           </View>
                         </Pressable>
-                        <Text style={styles.timeText}>{formatTime(currentTime)} / {formatTime(duration)}</Text>
+                        <AppText style={styles.timeText}>{formatTime(currentTime)} / {formatTime(duration)}</AppText>
                       </View>
 
                       <TouchableOpacity onPress={closeFullscreen} style={styles.fullscreenBtn}>

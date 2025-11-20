@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, Image, StyleSheet, Dimensions, TouchableWithoutFeedback, Text } from "react-native";
+import AppText from "../../ui/AppText";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -30,9 +31,9 @@ export function ProfilePhotoItem({ uri, index, profile, goNext, goPrevious }:any
         <View style={styles.touchLeft} />
       </TouchableWithoutFeedback>
 
-      <Text style={styles.nameText}>
+      <AppText style={styles.nameText}>
         {profile?.firstName} {profile?.lastName}
-      </Text>
+      </AppText>
     </View>
   );
 }

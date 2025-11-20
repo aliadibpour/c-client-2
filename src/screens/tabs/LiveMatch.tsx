@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import io from "socket.io-client";
 import DaySelector from "../../components/tabs/liveMatch/DaySelector";
 import MatchList from "../../components/tabs/liveMatch/MatchList";
+import AppText from "../../components/ui/AppText";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -347,7 +348,7 @@ export default function LiveMatchScreen() {
           if (Array.isArray(matches) && matches.length === 0) {
             return (
               <View style={{ width: SCREEN_WIDTH }}>
-                <Text style={styles.text}>هیچ بازی‌ای یافت نشد</Text>
+                <AppText style={styles.text}>هیچ بازی‌ای یافت نشد</AppText>
               </View>
             );
           }

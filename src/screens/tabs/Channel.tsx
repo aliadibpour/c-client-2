@@ -23,6 +23,7 @@ import ChannelAlbumItem from "../../components/tabs/channel/ChannelAlbumItem";
 import { useFocusEffect } from "@react-navigation/native";
 import { getChat, getChatHistory, TelegramService } from "../../services/TelegramService";
 import uuid from 'react-native-uuid';
+import AppText from "../../components/ui/AppText";
 
 const { width, height } = Dimensions.get("window");
 
@@ -573,9 +574,9 @@ export default function ChannelScreen({ route }: any) {
 
       <View style={styles.stickyFooter}>
         <TouchableOpacity onPress={subscribe}>
-          <Text style={isMember == true ? styles.leaveText : styles.joinText}>
+          <AppText style={isMember == true ? styles.leaveText : styles.joinText}>
             {isMember == "loading" ? <ActivityIndicator color="#888" /> : isMember ? "ترک کانال" : "عضویت"}
-          </Text>
+          </AppText>
         </TouchableOpacity>
       </View>
     </ImageBackground>

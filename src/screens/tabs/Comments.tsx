@@ -31,6 +31,7 @@ import { FlashList, FlashListRef } from "@shopify/flash-list";
 import Composer from "../../components/tabs/comments/CommentsKeyboard";
 import CommentItem from "../../components/tabs/comments/CommentItem";
 import   Animated,{ FadeInDown, FadeOutDown } from "react-native-reanimated";
+import AppText from "../../components/ui/AppText";
 
 type commentStateType = {comments:any[], start: number, end: number}
 export default function Comments() {
@@ -1116,7 +1117,7 @@ const handleSend = async (textToSend: string) => {
             <TouchableOpacity onPress={() => navigation.goBack()}>
               <ArrowLeft color="#fff" size={22} />
             </TouchableOpacity>
-            {commentsCount ? <Text style={styles.headerTitle}>{commentsCount} کامنت</Text>: null}
+            {commentsCount ? <AppText style={styles.headerTitle}>{commentsCount} کامنت</AppText>: null}
             <View style={{ width: 22 }} />
           </View>
 
@@ -1184,14 +1185,14 @@ const handleSend = async (textToSend: string) => {
               }}
             >
               <Reply color="#aaa" width={18} />
-              <Text 
+              <AppText 
                 numberOfLines={1} 
                 style={{ color: "#aaa", marginLeft: 6, flex: 1, fontFamily: "SFArabic-Regular", fontSize: 12.7 }}
               >
                 {replyingTo?.content?.text?.text || "بدون متن"}
-              </Text>
+              </AppText>
               <TouchableOpacity onPress={() => setReplyingTo(null)}>
-                <Text style={{ color: "#aaa", padding: 6 }}>✕</Text>
+                <AppText style={{ color: "#aaa", padding: 6 }}>✕</AppText>
               </TouchableOpacity>
             </Animated.View>
             )}

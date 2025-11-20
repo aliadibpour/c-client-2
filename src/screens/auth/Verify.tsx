@@ -11,6 +11,7 @@ import { Keyboard } from '../../components/auth/Keyboard';
 import { TelegramService } from '../../services/TelegramService';
 import { RouteProp, useRoute } from '@react-navigation/native';
 import ModalMessage from '../../components/auth/ModalMessage';
+import AppText from '../../components/ui/AppText';
 
 
 const CELL_COUNT = 5;
@@ -185,8 +186,8 @@ export default function VerifyScreen({ navigation }: any) {
 
   return (
     <View style={[styles.container, { paddingHorizontal: width * 0.08 }]}>
-      <Text style={styles.title}>برنامه تلگرامتون رو چک کنید</Text>
-      <Text style={styles.description}>{`ما کد رو فرستادیم به برنامه تلگرام با شماره ی ${phoneNumber ?? ''}`}</Text>
+      <AppText style={styles.title}>برنامه تلگرامتون رو چک کنید</AppText>
+      <AppText style={styles.description}>{`ما کد رو فرستادیم به برنامه تلگرام با شماره ی ${phoneNumber ?? ''}`}</AppText>
 
       <CodeField
         ref={ref}
@@ -213,9 +214,9 @@ export default function VerifyScreen({ navigation }: any) {
 
           return (
             <View key={index} style={cellStyle} onLayout={getCellOnLayoutHandler(index)}>
-              <Text style={styles.cellText}>
+              <AppText style={styles.cellText}>
                 {symbol || (isFocused ? <Cursor /> : null)}
-              </Text>
+              </AppText>
             </View>
           );
         }}
@@ -231,7 +232,7 @@ export default function VerifyScreen({ navigation }: any) {
       />
 
       <TouchableOpacity onPress={() => editNumber()}>
-        <Text style={styles.editNumber}>ویرایش شماره تلفن</Text>
+        <AppText style={styles.editNumber}>ویرایش شماره تلفن</AppText>
       </TouchableOpacity>
 
       <Keyboard setState={setValue} />

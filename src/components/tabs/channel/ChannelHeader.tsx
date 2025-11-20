@@ -12,6 +12,7 @@ import TdLib from "react-native-tdlib";
 import { Buffer } from "buffer";
 import { useNavigation } from "@react-navigation/native";
 import { ArrowLeft } from "lucide-react-native";
+import AppText from "../../ui/AppText";
 
 const { width } = Dimensions.get("window");
 
@@ -79,11 +80,11 @@ export default function ChannelHeader({ chatId, chatInfo, superGroupeInfo }: { c
 
         {/* 📝 عنوان و اعضا */}
         <View style={styles.textContainer}>
-          <Text numberOfLines={1} style={styles.title}>{title}</Text>
+          <AppText numberOfLines={1} style={styles.title}>{title}</AppText>
           {memberCount !== null && (
-            <Text style={styles.members}>
+            <AppText style={styles.members}>
               {memberCount} عضو
-            </Text>
+            </AppText>
           )}
         </View>
       </TouchableOpacity>

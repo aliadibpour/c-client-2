@@ -11,6 +11,7 @@ import {
   StatusBar,
   ListRenderItem,
 } from "react-native";
+import AppText from "../../ui/AppText";
 
 export const teamRecord: Record<string, string> = {
   'پرسپولیس': 'perspolis',
@@ -208,7 +209,7 @@ const TelegramHeader: React.FC<Props> = ({ onTeamChange, initialTeam, selectedSl
     const isActive = activeTab === item;
     return (
       <TouchableOpacity onPress={() => setActiveTab(item)} style={[styles.tabItem, isActive && styles.activeTab]}>
-        <Text style={[styles.tabText, isActive && styles.activeTabText]}>{item}</Text>
+        <AppText style={[styles.tabText, isActive && styles.activeTabText]}>{item}</AppText>
       </TouchableOpacity>
     );
   };

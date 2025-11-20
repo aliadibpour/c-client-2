@@ -14,6 +14,7 @@ import MessageReactions from "../home/MessageReaction";
 import { Easing } from "react-native";
 import { Reply } from "../../../assets/icons";
 import { Check, CheckCheck, Clock } from "lucide-react-native";
+import AppText from "../../ui/AppText";
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -205,7 +206,7 @@ export default function CommentItem({
                 { backgroundColor: getAvatarColor(user?.id ?? firstLetter) },
               ]}
             >
-              <Text style={{ color: "#fff", fontWeight: "bold" }}>{firstLetter}</Text>
+              <AppText style={{ color: "#fff", fontWeight: "bold" }}>{firstLetter}</AppText>
             </View>
           </TouchableOpacity>
         )
@@ -220,7 +221,7 @@ export default function CommentItem({
         onPress={isPressable ? () => setShowDelete(false) : undefined}
         style={[styles.bubble, bubbleAnimatedStyle]}
       >
-        {name ? <Text style={styles.username}>{name}</Text> : null}
+        {name ? <AppText style={styles.username}>{name}</AppText> : null}
 
         {item.replyInfo && (
           <TouchableOpacity
@@ -234,21 +235,21 @@ export default function CommentItem({
             disabled={item.replyInfo?.isTransient === true}
           >
             <Reply width={19} color={"#999"} style={{ position: "relative", bottom: 3 }} />
-            <Text numberOfLines={1} style={styles.replyText}>
+            <AppText numberOfLines={1} style={styles.replyText}>
               {item.replyInfo?.content?.text?.text?.trim?.() ?? ""}
-            </Text>
+            </AppText>
           </TouchableOpacity>
         )}
 
-        <Text style={styles.commentText}>{item?.content?.text?.text || "بدون متن"}</Text>
+        <AppText style={styles.commentText}>{item?.content?.text?.text || "بدون متن"}</AppText>
 
-        <Text style={styles.timeText} numberOfLines={1}>
+        <AppText style={styles.timeText} numberOfLines={1}>
           {new Date((item.date ?? 0) * 1000).toLocaleTimeString("EN", {
             hour: "2-digit",
             minute: "2-digit",
             hour12: false,
           })}
-        </Text>
+        </AppText>
 
         {isUser === true ? (
           item.status === "sent" ? (
@@ -296,7 +297,7 @@ export default function CommentItem({
           {showDelete ? (
             <TouchableOpacity onPress={handleDeletePress}>
               <View>
-                <Text style={{ color: "#eaeaeaff", fontSize: 13, fontWeight: "700" }}>✕</Text>
+                <AppText style={{ color: "#eaeaeaff", fontSize: 13, fontWeight: "700" }}>✕</AppText>
               </View>
             </TouchableOpacity>
           ) : (

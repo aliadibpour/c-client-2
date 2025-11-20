@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import AppText from '../ui/AppText';
 
 type StepProgressBarProps = {
   currentStep: number;
@@ -15,9 +16,9 @@ const StepProgressBar = ({ currentStep, totalSteps }: StepProgressBarProps) => {
         <View style={styles.progressBackground}>
           <View style={[styles.progressBar, { width: `${progress}%` }]} />
         </View>
-        <Text style={styles.label}>
+        <AppText style={styles.label}>
           {currentStep} / {totalSteps}
-        </Text>
+        </AppText>
       </View>
     </View>
   );

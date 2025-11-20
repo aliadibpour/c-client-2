@@ -10,6 +10,7 @@ import {
   BackHandler,
 } from 'react-native';
 import { Emoji, EmojiIcon, SendIcon } from '../../../assets/icons';
+import AppText from '../../ui/AppText';
 
 // --- Tiny emoji set (extend as needed). You can swap with a full picker later.
 const EMOJI = (
@@ -163,7 +164,7 @@ export default function Composer({
               accessibilityRole="button"
               accessibilityLabel={`ایموجی ${e}`}
             >
-              <Text style={styles.emoji}>{e}</Text>
+              <AppText style={styles.emoji}>{e}</AppText>
             </TouchableOpacity>
           ))}
         </View>
