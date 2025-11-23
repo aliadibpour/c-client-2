@@ -27,7 +27,7 @@ const BATCH_SIZE = 5;
 const MAX_PREFETCH_BATCHES = 2;
 const PER_GROUP_CONCURRENCY = 3; // used inside loadBatch for group concurrency
 const TD_CONCURRENCY = 6; // global limit for TdLib calls
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 2200;
 const MAX_OPENED_CHATS = 12; // LRU cap for opened chats
 
 // Warmup config (tune for your app; keep small for best UX)
@@ -165,6 +165,17 @@ export default function HomeScreen() {
   const searchPublicChatPromiseRef = useRef<Map<string, Promise<number | null>>>(new Map());
   const STAGGER_BASE_MS = 30;
   const STAGGER_WINDOW_MS = 120;
+
+  // adaptive throttle for tab switches (milliseconds)
+  const ADAPTIVE_THROTTLE_MS = 2000; // tune: for how long after tab switch we throttle harder
+  const ADAPTIVE_STAGGER_MULTIPLIER = 4; // multiply stagger window when throttled
+  const ADAPTIVE_CONCURRENCY_REDUCTION = 2; // reduce per-group concurrency when throttled
+  const adaptiveThrottleUntilRef = useRef<number>(0);
+
+  // --- New: search rate-limit (sliding window)
+  const SEARCH_LIMIT = 10;
+  const SEARCH_WINDOW_MS = 10_000; // 10 seconds
+  const searchTimestampsRef = useRef<number[]>([]); // oldest-first
 
   // ------------------
   // Stable tdEnqueue + tdCall with extra logging
@@ -467,23 +478,78 @@ export default function HomeScreen() {
   );
 
   // ------------------
-  // New helper: resolveChannelToChatId with in-flight promise cache (prevent duplicate searchPublicChat)
+  // Rate-limited searchPublicChat controller (sliding window + promise coalescing)
   // ------------------
+  async function waitForSearchSlot() {
+    while (true) {
+      const now = Date.now();
+      const arr = searchTimestampsRef.current;
+
+      // prune old entries (older than window)
+      while (arr.length > 0 && arr[0] <= now - SEARCH_WINDOW_MS) {
+        arr.shift();
+      }
+
+      if (arr.length < SEARCH_LIMIT) {
+        // immediate grant: push timestamp synchronously (atomic w.r.t. other JS tasks)
+        arr.push(now);
+        return;
+      }
+
+      // full -> compute sleep time until the oldest timestamp falls out of window
+      const waitMs = Math.max(0, (arr[0] + SEARCH_WINDOW_MS) - now);
+      const jitter = Math.floor(Math.random() * 120);
+      await delay(waitMs + jitter);
+      // loop and re-check
+    }
+  }
+
+  // Replace previous resolveChannelToChatId with this rate-limited version.
+  // It also keeps the in-flight promise cache (searchPublicChatPromiseRef) so parallel callers for same channel reuse.
   async function resolveChannelToChatId(channel: string, genAtCall: number): Promise<number | null> {
     if (!channel) return null;
+
+    // reuse in-flight promise if present
     const existing = searchPublicChatPromiseRef.current.get(channel);
     if (existing) return existing;
+
     const p = (async () => {
       try {
+        // abort early if generation changed
         if (genAtCall !== activeTabGenRef.current) return null;
-        const r: any = await tdCall('searchPublicChat', channel).catch(() => null);
+
+        // Wait for an allowed slot in the last SEARCH_WINDOW_MS window (max SEARCH_LIMIT calls).
+        await waitForSearchSlot();
+
+        // generation re-check to avoid doing work if tab changed while waiting
         if (genAtCall !== activeTabGenRef.current) return null;
+
+        // perform the actual tdCall
+        const r: any = await tdCall('searchPublicChat', channel).catch((e:any) => {
+          // best-effort: if server returns FloodWait / retry_after, extend adaptive throttle
+          try {
+            // TDLib error objects vary; try extracting common fields
+            const retry = (e && (e.retry_after || e.retry_after_seconds || (e.message && e.message.match && e.message.match(/retry_after[:=]\s*(\d+)/i)?.[1]))) ?? null;
+            const retrySec = retry ? Number(retry) : null;
+            if (retrySec && !Number.isNaN(retrySec)) {
+              const until = Date.now() + retrySec * 1000;
+              adaptiveThrottleUntilRef.current = Math.max(adaptiveThrottleUntilRef.current, until);
+              console.warn('[resolveChannelToChatId] observed retry_after, setting adaptiveThrottleUntil to', adaptiveThrottleUntilRef.current);
+            }
+          } catch (_err) {}
+          return null;
+        });
+
+        if (genAtCall !== activeTabGenRef.current) return null;
+
         const fid = r?.id || r?.chat?.id || r?.chatId || (typeof r === 'number' ? r : undefined);
         return fid ? Number(fid) : null;
       } finally {
+        // remove the promise entry after resolved so future lookups can retry
         setTimeout(() => { searchPublicChatPromiseRef.current.delete(channel); }, 0);
       }
     })();
+
     searchPublicChatPromiseRef.current.set(channel, p);
     return p;
   }
@@ -492,6 +558,11 @@ export default function HomeScreen() {
   const loadBatch = useCallback(
     async (batchIdx: number) => {
       const myGen = activeTabGenRef.current;
+      const now = Date.now();
+      const isThrottled = adaptiveThrottleUntilRef.current > now;
+      const effectiveStaggerWindow = isThrottled ? STAGGER_WINDOW_MS * ADAPTIVE_STAGGER_MULTIPLIER : STAGGER_WINDOW_MS;
+      const effectivePerGroupConcurrency = isThrottled ? Math.max(1, PER_GROUP_CONCURRENCY - ADAPTIVE_CONCURRENCY_REDUCTION) : PER_GROUP_CONCURRENCY;
+
       const start = batchIdx * BATCH_SIZE;
       const metas = datasRef.current.slice(start, start + BATCH_SIZE);
       if (!metas.length) return [];
@@ -550,13 +621,13 @@ export default function HomeScreen() {
           } catch (e) { /* ignore */ }
         }
 
-        // prepare stagger for this group
-        const perItemStagger = Math.floor(STAGGER_WINDOW_MS / Math.max(1, group.length));
-        group.forEach((g, idx) => { (g as any)._stagger = Math.min(STAGGER_WINDOW_MS, idx * perItemStagger || 0); });
+        // prepare stagger for this group using effectiveStaggerWindow
+        const perItemStagger = Math.floor(effectiveStaggerWindow / Math.max(1, group.length));
+        group.forEach((g, idx) => { (g as any)._stagger = Math.min(effectiveStaggerWindow, idx * perItemStagger || 0); });
 
         const fetched = await limitConcurrency(
           group,
-          PER_GROUP_CONCURRENCY,
+          effectivePerGroupConcurrency,
           async (meta) => {
             if (myGen !== activeTabGenRef.current) return null;
             const kk = mk(meta.chatId ?? meta.channel, meta.messageId);
@@ -1336,6 +1407,9 @@ export default function HomeScreen() {
   const setActiveTabAndSync = useCallback((tab: string) => {
     // bump generation so in-flight work for previous tab aborts quickly
     activeTabGenRef.current += 1;
+    // --- NEW: enable short adaptive throttle window to avoid big bursts right after tab switch
+    adaptiveThrottleUntilRef.current = Date.now() + ADAPTIVE_THROTTLE_MS;
+    console.log('[setActiveTabAndSync] bumped gen & activated adaptive throttle until', adaptiveThrottleUntilRef.current);
 
     activeTabRef.current = tab;
     setActiveTab(tab);
