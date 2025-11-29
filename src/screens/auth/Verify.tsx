@@ -1,5 +1,5 @@
 // VerifyScreen.tsx
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator, Alert, useWindowDimensions, ToastAndroid, BackHandler, TouchableOpacity,
 } from 'react-native';
@@ -9,7 +9,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Keyboard } from '../../components/auth/Keyboard';
 import { TelegramService } from '../../services/TelegramService';
-import { RouteProp, useRoute } from '@react-navigation/native';
+import { RouteProp, useFocusEffect, useRoute } from '@react-navigation/native';
 import ModalMessage from '../../components/auth/ModalMessage';
 import AppText from '../../components/ui/AppText';
 
@@ -46,20 +46,21 @@ export default function VerifyScreen({ navigation }: any) {
   const { width } = useWindowDimensions();
 
   const backPressCount = useRef(0);
-  useEffect(() => {
-    const backAction = () => {
-      // فقط یک بار فشار -> خارج شدن از اپ
-      BackHandler.exitApp();
-      return true;
-    };
+  useFocusEffect(
+    useCallback(() => {
+      const backAction = () => {
+        // فقط یک بار فشار -> خارج شدن از اپ
+        BackHandler.exitApp();
+        return true;
+      };
 
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+      const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
 
-    return () => {
-      // حذف کامل لیسنر وقتی از صفحه خارج شد
-      backHandler.remove();
-    };
-  }, []);
+      return () => {
+        backHandler.remove();
+      };
+    }, [])
+  );
 
   // Prevent duplicate submissions
   const submitLockRef = useRef(false);
@@ -245,7 +246,7 @@ export default function VerifyScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   title: { fontSize: 24, fontFamily: "SFArabic-Regular", color: '#fff', textAlign: 'center', marginBottom:8, marginTop: 95 },
-  description: { fontSize: 15, lineHeight: 24, color: '#aaa', textAlign: 'center', marginBottom: 22, fontFamily: "SFArabic-Regular" },
+  description: { fontSize: 14.5, lineHeight: 24, color: '#aaa', textAlign: 'center', marginBottom: 22, fontFamily: "SFArabic-Regular" },
   codeFieldRoot: { justifyContent: "center", flexDirection: 'row', gap: 12, direction: "ltr" },
   cell: { width: 39, height: 39, borderRadius: 5, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center', backgroundColor: '#333', borderColor: '#333' },
   filledCell: { borderColor: '#444' },

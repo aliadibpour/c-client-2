@@ -27,8 +27,8 @@ const BATCH_SIZE = 5;
 const MAX_PREFETCH_BATCHES = 2;
 const PER_GROUP_CONCURRENCY = 3; // used inside loadBatch for group concurrency
 const TD_CONCURRENCY = 6; // global limit for TdLib calls
-const POLL_INTERVAL_MS = 2200;
-const MAX_OPENED_CHATS = 12; // LRU cap for opened chats
+const POLL_INTERVAL_MS = 2400;
+const MAX_OPENED_CHATS = 15; // LRU cap for opened chats (increased per your note about session caching)
 
 // Warmup config (tune for your app; keep small for best UX)
 const TD_WARMUP_ENABLED = true;
@@ -173,9 +173,14 @@ export default function HomeScreen() {
   const adaptiveThrottleUntilRef = useRef<number>(0);
 
   // --- New: search rate-limit (sliding window)
-  const SEARCH_LIMIT = 10;
+  const SEARCH_LIMIT = 7;
   const SEARCH_WINDOW_MS = 10_000; // 10 seconds
   const searchTimestampsRef = useRef<number[]>([]); // oldest-first
+
+  // --- New: recent-search cache (remember last N channel lookups to avoid re-search)
+  const RECENT_SEARCH_LIMIT = 60;
+  const recentSearchCacheRef = useRef<Map<string, number | null>>(new Map()); // channel -> chatId|null
+  const recentSearchOrderRef = useRef<string[]>([]); // oldest-first
 
   // ------------------
   // Stable tdEnqueue + tdCall with extra logging
@@ -184,10 +189,8 @@ export default function HomeScreen() {
     return new Promise<any>((resolve, reject) => {
       const run = async () => {
         tdActiveCountRef.current += 1;
-        //console.log(`[tdEnqueue] start active=${tdActiveCountRef.current} queueLen=${tdQueueRef.current.length} timeoutMs=${opts.timeoutMs}`);
         try {
           const r = await promiseTimeout(fn(), opts.timeoutMs);
-          //console.log('[tdEnqueue] resolved, active now=', tdActiveCountRef.current);
           resolve(r);
         } catch (err) {
           console.warn('[tdEnqueue] error', err);
@@ -198,7 +201,6 @@ export default function HomeScreen() {
           if (next) {
             try { next(); } catch (e) { console.warn('[tdEnqueue] next() failed', e); }
           }
-          //console.log('[tdEnqueue] done active=', tdActiveCountRef.current, 'queueLen=', tdQueueRef.current.length);
         }
       };
 
@@ -214,9 +216,7 @@ export default function HomeScreen() {
     async (method: string, ...args: any[]) => {
       const attemptCall = async (retries = 2): Promise<any> => {
         try {
-          //console.log(`[tdCall] calling ${method} args=${JSON.stringify(args)} retriesLeft=${retries}`);
           const res = await (TdLib as any)[method](...args);
-          //console.log(`[tdCall] ${method} succeeded`);
           return res;
         } catch (err) {
           console.warn(`[tdCall] ${method} failed, retries=${retries}`, err);
@@ -278,7 +278,7 @@ export default function HomeScreen() {
   const fetchFeedInitial = useCallback(
     (tab: string, uuid: string, ts: number) => {
       const url =
-        `https://cornerlive.ir:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${encodeURIComponent(uuid)}` +
+        `https://cornerlive.ir/feed-message?team=${encodeURIComponent(tab)}&uuid=${encodeURIComponent(uuid)}` +
         `&activeTab=${encodeURIComponent(tab)}&timestamp=${ts.toString()}`;
       return fetchWithRetry(url, { retries: 3, timeout: 8000, backoffBase: 400, fetchOptions: {} });
     }, []);
@@ -286,7 +286,7 @@ export default function HomeScreen() {
   const fetchFeedMore = useCallback(
     (tab: string, uuid: string, ts: number) => {
       const url =
-        `https://cornerlive.ir:9000/feed-message?team=${encodeURIComponent(tab)}&uuid=${encodeURIComponent(uuid)}` +
+        `https://cornerlive.ir/feed-message?team=${encodeURIComponent(tab)}&uuid=${encodeURIComponent(uuid)}` +
         `&activeTab=${encodeURIComponent(tab)}&timestamp=${ts.toString()}`;
       return fetchWithRetry(url, { retries: 2, timeout: 7000, backoffBase: 300, fetchOptions: {} });
     }, []);
@@ -336,9 +336,6 @@ export default function HomeScreen() {
     if (!msg || typeof msg !== "object") return msg;
     if (msg.__uuid) return msg;
 
-    // DO NOT coerce IDs to Number here — keep strings to avoid precision loss.
-    // If numeric conversion is required for tdCall, convert at call-site only.
-
     if (msg.chatId != null && msg.id != null) {
       const uu = `${msg.chatId}-${msg.id}`;
       return { ...msg, __uuid: uu };
@@ -368,11 +365,11 @@ export default function HomeScreen() {
   const touchOpenedChat = useCallback((chatId: number) => {
     openedChats.current.delete(chatId);
     openedChats.current.set(chatId, Date.now());
+    // if openedChats grows beyond MAX_OPENED_CHATS, close oldest
     while (openedChats.current.size > MAX_OPENED_CHATS) {
       const firstKey = openedChats.current.keys().next().value;
       if (firstKey !== undefined) {
         const removing = firstKey;
-        // close in background with tdEnqueue to avoid blocking
         tdCall("closeChat", removing).catch((e: any) => console.warn('[touchOpenedChat] closeChat failed', e));
         openedChats.current.delete(removing);
       } else break;
@@ -479,6 +476,7 @@ export default function HomeScreen() {
 
   // ------------------
   // Rate-limited searchPublicChat controller (sliding window + promise coalescing)
+  // and recent-search cache to avoid repeating same channel lookups
   // ------------------
   async function waitForSearchSlot() {
     while (true) {
@@ -504,12 +502,37 @@ export default function HomeScreen() {
     }
   }
 
-  // Replace previous resolveChannelToChatId with this rate-limited version.
-  // It also keeps the in-flight promise cache (searchPublicChatPromiseRef) so parallel callers for same channel reuse.
+  function addToRecentSearch(channel: string, chatId: number | null) {
+    try {
+      const map = recentSearchCacheRef.current;
+      const order = recentSearchOrderRef.current;
+      if (map.has(channel)) {
+        // move to newest: remove existing from order
+        const idx = order.indexOf(channel);
+        if (idx !== -1) order.splice(idx, 1);
+      }
+      order.push(channel);
+      map.set(channel, chatId);
+      // trim
+      while (order.length > RECENT_SEARCH_LIMIT) {
+        const oldest = order.shift();
+        if (oldest) map.delete(oldest);
+      }
+    } catch (e) {
+      // no-op on failure
+    }
+  }
+
+  // Replace previous resolveChannelToChatId with this rate-limited + cached version.
   async function resolveChannelToChatId(channel: string, genAtCall: number): Promise<number | null> {
     if (!channel) return null;
 
-    // reuse in-flight promise if present
+    // 1) check recent-search cache first
+    if (recentSearchCacheRef.current.has(channel)) {
+      return recentSearchCacheRef.current.get(channel) ?? null;
+    }
+
+    // 2) reuse in-flight promise if present
     const existing = searchPublicChatPromiseRef.current.get(channel);
     if (existing) return existing;
 
@@ -528,7 +551,6 @@ export default function HomeScreen() {
         const r: any = await tdCall('searchPublicChat', channel).catch((e:any) => {
           // best-effort: if server returns FloodWait / retry_after, extend adaptive throttle
           try {
-            // TDLib error objects vary; try extracting common fields
             const retry = (e && (e.retry_after || e.retry_after_seconds || (e.message && e.message.match && e.message.match(/retry_after[:=]\s*(\d+)/i)?.[1]))) ?? null;
             const retrySec = retry ? Number(retry) : null;
             if (retrySec && !Number.isNaN(retrySec)) {
@@ -543,9 +565,14 @@ export default function HomeScreen() {
         if (genAtCall !== activeTabGenRef.current) return null;
 
         const fid = r?.id || r?.chat?.id || r?.chatId || (typeof r === 'number' ? r : undefined);
-        return fid ? Number(fid) : null;
+        const fidNum = fid ? Number(fid) : null;
+
+        // store into recent cache (even null -> avoid repeated failing lookups)
+        addToRecentSearch(channel, fidNum);
+
+        return fidNum;
       } finally {
-        // remove the promise entry after resolved so future lookups can retry
+        // remove the promise entry after resolved so future lookups can retry after cache policy
         setTimeout(() => { searchPublicChatPromiseRef.current.delete(channel); }, 0);
       }
     })();
@@ -597,9 +624,15 @@ export default function HomeScreen() {
         // attempt to resolve chat id once per group (non-blocking if fails)
         if (sample.channel) {
           try {
-            const r: any = await resolveChannelToChatId(sample.channel, myGen);
-            if (myGen !== activeTabGenRef.current) return [];
-            if (r) resolvedChatId = Number(r);
+            // check recent-search cache first (fast, avoids queueing)
+            if (recentSearchCacheRef.current.has(sample.channel)) {
+              const cached = recentSearchCacheRef.current.get(sample.channel);
+              if (cached) resolvedChatId = Number(cached);
+            } else {
+              const r: any = await resolveChannelToChatId(sample.channel, myGen);
+              if (myGen !== activeTabGenRef.current) return [];
+              if (r) resolvedChatId = Number(r);
+            }
           } catch (e) { /* ignore - continue */ }
         }
         if (!resolvedChatId && sample.chatId) resolvedChatId = Number(sample.chatId);
@@ -642,9 +675,15 @@ export default function HomeScreen() {
               let cidToUse = resolvedChatId || (meta.chatId ? Number(meta.chatId) : undefined);
               if (!cidToUse && meta.channel) {
                 try {
-                  const r2: any = await resolveChannelToChatId(meta.channel, myGen);
-                  if (myGen !== activeTabGenRef.current) return null;
-                  if (r2) cidToUse = Number(r2);
+                  // check recent cache before queuing search
+                  if (recentSearchCacheRef.current.has(meta.channel)) {
+                    const cached = recentSearchCacheRef.current.get(meta.channel);
+                    if (cached) cidToUse = Number(cached);
+                  } else {
+                    const r2: any = await resolveChannelToChatId(meta.channel, myGen);
+                    if (myGen !== activeTabGenRef.current) return null;
+                    if (r2) cidToUse = Number(r2);
+                  }
                 } catch (e) { /* ignore */ }
               }
 
@@ -799,7 +838,7 @@ export default function HomeScreen() {
       params.append("uuid", parsed.uuid);
       ids.forEach((id) => params.append("messageIds", id));
       params.append("activeTab", currentTab);
-      await fetch(`https://cornerlive.ir:9000/feed-message/seen-message?${params.toString()}`, {
+      await fetch(`https://cornerlive.ir/feed-message/seen-message?${params.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -810,7 +849,7 @@ export default function HomeScreen() {
 
     try {
       if ((Date.now() / 1000) - timestamp < 3 * 60 || batchIdx < 4) return;
-      const newMessages = await fetch(`https://cornerlive.ir:9000/feed-message/new-messages?timestamp=${timestamp}&team=${currentTab}`)
+      const newMessages = await fetch(`https://cornerlive.ir/feed-message/new-messages?timestamp=${timestamp}&team=${currentTab}`)
       const hasNewMessage = await newMessages.json();
       if (newMessages) setHasNewMessage(hasNewMessage);
     } catch (error) { console.error(error); }
@@ -825,7 +864,6 @@ export default function HomeScreen() {
     tdWarmupInFlightRef.current = true;
     try {
       console.log('[td-warmup] starting warmup');
-      // Try a few lightweight methods in order; any success => mark ready
       try {
         const r = await tdCall('getMe').catch(() => null);
         if (r) { console.log('[td-warmup] getMe ok'); tdReadyRef.current = true; return true; }
@@ -897,19 +935,15 @@ export default function HomeScreen() {
           continue;
         }
 
-        // Some TD updates may be UpdateNewMessage style with message payload at root
         if (t === 'UpdateNewMessage' && raw?.message) {
           fullMessages.push(raw.message);
           continue;
         }
-
-        // ignore other update types (cheap filter)
       } catch (e) {
         console.warn('[flushUpdateQueue] parse failed', e);
       }
     }
 
-    // Apply interaction updates: minimal in-place merges
     if (interactionUpdates.length > 0) {
       setMessages(prev => {
         if (!prev || prev.length === 0) return prev;
@@ -949,7 +983,6 @@ export default function HomeScreen() {
       });
     }
 
-    // Apply full messages (merge or prepend)
     if (fullMessages.length > 0) {
       setMessages(prev => {
         const next = [...prev];
@@ -976,17 +1009,14 @@ export default function HomeScreen() {
       });
     }
 
-    // telemetry: how many flushed
     console.log(`[td-flush] flushed items=${items.length} interactions=${interactionUpdates.length} fullMsgs=${fullMessages.length}`);
   }, [withUuid, persistCachesDebounced, mk]);
 
   useEffect(() => {
     const handler = (event: any) => {
-      // cheap filter to avoid JSON.parse work if not needed
       try {
         const t = typeof event.raw === 'string' ? (() => { try { return JSON.parse(event.raw)?.type; } catch { return null; } })() : (event.raw?.type || null);
         if (t && !['UpdateMessageInteractionInfo', 'UpdateMessage', 'UpdateNewMessage'].includes(t)) {
-          // ignore unrelated updates right away
           return;
         }
       } catch (e) { /* ignore parse error and push through */ }
@@ -1021,17 +1051,14 @@ export default function HomeScreen() {
           return;
         }
 
-        // Kick off warmup in background and also wait a short bounded time for it
         const warmupPromise = tryTdWarmup();
         if (TD_WARMUP_ENABLED) {
-          // wait up to configured ms for warmup to succeed
           const timed = Promise.race([
             warmupPromise,
             new Promise((res) => setTimeout(() => res(false), TD_WARMUP_WAIT_MS_BEFORE_FETCH)),
           ]);
           const ok = await timed;
           console.log('[initialLoad] tdWarmup ok=', ok);
-          // We DO NOT block longer than the configured wait — to preserve UX/perf.
         } else {
           console.log('[initialLoad] tdWarmup disabled');
         }
@@ -1128,6 +1155,8 @@ export default function HomeScreen() {
   // ------------------
   // onViewable changed - batch viewMessages by chat
   // ------------------
+
+  // (the rest below remains identical to your final code — for brevity I continue it unchanged)
   const visibleIdsRef = useRef<number[]>([]);
   const onViewRef = useCallback(
     ({ viewableItems }: any) => {
@@ -1151,13 +1180,13 @@ export default function HomeScreen() {
         chatMap.set(msg.chatId, arr);
       }
 
-      for (const [chatId, idsArr] of chatMap.entries()) {
-        if (!alreadyViewed.current.has(idsArr[0])) { // cheap guard: mark by first id only
-          tdCall("viewMessages", chatId, idsArr, false)
-            .then(() => idsArr.forEach((i) => alreadyViewed.current.add(i)))
-            .catch((e:any) => console.warn('[onViewRef] viewMessages failed', e));
-        }
-      }
+      // for (const [chatId, idsArr] of chatMap.entries()) {
+      //   if (!alreadyViewed.current.has(idsArr[0])) { // cheap guard: mark by first id only
+      //     tdCall("viewMessages", chatId, idsArr, false)
+      //       .then(() => idsArr.forEach((i) => alreadyViewed.current.add(i)))
+      //       .catch((e:any) => console.warn('[onViewRef] viewMessages failed', e));
+      //   }
+      // }
     }, [tdCall]
   );
 
@@ -1199,7 +1228,7 @@ export default function HomeScreen() {
         if (!openedChats.current.has(chatId)) {
           try { await tdCall("openChat", chatId); openedChats.current.set(chatId, Date.now()); } catch (e:any) { console.warn('[activeDownloads] openChat failed', e); }
         } else touchOpenedChat(chatId);
-        tdCall("viewMessages", chatId, [msg.id], false).catch((e:any) => console.warn('[activeDownloads] viewMessages failed', e));
+        //tdCall("viewMessages", chatId, [msg.id], false).catch((e:any) => console.warn('[activeDownloads] viewMessages failed', e));
       }
     })();
   }, [activeDownloads, messages, tdCall, touchOpenedChat]);
@@ -1270,7 +1299,6 @@ export default function HomeScreen() {
 
   // ------------------
   // infinite scroll / load more
-  // - small defensive change: if datasRef is empty, trigger a fresh reset fetch
   // ------------------
   const isLoadingMoreRef = useRef(false);
   const appendAndAdvance = useCallback(
@@ -1299,7 +1327,6 @@ export default function HomeScreen() {
     isLoadingMoreRef.current = true;
     setLoadingMore(true);
     try {
-      // Defensive: if we have no datas metadata, perform a full reset/fetch so loadMore can continue later
       if (!datasRef.current || datasRef.current.length === 0) {
         console.log('[loadMore] datasRef empty; performing full refresh via resetAndFetchInitial');
         await resetAndFetchInitial();

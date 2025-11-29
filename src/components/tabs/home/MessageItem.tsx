@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
   },
   bodyText: {
     color: "#ccc",
-    fontSize: 13.45,
+    fontSize: 13.1,
     fontFamily: "SFArabic-Regular",
     lineHeight: 25,
   },

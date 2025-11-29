@@ -7,12 +7,15 @@ import {
   Dimensions,
   TouchableOpacity,
   Animated,
+  useWindowDimensions,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StepProgressBar from '../../components/auth/StepProgressBar';
 import AppText from '../../components/ui/AppText';
+import { moderateScale, scale } from 'react-native-fast-size-matters';
 
+// NOTE: removed duplicate `const { width } = Dimensions.get('window');` to avoid conflicts
 const { width } = Dimensions.get('window');
 
 const slides = [
@@ -31,7 +34,7 @@ const slides = [
   {
     key: 'slide3',
     title: 'کلاینت تلگرام',
-    text: 'کرنر یک کلاینت اختصاصی تلگرام در زمینه در زمینه فوتبال برای جوامع هواداری تهیه شده است ',
+    text: 'کرنر یک کلاینت اختصاصی تلگرام در زمینه فوتبال برای جوامع هواداری تهیه شده است ',
     image: require('../../assets/images/3.png'),
   },
   {
@@ -54,7 +57,24 @@ export default function IntroScreen({ navigation }: any) {
   const blackOverlay = useRef(new Animated.Value(0)).current;
 
   // <-- تغییر: ارتفاع بر اساس عرض صفحه محاسبه می‌شود (به جای مقدار ثابت 547)
-  const IMAGE_CONTAINER_HEIGHT = Math.round(width * 1.4);
+  const { width, height } = useWindowDimensions();
+  // به عنوان مثال 50% از ارتفاع صفحه:
+  const IMAGE_CONTAINER_HEIGHT = Math.round(height * scale(0.67));
+
+  // -------------------------
+  // Minor addition: design-based scale (same idea as your AppText)
+  // so logo size/position scale consistently across screens.
+  const BASE_WIDTH = 375;
+  const BASE_HEIGHT = 812;
+  const screenScale = Math.min(width / BASE_WIDTH, height / BASE_HEIGHT);
+
+  // design values (adjust DESIGN_LOGO_SIZE if your design uses different px)
+  const DESIGN_LOGO_SIZE = 64; // logo size in your design (px)
+  const LOGO_BOTTOM_RATIO = 0.31; // proportion of IMAGE_CONTAINER_HEIGHT
+
+  const logoSize = Math.round(DESIGN_LOGO_SIZE * screenScale);
+  const logoBottom = Math.round(IMAGE_CONTAINER_HEIGHT * LOGO_BOTTOM_RATIO);
+  // -------------------------
 
   const handleNext = async () => {
     if (isAnimating) return;
@@ -103,7 +123,7 @@ export default function IntroScreen({ navigation }: any) {
           <Image source={slide.image} style={styles.image} resizeMode="cover" />
           <LinearGradient
             colors={['transparent', 'rgba(0,0,0,0.77)', 'black']}
-            style={[styles.gradientOverlayBottom, { height: IMAGE_CONTAINER_HEIGHT * 0.31 }]}
+            style={[styles.gradientOverlayBottom, { height: IMAGE_CONTAINER_HEIGHT * scale(0.24) }]}
           />
         </View>
 
@@ -113,15 +133,17 @@ export default function IntroScreen({ navigation }: any) {
             source={require('../../assets/images/cornerLogo.jpg')}
             style={{
               ...styles.logo,
-              bottom: Math.round(IMAGE_CONTAINER_HEIGHT * 0.34),
-              width: Math.round(width * 0.16),
-              height: Math.round(width * 0.16),
+              bottom: logoBottom,
+              width: logoSize,
+              height: logoSize,
+              borderRadius: Math.round(logoSize / 2), // keep it circular and derived from final size
             }}
             resizeMode="contain"
           />
         )}
 
-       <View style={styles.titleContainer}>
+       <View style={styles.box}>
+        <View style={styles.titleContainer}>
           <AppText style={styles.title}>{slide.title}</AppText>
           <AppText style={styles.text}>{slide.text}</AppText>
        </View>
@@ -132,6 +154,7 @@ export default function IntroScreen({ navigation }: any) {
             </AppText>
           </TouchableOpacity>
         </View>
+       </View>
       </View>
 
       <Animated.View
@@ -146,7 +169,7 @@ const styles = StyleSheet.create({
   slide: {
     flex: 1,
     alignItems: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: moderateScale(10),
     backgroundColor: 'black',
   },
   imageContainer: {
@@ -169,12 +192,17 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     width: '100%',
-    height: 100,
+    height: scale(100),
     zIndex: 2,
+  },
+  box: {
+    position: "absolute",
+    bottom: moderateScale(12),
+    gap: moderateScale(3)
   },
   titleContainer: {
     backgroundColor: 'transparent',
-    padding: 10,
+    padding: moderateScale(10),
     alignItems: 'center',
   },
   title: {
@@ -194,12 +222,12 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.6)',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 2,
-    lineHeight: 27,
+    lineHeight: moderateScale(25.2),
   },
   button: {
     backgroundColor: '#e8e8e8',
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingVertical: moderateScale(9.7),
+    borderRadius: moderateScale(10),
     width: '88%',
     alignSelf: 'center',
   },
@@ -211,10 +239,9 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     width: '100%',
-    marginVertical: 7,
   },
   logo: {
     position: 'absolute',
-    borderRadius: 80,
+    // borderRadius/width/height are computed inline so we keep stylesheet minimal
   },
 });

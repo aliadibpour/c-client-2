@@ -249,12 +249,12 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   tabItem: {
-    paddingVertical: 7,
+    paddingVertical: 4,
     paddingHorizontal: 2,
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
     marginRight: 5,
-    width: 95,
+    width: 90,
   },
   activeTab: {
     borderBottomColor: "#e6e6e6ff",

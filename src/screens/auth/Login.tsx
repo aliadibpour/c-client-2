@@ -1,5 +1,5 @@
 // LoginScreen.tsx
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, DeviceEventEmitter, ToastAndroid, BackHandler } from 'react-native';
 import { TelegramService } from '../../services/TelegramService';
 import parsePhoneNumberFromString from 'libphonenumber-js';
@@ -7,6 +7,7 @@ import { Keyboard } from '../../components/auth/Keyboard';
 import ModalMessage from '../../components/auth/ModalMessage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppText from '../../components/ui/AppText';
+import { useFocusEffect } from '@react-navigation/native';
 
 const LoginScreen = ({ navigation }: any) => {
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -41,21 +42,21 @@ const LoginScreen = ({ navigation }: any) => {
   };
 
   const backPressCount = useRef(0);
-  useEffect(() => {
-    const backAction = () => {
-      // فقط یک بار فشار -> خارج شدن از اپ
-      BackHandler.exitApp();
-      return true;
-    };
+  useFocusEffect(
+    useCallback(() => {
+      const backAction = () => {
+        // فقط یک بار فشار -> خارج شدن از اپ
+        BackHandler.exitApp();
+        return true;
+      };
 
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
-    
+      const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
 
-    return () => {
-      // حذف کامل لیسنر وقتی از صفحه خارج شد
-      backHandler.remove();
-    };
-  }, []);
+      return () => {
+        backHandler.remove();
+      };
+    }, [])
+  );
 
   // ensure we cleanup on unmount
   useEffect(() => {
@@ -124,7 +125,7 @@ const LoginScreen = ({ navigation }: any) => {
             // optional server call (fire-and-forget)
             (async () => {
               try {
-                const saveUserId = await fetch("https://cornerlive.ir:9000/save-user");
+                const saveUserId = await fetch("https://cornerlive.ir/save-user");
                 const response = await saveUserId.json();
                 console.log('[listenForAuthState] save-user response', response);
                 if (response?.uuid) {
@@ -269,7 +270,7 @@ const LoginScreen = ({ navigation }: any) => {
           onPress={() => navigation.navigate("Privacy")} >
           <AppText
             style={styles.privacy}>
-            حریم خصوصی
+           قوانین و حریم خصوصی  
           </AppText>
         </TouchableOpacity>
         </View>

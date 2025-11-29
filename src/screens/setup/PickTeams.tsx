@@ -1,10 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
   StyleSheet, Image, BackHandler, ToastAndroid
 } from 'react-native';
 import AppText from '../../components/ui/AppText';
+import { useFocusEffect } from '@react-navigation/native';
 
 export const teamImages: { [key: string]: any } = {
   'پرسپولیس': require('../../assets/teams/perspolis.png'),
@@ -50,20 +51,21 @@ export default function PickTeamsScreen({ navigation }: any) {
   const backPressCount = useRef(0);
   const [favorites, setFavorites] = useState<typeof teamsData>([]);
 
-  useEffect(() => {
-    const backAction = () => {
-      // فقط یک بار فشار -> خارج شدن از اپ
-      BackHandler.exitApp();
-      return true;
-    };
+  useFocusEffect(
+    useCallback(() => {
+      const backAction = () => {
+        // فقط یک بار فشار -> خارج شدن از اپ
+        BackHandler.exitApp();
+        return true;
+      };
 
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+      const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
 
-    return () => {
-      // حذف کامل لیسنر وقتی از صفحه خارج شد
-      backHandler.remove();
-    };
-  }, []);
+      return () => {
+        backHandler.remove();
+      };
+    }, [])
+  );
 
   const isLeaguePicked = (league: string) =>
     favorites.some((team) => team.league === league);

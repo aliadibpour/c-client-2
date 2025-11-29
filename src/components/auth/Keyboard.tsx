@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
     },
     keyButton: {
         width: '30%',
-        paddingVertical: 11.7,
+        paddingVertical: 11.4,
         borderRadius: 7,
         backgroundColor: '#222',
         justifyContent: 'center',

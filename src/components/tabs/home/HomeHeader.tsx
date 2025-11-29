@@ -81,12 +81,12 @@ function HomeHeaderInner({ activeTab, setActiveTab, hasNewMessage, onRefresh }: 
       </View>
 
       {/* این باکس خارج از جریانِ layout قرار گرفته تا هیچ shift ای ایجاد نکند */}
-      {hasNewMessage && (
+      {/* {hasNewMessage && (
         <TouchableOpacity style={styles.hasNewboxAbsolute} onPress={() => onRefresh()}>
           <AppText style={styles.hasNewText}>جدیدترین ها</AppText>
           <Redo width={15}/>
         </TouchableOpacity>
-      )}
+      )} */}
     </View>
   );
 }
@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
     borderColor: "#111",
     borderBottomWidth: 0.7,
     gap: 0,
-    paddingTop: 2,
+    paddingTop: 3.2,
     backgroundColor: "#000000ff",
     minHeight: 50,
     // paddingHorizontal: 8,
@@ -117,12 +117,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     width: "100%",
     alignItems: "center",
-    paddingHorizontal: 6,
+    paddingHorizontal: 5,
     paddingTop:1
   },
 
   tabItemGrid: {
-    paddingVertical: 6,
+    paddingVertical: 4,
     alignItems: "center",
     borderBottomWidth: 2,
     borderBottomColor: "transparent",

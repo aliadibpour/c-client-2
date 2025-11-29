@@ -63,7 +63,7 @@ export default function TelegramScreen() {
     setGlobalLoading(true);
     latestFetchForTeamRef.current = teamSlug;
     try {
-      const res: any = await fetch(`https://cornerlive.ir:9000/feed-channel?team=${encodeURIComponent(teamSlug)}`);
+      const res: any = await fetch(`https://cornerlive.ir/feed-channel?team=${encodeURIComponent(teamSlug)}`);
       const data = await res.json();
       if (latestFetchForTeamRef.current !== teamSlug) return;
       const arr = Array.isArray(data) ? data : [];
@@ -81,7 +81,7 @@ export default function TelegramScreen() {
     const slug = teamsSlugs[selectedIndex];
     if (slug) fetchForTeam(slug);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIndex, teamsSlugs]);
+  }, [teamsSlugs]);
 
   // header reports ordered teams via this handler — only set if changed
   const handleOrderedTeamsChange = (ordered: string[]) => {
@@ -118,7 +118,7 @@ export default function TelegramScreen() {
   };
 
   // viewability API for robust detection of active page (guard setState)
-  const viewConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
+  const viewConfig = useRef({ viewAreaCoveragePercentThreshold: 52 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (!viewableItems || viewableItems.length === 0) return;
     // find first viewable item that has an index
@@ -182,7 +182,7 @@ export default function TelegramScreen() {
           showsHorizontalScrollIndicator={false}
           keyExtractor={(s) => s}
           renderItem={renderPage}
-          onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: false })}
+          onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: true })}
           initialScrollIndex={initialIndex}
           getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
           extraData={[channelsByTeam, selectedIndex, orderedPersianTeams, globalLoading]}

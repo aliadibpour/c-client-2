@@ -30,6 +30,9 @@ export default function RankTeamsScreen({ route, navigation }: any) {
   const [finalWinner, setFinalWinner] = useState<TeamObj | null>(null); // winner of round2 (may equal firstMatchWinner)
   const [finalLoser, setFinalLoser] = useState<TeamObj | null>(null); // loser of round2
 
+
+  
+
   useEffect(() => {
     // If only 1 team provided, finalize immediately:
     if (origCount === 1) {

@@ -203,15 +203,28 @@ export default function LiveMatchScreen() {
 
   // --- socket setup (uses selectedDayIndexRef to avoid stale closure) ---
   useEffect(() => {
-    socketRef.current = io("https://cornerlive.ir:9000", {
+    socketRef.current = io("https://cornerlive.ir", {
       transports: ["websocket"],
     });
 
     socketRef.current.on("connect", () => {
       console.log("socket connected");
-      // use the ref so we always request for the current active day
+
+      // request for current active day (force)
       const dayId = dayList[selectedDayIndexRef.current].id;
       requestMatchesOnce(dayId, { force: true });
+
+      // NEW: also kick off requests for any day that still has no cache
+      // or previously failed — this fixes the "stuck loading until scroll" race.
+      for (const d of dayList) {
+        const id = d.id;
+        const hasCache = matchCache[id] !== undefined;
+        const hadFailed = !!failedDays[id];
+        if (!hasCache || hadFailed) {
+          // small delay to avoid spamming immediately on connect
+          setTimeout(() => requestMatchesOnce(id, { force: true }), 50);
+        }
+      }
     });
 
     socketRef.current.on("disconnect", () => {
@@ -222,7 +235,7 @@ export default function LiveMatchScreen() {
       socketRef.current?.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // keep empty deps: socket lifecycle single-run
 
   // --- ensure initial scroll and initial fetch after mount ---
   useEffect(() => {
@@ -261,7 +274,8 @@ export default function LiveMatchScreen() {
   // helper used by DaySelector / initial behavior
   const fetchMatchesOnce = (dayId: number) => {
     // if we already have cached value, skip fetching
-    if (matchCache[dayId] !== undefined) return;
+    // NEW: also retry if previously failed
+    if (matchCache[dayId] !== undefined && !failedDays[dayId]) return;
     requestMatchesOnce(dayId);
   };
 
@@ -361,19 +375,6 @@ export default function LiveMatchScreen() {
                 listRef={(r: any) => (listRefs.current[item.id] = r)}
                 extraDataForList={matches}
               />
-              {/* {isFailed && matches ? (
-                <View style={{ position: "absolute", bottom: 12, right: 12 }}>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setFailedDays((p) => ({ ...p, [item.id]: false }));
-                      requestMatchesOnce(item.id, { force: true });
-                    }}
-                    style={styles.smallRetry}
-                  >
-                    <Text style={{ color: "#fff", fontSize: 12 }}>مرور مجدد</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : null} */}
             </View>
           );
         }}
@@ -413,4 +414,3 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.6)",
   },
 });
-

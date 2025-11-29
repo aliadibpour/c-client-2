@@ -106,7 +106,7 @@ function MessageHeaderInner({ chatId, chatInfo }: { chatId: number | string; cha
   useEffect(() => {
     if (!chatId) return;
 
-    const url = `https://cornerlive.ir:9000/feed-channel/profile?chatId=${encodeURIComponent(key)}`;
+    const url = `https://cornerlive.ir/feed-channel/profile?chatId=${encodeURIComponent(key)}`;
     (async () => {
       try {
         const res = await fetch(url);
