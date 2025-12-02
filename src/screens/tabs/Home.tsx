@@ -35,6 +35,12 @@ const TD_WARMUP_ENABLED = true;
 const TD_WARMUP_WAIT_MS_BEFORE_FETCH = 2000; // wait up to this ms for warmup before doing initial network fetch
 const TD_WARMUP_CALL_TIMEOUT_MS = 7000; // tdCall timeout used by default
 
+// Search / rate-limiting config
+const SEARCH_LIMIT = 7; // sliding window (already present)
+const SEARCH_WINDOW_MS = 10_000;
+const SEARCH_SERIAL_DELAY_MS = 220; // <-- NEW: small gap after each Telegram "searchPublicChat" to avoid bursts
+const SEARCH_SERIAL_POLL_DELAY_MS = 50; // polling delay while waiting for serial slot
+
 // storage keys
 const STORAGE_KEYS = {
   MESSAGE_CACHE: "home_message_cache_v1",
@@ -172,10 +178,9 @@ export default function HomeScreen() {
   const ADAPTIVE_CONCURRENCY_REDUCTION = 2; // reduce per-group concurrency when throttled
   const adaptiveThrottleUntilRef = useRef<number>(0);
 
-  // --- New: search rate-limit (sliding window)
-  const SEARCH_LIMIT = 7;
-  const SEARCH_WINDOW_MS = 10_000; // 10 seconds
+  // --- New: search rate-limit (sliding window + serializing)
   const searchTimestampsRef = useRef<number[]>([]); // oldest-first
+  const searchInFlightRef = useRef<boolean>(false); // serializes actual td search calls to avoid bursts
 
   // --- New: recent-search cache (remember last N channel lookups to avoid re-search)
   const RECENT_SEARCH_LIMIT = 60;
@@ -541,26 +546,50 @@ export default function HomeScreen() {
         // abort early if generation changed
         if (genAtCall !== activeTabGenRef.current) return null;
 
+        // if adaptive throttle is active (server told us to wait), delay here
+        if (adaptiveThrottleUntilRef.current > Date.now()) {
+          const waitMs = adaptiveThrottleUntilRef.current - Date.now();
+          // small extra cushion
+          await delay(waitMs + 120);
+          if (genAtCall !== activeTabGenRef.current) return null;
+        }
+
         // Wait for an allowed slot in the last SEARCH_WINDOW_MS window (max SEARCH_LIMIT calls).
         await waitForSearchSlot();
 
         // generation re-check to avoid doing work if tab changed while waiting
         if (genAtCall !== activeTabGenRef.current) return null;
 
-        // perform the actual tdCall
-        const r: any = await tdCall('searchPublicChat', channel).catch((e:any) => {
-          // best-effort: if server returns FloodWait / retry_after, extend adaptive throttle
-          try {
-            const retry = (e && (e.retry_after || e.retry_after_seconds || (e.message && e.message.match && e.message.match(/retry_after[:=]\s*(\d+)/i)?.[1]))) ?? null;
-            const retrySec = retry ? Number(retry) : null;
-            if (retrySec && !Number.isNaN(retrySec)) {
-              const until = Date.now() + retrySec * 1000;
-              adaptiveThrottleUntilRef.current = Math.max(adaptiveThrottleUntilRef.current, until);
-              console.warn('[resolveChannelToChatId] observed retry_after, setting adaptiveThrottleUntil to', adaptiveThrottleUntilRef.current);
-            }
-          } catch (_err) {}
-          return null;
-        });
+        // serialize actual td search calls to avoid many simultaneous searches which trigger FloodWait
+        while (searchInFlightRef.current) {
+          await delay(SEARCH_SERIAL_POLL_DELAY_MS);
+          if (genAtCall !== activeTabGenRef.current) return null;
+        }
+
+        // mark as in-flight to serialize
+        searchInFlightRef.current = true;
+
+        let r: any = null;
+        try {
+          r = await tdCall('searchPublicChat', channel).catch((e: any) => {
+            // best-effort: if server returns FloodWait / retry_after, extend adaptive throttle
+            try {
+              const retry = (e && (e.retry_after || e.retry_after_seconds || (e.message && e.message.match && e.message.match(/retry_after[:=]\s*(\d+)/i)?.[1]))) ?? null;
+              const retrySec = retry ? Number(retry) : null;
+              if (retrySec && !Number.isNaN(retrySec)) {
+                const until = Date.now() + retrySec * 1000;
+                adaptiveThrottleUntilRef.current = Math.max(adaptiveThrottleUntilRef.current, until);
+                console.warn('[resolveChannelToChatId] observed retry_after, setting adaptiveThrottleUntil to', adaptiveThrottleUntilRef.current);
+              }
+            } catch (_err) {}
+            return null;
+          });
+        } finally {
+          // un-mark in-flight immediately so others can proceed after small delay
+          searchInFlightRef.current = false;
+          // small deliberate gap between serial searches
+          await delay(SEARCH_SERIAL_DELAY_MS);
+        }
 
         if (genAtCall !== activeTabGenRef.current) return null;
 
@@ -705,8 +734,8 @@ export default function HomeScreen() {
 
         for (const f of fetched) if (f) results.push(f);
 
-        // small yield
-        await delay(0);
+        // small yield + small delay between groups to avoid burst when many groups require search
+        await delay(60);
       }
 
       persistCachesDebounced();
