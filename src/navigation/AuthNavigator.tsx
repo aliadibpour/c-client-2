@@ -6,6 +6,7 @@ import IntroScreen from '../screens/auth/Intro';
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TelegramService } from '../services/TelegramService';
+import TwoStepScreen from '../screens/auth/TwoStepScreen';
 
 const Stack = createNativeStackNavigator<any>();
 
@@ -20,7 +21,7 @@ export default function AuthNavigator() {
 
       const authStateTdlib = await TelegramService.getAuthState() 
       const authType = JSON.parse(authStateTdlib.data)["@type"];
-      if (authType !== "authorizationStateWaitCode") {
+      if (authType !== "authorizationStateWaitCode" || authType !== "authorizationStateWaitPassword") {
         setInitialRouteName("Intro")
         await AsyncStorage.removeItem("auth-status")
         await AsyncStorage.removeItem("phone-number")
@@ -41,6 +42,7 @@ export default function AuthNavigator() {
       <Stack.Screen name="Intro" component={IntroScreen} />
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Verify" component={VerifyScreen} />
+      <Stack.Screen name="TwoStep" component={TwoStepScreen} />
     </Stack.Navigator>
   );
 }

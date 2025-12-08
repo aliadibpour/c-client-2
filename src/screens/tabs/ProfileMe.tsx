@@ -254,6 +254,7 @@ export default function ProfileScreen({ navigation }: any) {
 
       await TdLib.logout();
       await TdLib.destroy();
+      await AsyncStorage.removeItem('recent_search_cache_v1');
       await AsyncStorage.clear();
       RNRestart.Restart();
 

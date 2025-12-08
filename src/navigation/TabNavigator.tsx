@@ -63,7 +63,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
               <TelegramIcon size={iconSize} outline={!focused} />
-              <AppText style={[styles.iconText, focused && styles.activeText]}>تلگرام</AppText>
+              <AppText style={[styles.iconText, focused && styles.activeText]}>کانال ها</AppText>
             </View>
           ),
         }}

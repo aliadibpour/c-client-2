@@ -14,6 +14,7 @@ import ChannelDetailScreen from '../screens/tabs/ChannelDetail.Screen';
 import ProfileUser from '../screens/tabs/ProfileUser';
 import TdLib from 'react-native-tdlib';
 import PrivacyPolicyScreen from '../screens/auth/Privacy';
+import TwoStepScreen from '../screens/auth/TwoStepScreen';
 
 const Stack = createNativeStackNavigator<any>();
 

@@ -379,6 +379,7 @@ export default function LiveMatchScreen() {
           );
         }}
       />
+      <AppText style={styles.copyright}>مالکیت فکری بازی ها متعلق به corner است</AppText>
     </SafeAreaView>
   );
 }
@@ -413,4 +414,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "rgba(255, 255, 255, 0.6)",
   },
+  copyright: {
+    color: "#555",
+    fontSize: 10,
+    textAlign: "center",
+    paddingVertical: 5,
+    paddingBottom:0.3,
+    fontFamily: "SFArabic-Regular",
+  }
 });

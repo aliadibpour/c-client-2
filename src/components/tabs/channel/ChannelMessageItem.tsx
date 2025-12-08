@@ -1,3 +1,4 @@
+// ChannelMessageItem_expand.tsx
 import { Dimensions, Text, View, TouchableOpacity, StyleSheet } from "react-native";
 import { useEffect, useState } from "react";
 import MessagePhoto from "../home/MessagePhoto";
@@ -19,6 +20,32 @@ interface ChannelMessageItemProps {
 const screenWidth = Dimensions.get("window").width;
 const screenHeight = Dimensions.get("window").height;
 
+/**
+ * computeVideoDisplaySize: replicates MessageVideo's sizing logic so we can
+ * ensure the parent card is wide enough for the video (no clipping).
+ */
+function computeVideoDisplaySize(video: any) {
+  const originalWidth = video?.width || 320;
+  const originalHeight = video?.height || 240;
+  const aspectRatio = originalWidth / originalHeight;
+  const maxWidth = screenWidth * 0.92;
+  const minWidth = screenWidth * 0.65;
+  const maxHeight = 320;
+
+  let displayWidth = Math.min(originalWidth, maxWidth);
+  displayWidth = Math.max(displayWidth, minWidth);
+  let displayHeight = displayWidth / aspectRatio;
+  if (displayHeight > maxHeight) {
+    displayHeight = maxHeight;
+    displayWidth = displayHeight * aspectRatio;
+  }
+
+  const finalWidth = displayWidth < screenWidth * 0.72 ? screenWidth * 0.72 : displayWidth;
+  const finalHeight = displayHeight < 160 ? 160 : displayHeight;
+
+  return { width: finalWidth, height: finalHeight };
+}
+
 export default function ChannelMessageItem({ data, isVisible, activeDownloads, clickReply }: ChannelMessageItemProps) {
   const navigation: any = useNavigation();
   const [messageData, setMessageData] = useState<any>(data);
@@ -31,7 +58,6 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
     let isMounted = true;
 
     const fetchReply = async () => {
-      // اگر replyTo متعلق به همین چت باشه سعی کن پیام ریپلای رو بگیری
       if (data?.replyTo?.chatId === chatId) {
         try {
           const getReply = await TdLib.getMessage(data.replyTo.chatId, data.replyTo.messageId);
@@ -57,13 +83,11 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
     };
   }, [data, chatId]);
 
-  // mark message as viewed (depend on chatId/messageId so it runs when item mounts)
   useEffect(() => {
     if (!chatId || !messageId) return;
     TdLib.viewMessages(chatId, [messageId], false).catch(() => {});
   }, [chatId, messageId]);
 
-  // safe access to content
   const content = messageData?.content;
   const captionText = content?.caption?.text ?? "";
   const messageText = content?.text?.text ?? "";
@@ -106,10 +130,12 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
   const MIN_WIDTH = screenWidth * 0.72;
   const MIN_HEIGHT = screenHeight;
   const hasMedia = !!photo || !!video;
-  const messageWidth = hasMedia ? Math.max(mediaWidth, MIN_WIDTH) : MIN_WIDTH;
-  const messageHeight = hasMedia ? Math.max(mediaHeight, MIN_HEIGHT) : MIN_HEIGHT;
 
-  // safe date/time formatting
+  // EXTRA: compute video-based final width so the card will expand to fit the video exactly
+  const videoSize = video ? computeVideoDisplaySize(video) : { width: 0, height: 0 };
+  const messageWidth = hasMedia ? Math.max(mediaWidth, MIN_WIDTH, videoSize.width) : MIN_WIDTH;
+  const messageHeight = hasMedia ? Math.max(mediaHeight, MIN_HEIGHT, videoSize.height) : MIN_HEIGHT;
+
   let timeString = "";
   if (messageData?.date) {
     const date = new Date(Number(messageData.date) * 1000);
@@ -131,7 +157,6 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
 
   const viewCount = formatNumber(messageData?.interactionInfo?.viewCount ?? 0);
 
-  // reply rendering: guard all accesses
   const reply = messageData?.replyInfo;
   const replyContent = reply?.content ?? {};
   const replyCaption = replyContent?.caption?.text ?? "";
@@ -139,6 +164,7 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
 
   return (
     <View style={styles.wrapper}>
+      {/* Expanded card width to fit video (no overflow) */}
       <View style={[styles.card, { width: messageWidth }]}>
         {reply ? (
           replyContent?.photo ? (
@@ -160,14 +186,15 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
         ) : null}
 
         {photo && (
-          <View style={{ width: "100%" }}>
+          <View style={{ alignSelf: "flex-start" }}>
             <MessagePhoto photo={photo} activeDownload={isActiveDownload} />
           </View>
         )}
 
         {video && (
-          <View style={{ width: "100%" }}>
-            <MessageVideo video={video}  context="channel" activeDownload={isActiveDownload} />
+          // keep alignSelf so MessageVideo uses its own computed size and won't be stretched
+          <View style={{ alignSelf: "flex-start" }}>
+            <MessageVideo video={video} context="channel" activeDownload={isActiveDownload} />
           </View>
         )}
 

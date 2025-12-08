@@ -1,4 +1,4 @@
-// TelegramScreen.tsx
+// TelegramScreen.tsx — with programmatic scroll guard to avoid viewability race
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -8,6 +8,7 @@ import {
   View,
   SafeAreaView,
   Dimensions,
+  I18nManager,
 } from "react-native";
 import TelegramHeader, { teamRecord } from "../../components/tabs/telegram/TelegramHeader";
 import ChannelItem from "../../components/tabs/telegram/ChannelItem";
@@ -24,7 +25,6 @@ function arraysEqual(a: string[] | undefined, b: string[] | undefined) {
 }
 
 export default function TelegramScreen() {
-  
   // cache channels per team
   const [channelsByTeam, setChannelsByTeam] = useState<Record<string, any[]>>({});
   const [globalLoading, setGlobalLoading] = useState<boolean>(false);
@@ -42,10 +42,21 @@ export default function TelegramScreen() {
   const scrollRef = useRef<any>(null); // Animated.FlatList ref (use any to access scrollToIndex)
   const scrollX = useRef(new Animated.Value(0)).current;
 
+  // --- programmatic scroll guard ---
+  // when we programmatically ask the pager to scroll, set a timestamp.
+  // viewability handler will ignore events within GUARD_MS after a programmatic scroll.
+  const programmaticScrollTsRef = useRef<number>(0);
+  const GUARD_MS = 700; // adjust if necessary (700ms is a safe start)
+
+  const now = () => new Date().getTime();
+
+  // logical <-> visual mapping for RTL support (if needed later)
+  const logicalToVisual = (logicalIdx: number) => I18nManager.isRTL ? Math.max(0, teamsSlugs.length - 1 - logicalIdx) : logicalIdx;
+  const visualToLogical = (visualIdx: number) => I18nManager.isRTL ? Math.max(0, teamsSlugs.length - 1 - visualIdx) : visualIdx;
+
   // keep selectedIndex valid when teamsSlugs changes (avoid infinite loops)
   useEffect(() => {
     if (!teamsSlugs || teamsSlugs.length === 0) return;
-    // if current selectedIndex points to same slug, keep it; otherwise pick perspolis if exists, else 0
     const currentSlug = teamsSlugs[selectedIndexRef.current];
     if (currentSlug) return;
     const defaultIdx = Math.max(0, teamsSlugs.indexOf("perspolis"));
@@ -81,7 +92,7 @@ export default function TelegramScreen() {
     const slug = teamsSlugs[selectedIndex];
     if (slug) fetchForTeam(slug);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teamsSlugs]);
+  }, [teamsSlugs, selectedIndex]);
 
   // header reports ordered teams via this handler — only set if changed
   const handleOrderedTeamsChange = (ordered: string[]) => {
@@ -104,50 +115,78 @@ export default function TelegramScreen() {
     // fetch immediately to reduce visible loading time
     fetchForTeam(slug);
 
-    // scroll to index robustly (try scrollToIndex first)
+    // scroll to visual index robustly (map logical->visual for RTL)
+    const visualIdx = logicalIdx;
+
+    // mark programmatic scroll time so we can ignore near-term viewability events
+    programmaticScrollTsRef.current = now();
+
     try {
-      scrollRef.current?.scrollToIndex({ index: logicalIdx, animated: true });
+      // prefer scrollToOffset (more stable across RN versions)
+      scrollRef.current?.scrollToOffset({ offset: visualIdx * SCREEN_WIDTH, animated: true });
     } catch (err) {
-      // fallback to offset if needed
       try {
-        scrollRef.current?.scrollToOffset({ offset: logicalIdx * SCREEN_WIDTH, animated: true });
+        scrollRef.current?.scrollToIndex({ index: visualIdx, animated: true });
       } catch {
         // ignore if both fail
       }
     }
   };
 
-  // viewability API for robust detection of active page (guard setState)
+  // viewability API — guarded to avoid stomping programmatic scrolls
   const viewConfig = useRef({ viewAreaCoveragePercentThreshold: 52 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    // guard: if we recently did a programmatic scroll, ignore viewability updates until guard expires
+    const lastProg = programmaticScrollTsRef.current;
+    if (lastProg && now() - lastProg < GUARD_MS) {
+      // ignore — still in programmatic scroll window
+      // (optional: uncomment console.log to debug)
+      // console.log('[TelegramScreen] viewable ignored due to programmatic guard');
+      return;
+    }
+
     if (!viewableItems || viewableItems.length === 0) return;
-    // find first viewable item that has an index
     const first = viewableItems.find((v: any) => v && v.index != null);
     if (!first) return;
     const visualIdx = first.index;
-    const logicalIdx = visualIdx; // logical === visual because teamsSlugs built from orderedPersianTeams
+    const logicalIdx = visualIdx; // logical === visual because teamsSlugs built from orderedPersianTeams (if not using RTL mapping)
     if (logicalIdx !== selectedIndexRef.current) {
       setSelectedIndex(logicalIdx);
     }
   }).current;
 
+  // onMomentumScrollEnd: authoritative for user-driven swipes (LiveMatch pattern)
+  const onMomentumScrollEnd = (event: any) => {
+    const rawX = event.nativeEvent.contentOffset.x;
+    const visualIdx = Math.round(rawX / SCREEN_WIDTH);
+    const logicalIdx = visualToLogical(visualIdx);
+
+    // set selectedIndex only if changed
+    if (logicalIdx !== selectedIndexRef.current) {
+      setSelectedIndex(logicalIdx);
+      // fetch for new logical index
+      const slug = teamsSlugs[logicalIdx];
+      if (slug) fetchForTeam(slug);
+    }
+    // clear programmatic guard as momentum ended (optional)
+    programmaticScrollTsRef.current = 0;
+  };
+
   const renderPage = ({ item: slug }: { item: string }) => {
     const teamChannels = channelsByTeam[slug] ?? [];
     const isActive = teamsSlugs[selectedIndex] === slug;
 
-    // reverse on render if server sends reversed order (do NOT mutate original)
-    const displayChannels = teamChannels;
+    const displayChannels = REVERSE_CHANNEL_ITEMS ? (Array.isArray(teamChannels) ? [...teamChannels].reverse() : teamChannels) : teamChannels;
 
     return (
       <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
         <FlatList
           data={displayChannels}
           keyExtractor={(item, index) =>
-            (item?.id && String(item.id)) ||
-            (item?.username && String(item.username)) ||
-            `${slug}_${index}`
+            (item?.id || item?.id === 0) ? `${slug}__id_${item.id}` :
+            (item?.username ? `${slug}__user_${String(item.username)}` : `${slug}__idx_${index}`)
           }
-          renderItem={({ item, index }) => <ChannelItem channel={item} onReady={() => {}} />}
+          renderItem={({ item }) => <ChannelItem channel={item} onReady={() => {}} />}
           initialNumToRender={6}
           windowSize={7}
           removeClippedSubviews={true}
@@ -175,19 +214,25 @@ export default function TelegramScreen() {
 
       <View style={styles.container}>
         <Animated.FlatList
-          ref={scrollRef}
+          ref={(r) => {
+            // Animated wrapper may expose getNode(); prefer actual node if available
+            // @ts-ignore
+            scrollRef.current = r && typeof (r as any).getNode === "function" ? (r as any).getNode() : r;
+          }}
           data={teamsSlugs}
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
           keyExtractor={(s) => s}
           renderItem={renderPage}
-          onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: true })}
+          onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: false })}
+          onMomentumScrollEnd={onMomentumScrollEnd}
           initialScrollIndex={initialIndex}
           getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
           extraData={[channelsByTeam, selectedIndex, orderedPersianTeams, globalLoading]}
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewConfig}
+          removeClippedSubviews={false}
         />
       </View>
     </SafeAreaView>

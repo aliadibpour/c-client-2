@@ -100,11 +100,12 @@ const styles = StyleSheet.create({
     fontSize: 16
   },
   secondaryButton: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 6,
     paddingVertical: 10
   },
   secondaryText: {
     color: '#389af5',
     fontFamily: "SFArabic-Regular",
+    fontSize: 15
   }
 });

@@ -41,7 +41,7 @@ const SEARCH_SERIAL_POLL_DELAY_MS = 50; // polling while waiting for serializati
 
 // Persisted recent search cache key and TTL
 const RECENT_SEARCH_PERSIST_KEY = 'recent_search_cache_v1';
-const RECENT_SEARCH_TTL_MS = 360 * 60 * 1000; // 6 hours (you can change)
+const RECENT_SEARCH_TTL_MS = 500 * 60 * 1000; // 8 hours (you can change)
 const SEARCH_MIN_INTERVAL_MS_MANAGED = 800; // minimal gap enforced by managed queue
 const MAX_SEARCH_CONCURRENCY_MANAGED = 1; // only one searchPublicChat at a time
 
@@ -587,21 +587,24 @@ function processSearchQueue() {
   const task = searchQueueRef.current.shift();
   if (!task) return;
 
+  // RESERVE a slot IMMEDIATELY so concurrent invocations can't both consume slots.
+  searchActiveCountRef.current += 1;
+
   const now = Date.now();
   const sinceLast = now - lastSearchAtRef.current;
   const gap = Math.max(0, SEARCH_MIN_INTERVAL_MS_MANAGED - sinceLast);
 
   // schedule task so that lastSearchAtRef is updated exactly when we start the task
   setTimeout(() => {
-    searchActiveCountRef.current += 1;
     // mark lastSearchAt right when task actually runs
     lastSearchAtRef.current = Date.now();
+
     (async () => {
       try {
         await task();
       } finally {
+        // RELEASE the slot and schedule next processing after enforced interval
         searchActiveCountRef.current -= 1;
-        // schedule next queue processing after the enforced interval
         setTimeout(processSearchQueue, SEARCH_MIN_INTERVAL_MS_MANAGED);
       }
     })();
@@ -627,13 +630,13 @@ function processSearchQueue() {
     const p = new Promise<number | null>((resolve) => {
       const task = async () => {
         let attempt = 0;
-        const MAX_ATTEMPTS = 4;
+        const MAX_ATTEMPTS = 2;
         while (attempt < MAX_ATTEMPTS) {
           attempt++;
           if (genAtCall !== activeTabGenRef.current) { resolve(null); return; }
 
           try {
-            console.log("try to search..................------------........")
+            console.log(`[searchPublicChatManaged] attempting search for key=${key} attempt=${attempt}`);
             const res: any = await tdCall('searchPublicChat', key);
             const fid = res?.id || res?.chat?.id || res?.chatId || (typeof res === 'number' ? res : undefined);
             const fidNum = fid ? Number(fid) : null;
@@ -647,25 +650,24 @@ function processSearchQueue() {
             if (retrySec && retrySec > 0) {
               globalAdaptiveThrottleUntilRef.current = Math.max(globalAdaptiveThrottleUntilRef.current, Date.now() + retrySec * 1000);
               console.warn('[searchPublicChatManaged] observed retry_after, pausing all searches until', new Date(globalAdaptiveThrottleUntilRef.current));
-              // resolve null to caller now; global throttle will prevent immediate retries
               resolve(null);
-              // schedule to continue processing queue after throttle
               setTimeout(processSearchQueue, (retrySec * 1000) + 50);
               return;
             }
-            // exponential backoff locally
             const backoffMs = Math.min(5000, 200 * Math.pow(2, attempt));
             await delay(backoffMs + Math.floor(Math.random() * 150));
           }
         }
 
-        // all attempts failed -> cache null to avoid immediate retry storm
+        // all attempts failed -> negative cache
         recentSearchCacheRef.current.set(key, null);
         addToRecentSearch(key, null);
         setPersistedCachedChannel(key, null);
         resolve(null);
       };
 
+      // IMMEDIATELY register the promise BEFORE enqueuing the task so other callers will reuse it
+      searchInFlightPromisesRef.current.set(key, p);
       searchQueueRef.current.push(task);
       setTimeout(processSearchQueue, 0);
     });

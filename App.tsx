@@ -66,16 +66,16 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const configTdlib = async () => {
       await TelegramService.start();
-      try {
-        const authState = await TdLib.getAuthorizationState();
-        const data = JSON.parse(authState);
-        console.log(data);
-        if (data['@type'] !== "authorizationStateReady") {
-          await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "intro" }));
-        }
-      } catch (e) {
-        console.warn('[TdLib] getAuthorizationState failed', e);
-      }
+      // try {
+      //   const authState = await TdLib.getAuthorizationState();
+      //   const data = JSON.parse(authState);
+      //   console.log(data);
+      //   if (data['@type'] !== "authorizationStateReady") {
+      //     await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "Intro" }));
+      //   }
+      // } catch (e) {
+      //   console.warn('[TdLib] getAuthorizationState failed', e);
+      // }
     };
     configTdlib();
   }, []);
