@@ -24,7 +24,7 @@ import AppText from "../../ui/AppText";
 
 // ---------- Config ----------
 const screenWidth = Dimensions.get("window").width;
-const AUTO_DOWNLOAD_THRESHOLD = 5 * 1024 * 1024; // 5 MB
+const AUTO_DOWNLOAD_THRESHOLD = 2.5 * 1024 * 1024; // 2 MB
 const STALL_TIMEOUT_MS = 8000;
 const CONTROLS_AUTOHIDE_MS = 3000;
 

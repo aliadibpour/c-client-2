@@ -82,14 +82,14 @@ android {
         applicationId "com.corner"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 11
+        versionCode 13
         versionName "1.0"
     }
     signingConfigs {
         debug {
-            storeFile file('my-release-key.keystore')
+            storeFile file('key.jks')
             storePassword 'Aliadibpc0'
-            keyAlias 'mykey'
+            keyAlias 'mykeyalias'
             keyPassword 'Aliadibpc0'
         }
     }

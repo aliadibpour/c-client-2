@@ -41,7 +41,7 @@ const SEARCH_SERIAL_POLL_DELAY_MS = 50; // polling while waiting for serializati
 
 // Persisted recent search cache key and TTL
 const RECENT_SEARCH_PERSIST_KEY = 'recent_search_cache_v1';
-const RECENT_SEARCH_TTL_MS = 500 * 60 * 1000; // 8 hours (you can change)
+const RECENT_SEARCH_TTL_MS = 700 * 80 * 1000; // hours (you can change)
 const SEARCH_MIN_INTERVAL_MS_MANAGED = 800; // minimal gap enforced by managed queue
 const MAX_SEARCH_CONCURRENCY_MANAGED = 1; // only one searchPublicChat at a time
 
@@ -630,7 +630,7 @@ function processSearchQueue() {
     const p = new Promise<number | null>((resolve) => {
       const task = async () => {
         let attempt = 0;
-        const MAX_ATTEMPTS = 2;
+        const MAX_ATTEMPTS = 1;
         while (attempt < MAX_ATTEMPTS) {
           attempt++;
           if (genAtCall !== activeTabGenRef.current) { resolve(null); return; }
