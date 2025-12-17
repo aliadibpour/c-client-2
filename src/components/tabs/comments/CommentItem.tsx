@@ -9,7 +9,9 @@ import {
   TouchableOpacity,
   View,
   GestureResponderEvent,
+  Modal,
 } from "react-native";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import MessageReactions from "../home/MessageReaction";
 import { Easing } from "react-native";
 import { Reply } from "../../../assets/icons";
@@ -182,6 +184,67 @@ export default function CommentItem({
         backgroundColor: interpolatedBgColor,
       };
 
+  // --- NEW: report modal + async storage tracking ---
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [isReported, setIsReported] = useState(false);
+  const REPORT_KEY_PREFIX = "reported_comment_";
+
+  // check if this comment was already reported (from AsyncStorage)
+  useEffect(() => {
+    let mounted = true;
+    const checkReported = async () => {
+      try {
+        const key = REPORT_KEY_PREFIX + (item?.id ?? "unknown");
+        const val = await AsyncStorage.getItem(key);
+        if (mounted) setIsReported(Boolean(val));
+      } catch (e) {
+        console.warn('checkReported err', e);
+      }
+    };
+    checkReported();
+    return () => {
+      mounted = false;
+    };
+  }, [item?.id]);
+
+  const handlePress = () => {
+    // preserve previous behavior (hide delete if applicable)
+    if (isPressable) setShowDelete(false);
+    // open report modal regardless of isPressable (user asked tapping item opens box)
+    setReportModalVisible(true);
+  };
+
+  const handleSendReport = async () => {
+    try {
+      const key = REPORT_KEY_PREFIX + (item?.id ?? 'unknown');
+      const already = await AsyncStorage.getItem(key);
+      if (already) {
+        setIsReported(true);
+        return;
+      }
+      const payload = {
+        id: item?.id,
+        at: Date.now(),
+        reported: true,
+      };
+      await AsyncStorage.setItem(key, JSON.stringify(payload));
+      setIsReported(true);
+    } catch (e) {
+      console.warn('report err', e);
+    }
+  };
+
+  // delete button animated style
+  // (kept here to avoid moving code around)
+
+  const handleCancelDeleteIfActive = () => {
+  if (showDelete) {
+    DeviceEventEmitter.emit("commentDeleteToggle", null);
+    setShowDelete(false);
+  }
+};
+
+
   return (
     <View
       style={[
@@ -217,8 +280,14 @@ export default function CommentItem({
       {/* Bubble: AnimatedTouchable to allow animated styles without errors */}
       <AnimatedTouchable
         activeOpacity={0.85}
-        onLongPress={isPressable ? handleLongPress : undefined}
-        onPress={isPressable ? () => setShowDelete(false) : undefined}
+        onPress={() => {
+          // فقط برای پیام خودت: اگر delete فعاله، کنسلش کن
+          if (isUser && showDelete) {
+            handleCancelDeleteIfActive();
+            return;
+          }
+        }}
+        onLongPress={isPressable ? handleLongPress : handlePress}
         style={[styles.bubble, bubbleAnimatedStyle]}
       >
         {name ? <AppText style={styles.username}>{name}</AppText> : null}
@@ -305,6 +374,56 @@ export default function CommentItem({
           )}
         </Animated.View>
       )}
+
+      {/* Report Modal (added) */}
+      <Modal
+        visible={reportModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReportModalVisible(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.box}>
+            {!isReported ? (
+              <>
+                <Text style={modalStyles.title}>گزارش تخلف</Text>
+                <Text style={modalStyles.message}>آیا می‌خواهید این پیام را گزارش کنید؟</Text>
+
+                <View style={modalStyles.row}>
+                  <TouchableOpacity
+                    style={modalStyles.buttonDanger}
+                    onPress={async () => {
+                      await handleSendReport();
+                    }}
+                  >
+                    <Text style={modalStyles.buttonDangerText}>گزارش تخلف</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={modalStyles.button}
+                    onPress={() => setReportModalVisible(false)}
+                  >
+                    <Text style={modalStyles.buttonText}>انصراف</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={modalStyles.title}>گزارش ارسال شده</Text>
+                <Text style={modalStyles.message}>گزارش شما برای بررسی ارسال شد</Text>
+                <View style={modalStyles.rowSingle}>
+                  <TouchableOpacity
+                    style={modalStyles.button}
+                    onPress={() => setReportModalVisible(false)}
+                  >
+                    <Text style={modalStyles.buttonText}>باشه</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -378,5 +497,72 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 4,
     right: 8,
+  },
+});
+
+export const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  box: {
+    width: '86%',
+    maxWidth: 420,
+    backgroundColor: '#1f1f1f',
+    padding: 18,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  title: {
+    color: '#fff',
+    fontSize: 15,
+    marginBottom: 6,
+    fontFamily: "SFArabic-Heavy"
+  },
+  message: {
+    color: '#ddd',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 14,
+    fontFamily: "SFArabic-Regular"
+  },
+  row: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'space-between',
+  },
+  rowSingle: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'center',
+  },
+  buttonDanger: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#b92b2b',
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  buttonDangerText: {
+    color: '#fff',
+    fontFamily: "SFArabic-Regular",
+    fontSize: 13
+  },
+  button: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#333',
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontFamily: "SFArabic-Regular",
+    fontSize: 13
   },
 });

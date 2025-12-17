@@ -1,5 +1,4 @@
-// ChannelMessageItem_expand.tsx
-import { Dimensions, Text, View, TouchableOpacity, StyleSheet } from "react-native";
+import { Dimensions, Text, View, TouchableOpacity, StyleSheet, Modal, Pressable } from "react-native";
 import { useEffect, useState } from "react";
 import MessagePhoto from "../home/MessagePhoto";
 import MessageVideo from "../home/MessageVideo";
@@ -9,6 +8,7 @@ import { Eye, ReplyIcon } from "lucide-react-native";
 import { ArrowLeftIcon } from "../../../assets/icons";
 import TdLib from "react-native-tdlib";
 import AppText from "../../ui/AppText";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface ChannelMessageItemProps {
   data: any;
@@ -20,10 +20,6 @@ interface ChannelMessageItemProps {
 const screenWidth = Dimensions.get("window").width;
 const screenHeight = Dimensions.get("window").height;
 
-/**
- * computeVideoDisplaySize: replicates MessageVideo's sizing logic so we can
- * ensure the parent card is wide enough for the video (no clipping).
- */
 function computeVideoDisplaySize(video: any) {
   const originalWidth = video?.width || 320;
   const originalHeight = video?.height || 240;
@@ -95,7 +91,6 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
   const photo = content?.photo;
   const video = content?.video;
 
-  // compute media sizes safely
   let mediaWidth = 0;
   let mediaHeight = 0;
   if (photo?.sizes?.length) {
@@ -131,7 +126,6 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
   const MIN_HEIGHT = screenHeight;
   const hasMedia = !!photo || !!video;
 
-  // EXTRA: compute video-based final width so the card will expand to fit the video exactly
   const videoSize = video ? computeVideoDisplaySize(video) : { width: 0, height: 0 };
   const messageWidth = hasMedia ? Math.max(mediaWidth, MIN_WIDTH, videoSize.width) : MIN_WIDTH;
   const messageHeight = hasMedia ? Math.max(mediaHeight, MIN_HEIGHT, videoSize.height) : MIN_HEIGHT;
@@ -162,9 +156,47 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
   const replyCaption = replyContent?.caption?.text ?? "";
   const replyText = replyContent?.text?.text ?? "";
 
+  // --- REPORT MODAL: states, storage key and handlers (added, does not modify other logic) ---
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [isReported, setIsReported] = useState(false);
+  const REPORT_KEY_PREFIX = 'reported_message_';
+
+  useEffect(() => {
+    let mounted = true;
+    const checkReported = async () => {
+      try {
+        const key = REPORT_KEY_PREFIX + (data?.id ?? 'unknown');
+        const val = await AsyncStorage.getItem(key);
+        if (mounted) setIsReported(Boolean(val));
+      } catch (e) {
+        console.warn('checkReported err', e);
+      }
+    };
+    checkReported();
+    return () => { mounted = false; };
+  }, [data?.id]);
+
+  const handleSendReport = async () => {
+    try {
+      const key = REPORT_KEY_PREFIX + (data?.id ?? 'unknown');
+      const already = await AsyncStorage.getItem(key);
+      if (already) {
+        setIsReported(true);
+        return;
+      }
+      const payload = { id: data?.id, at: Date.now(), reported: true };
+      await AsyncStorage.setItem(key, JSON.stringify(payload));
+      setIsReported(true);
+    } catch (e) {
+      console.warn('report err', e);
+    }
+  };
+
   return (
-    <View style={styles.wrapper}>
-      {/* Expanded card width to fit video (no overflow) */}
+    <Pressable style={styles.wrapper}
+    onLongPress={() => setReportModalVisible(true)}
+    delayLongPress={800}
+    >
       <View style={[styles.card, { width: messageWidth }]}>
         {reply ? (
           replyContent?.photo ? (
@@ -192,7 +224,6 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
         )}
 
         {video && (
-          // keep alignSelf so MessageVideo uses its own computed size and won't be stretched
           <View style={{ alignSelf: "flex-start" }}>
             <MessageVideo video={video} context="channel" activeDownload={isActiveDownload} />
           </View>
@@ -228,6 +259,11 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
             <Eye size={14} color="#888" style={{ marginRight: 4 }} />
             <AppText style={styles.views}>{viewCount}</AppText>
             <AppText style={styles.time}> · {timeString}</AppText>
+
+            {/* Report button (minimal, won't alter existing layout significantly) */}
+            {/* <TouchableOpacity onPress={() => setReportModalVisible(true)} style={{ marginLeft: 8 }}>
+              <AppText style={{ color: '#ff8a8a', fontSize: 12 }}>گزارش</AppText>
+            </TouchableOpacity> */}
           </View>
         </View>
 
@@ -246,7 +282,57 @@ export default function ChannelMessageItem({ data, isVisible, activeDownloads, c
           </TouchableOpacity>
         )}
       </View>
-    </View>
+
+      {/* Report Modal (non-intrusive, mirrors approach from CommentItem) */}
+      <Modal
+        visible={reportModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReportModalVisible(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.box}>
+            {!isReported ? (
+              <>
+                <Text style={modalStyles.title}>گزارش تخلف</Text>
+                <Text style={modalStyles.message}>آیا می‌خواهید این پیام را گزارش کنید؟</Text>
+
+                <View style={modalStyles.row}>
+                  <TouchableOpacity
+                    style={modalStyles.buttonDanger}
+                    onPress={async () => {
+                      await handleSendReport();
+                    }}
+                  >
+                    <Text style={modalStyles.buttonDangerText}>گزارش تخلف</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={modalStyles.button}
+                    onPress={() => setReportModalVisible(false)}
+                  >
+                    <Text style={modalStyles.buttonText}>انصراف</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={modalStyles.title}>گزارش ارسال شده</Text>
+                <Text style={modalStyles.message}>گزارش شما برای بررسی ارسال شد</Text>
+                <View style={modalStyles.rowSingle}>
+                  <TouchableOpacity
+                    style={modalStyles.button}
+                    onPress={() => setReportModalVisible(false)}
+                  >
+                    <Text style={modalStyles.buttonText}>باشه</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+    </Pressable>
   );
 }
 
@@ -325,5 +411,72 @@ const styles = StyleSheet.create({
     fontSize: 12.6,
     fontFamily: "SFArabic-Regular",
     textAlign: "left",
+  },
+});
+
+export const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  box: {
+    width: '86%',
+    maxWidth: 420,
+    backgroundColor: '#1f1f1f',
+    padding: 18,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  title: {
+    color: '#fff',
+    fontSize: 15,
+    marginBottom: 6,
+    fontFamily: "SFArabic-Heavy"
+  },
+  message: {
+    color: '#ddd',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 14,
+    fontFamily: "SFArabic-Regular"
+  },
+  row: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'space-between',
+  },
+  rowSingle: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'center',
+  },
+  buttonDanger: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#b92b2b',
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  buttonDangerText: {
+    color: '#fff',
+    fontFamily: "SFArabic-Regular",
+    fontSize: 13
+  },
+  button: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#333',
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontFamily: "SFArabic-Regular",
+    fontSize: 13
   },
 });
