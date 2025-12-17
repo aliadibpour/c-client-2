@@ -8,7 +8,6 @@ import {
   StyleSheet,
   StatusBar,
   ActivityIndicator,
-  TouchableOpacity,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import io from "socket.io-client";
@@ -34,6 +33,9 @@ export default function LiveMatchScreen() {
   const [matchCache, setMatchCache] = useState<{ [id: number]: any[] }>({});
   const [failedDays, setFailedDays] = useState<{ [id: number]: boolean }>({});
 
+  // --- new: control when FlatList can render ---
+  const [ready, setReady] = useState(false);
+
   // ref to avoid stale closure for selectedDayIndex in socket connect
   const selectedDayIndexRef = useRef<number>(selectedDayIndex);
   useEffect(() => {
@@ -42,11 +44,11 @@ export default function LiveMatchScreen() {
 
   const scrollX = useRef(new Animated.Value(0)).current;
   const scrollViewRef = useRef<Animated.FlatList>(null);
+  const listRefs = useRef<{ [key: number]: any | null }>({});
 
   // track retry timers per day to avoid duplicate timers
   const retryTimersRef = useRef<{ [id: number]: number | null }>({});
 
-  // helper: clear retry timer for a day
   const clearRetryTimer = (dayId: number) => {
     const t = retryTimersRef.current[dayId];
     if (t != null) {
@@ -78,7 +80,6 @@ export default function LiveMatchScreen() {
   const mergeMatchLists = (prevList: any[] | undefined, incoming: any[]) => {
     if (!prevList) return incoming.map((m) => ({ ...m }));
 
-    // try to reuse as many previous item references as possible
     if (prevList.length !== incoming.length) {
       const prevById = new Map<string | number, any>();
       for (const p of prevList) if (p && p.id != null) prevById.set(p.id, p);
@@ -93,7 +94,6 @@ export default function LiveMatchScreen() {
       });
     }
 
-    // same length: compare by index and reuse when possible
     return incoming.map((inc, i) => {
       const prev = prevList[i];
       if (prev && prev.id != null && inc.id === prev.id && shallowEqualImportant(prev, inc)) {
@@ -103,12 +103,8 @@ export default function LiveMatchScreen() {
     });
   };
 
-  // --- request function (now with auto-retry scheduling) ---
   const requestMatchesOnce = (dayId: number, { force = false } = {}) => {
-    // avoid concurrent emits
     if (!force && loadingDays[dayId]) return;
-
-    // clear any pending retry because we're attempting immediately
     clearRetryTimer(dayId);
 
     const firstTime = matchCache[dayId] === undefined;
@@ -120,10 +116,7 @@ export default function LiveMatchScreen() {
       setFailedDays((p) => ({ ...p, [dayId]: false }));
     }
 
-    // if socket not ready, schedule a retry and keep loader state
     if (!socketRef.current || !socketRef.current.connected) {
-      console.log("socket not ready, will schedule retry to fetch day", dayId);
-      // schedule a retry after short delay (3s)
       if (!retryTimersRef.current[dayId]) {
         retryTimersRef.current[dayId] = setTimeout(() => {
           retryTimersRef.current[dayId] = null;
@@ -139,9 +132,7 @@ export default function LiveMatchScreen() {
       timedOut = true;
       setLoadingDays((p) => ({ ...p, [dayId]: false }));
       setFailedDays((p) => ({ ...p, [dayId]: true }));
-      console.warn(`live-match timeout for day ${dayId}`);
 
-      // schedule retry
       if (!retryTimersRef.current[dayId]) {
         retryTimersRef.current[dayId] = setTimeout(() => {
           retryTimersRef.current[dayId] = null;
@@ -154,28 +145,25 @@ export default function LiveMatchScreen() {
       socketRef.current.emit("live-match", dayId, (res: any) => {
         clearTimeout(t);
         if (timedOut) return;
-
-        // stop loader regardless
         setLoadingDays((p) => ({ ...p, [dayId]: false }));
 
         if (res && Array.isArray(res.matchList)) {
           const incoming = res.matchList;
-
-          // use merging function to try to preserve references for unchanged items
           setMatchCache((prev) => {
             const prevList = prev ? prev[dayId] : undefined;
             const merged = mergeMatchLists(prevList, incoming);
-            // if merged is identical reference to prev[dayId], keep prev to avoid re-render
             if (prev && prev[dayId] === merged) return prev;
             return { ...prev, [dayId]: merged };
           });
 
           setFailedDays((p) => ({ ...p, [dayId]: false }));
-
-          // success -> clear any retry timer
           clearRetryTimer(dayId);
+
+          // --- NEW: mark ready when selectedDayIndex data arrives ---
+          if (dayId === dayList[selectedDayIndexRef.current].id) {
+            setReady(true);
+          }
         } else {
-          // invalid payload: keep old data, mark failed and schedule retry
           setFailedDays((p) => ({ ...p, [dayId]: true }));
           if (!retryTimersRef.current[dayId]) {
             retryTimersRef.current[dayId] = setTimeout(() => {
@@ -189,9 +177,7 @@ export default function LiveMatchScreen() {
       clearTimeout(t);
       setLoadingDays((p) => ({ ...p, [dayId]: false }));
       setFailedDays((p) => ({ ...p, [dayId]: true }));
-      console.error("socket emit error:", err);
 
-      // schedule retry
       if (!retryTimersRef.current[dayId]) {
         retryTimersRef.current[dayId] = setTimeout(() => {
           retryTimersRef.current[dayId] = null;
@@ -201,27 +187,20 @@ export default function LiveMatchScreen() {
     }
   };
 
-  // --- socket setup (uses selectedDayIndexRef to avoid stale closure) ---
   useEffect(() => {
     socketRef.current = io("https://cornerlive.ir", {
       transports: ["websocket"],
     });
 
     socketRef.current.on("connect", () => {
-      console.log("socket connected");
-
-      // request for current active day (force)
       const dayId = dayList[selectedDayIndexRef.current].id;
       requestMatchesOnce(dayId, { force: true });
 
-      // NEW: also kick off requests for any day that still has no cache
-      // or previously failed — this fixes the "stuck loading until scroll" race.
       for (const d of dayList) {
         const id = d.id;
         const hasCache = matchCache[id] !== undefined;
         const hadFailed = !!failedDays[id];
         if (!hasCache || hadFailed) {
-          // small delay to avoid spamming immediately on connect
           setTimeout(() => requestMatchesOnce(id, { force: true }), 50);
         }
       }
@@ -234,50 +213,25 @@ export default function LiveMatchScreen() {
     return () => {
       socketRef.current?.disconnect();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // keep empty deps: socket lifecycle single-run
-
-  // --- ensure initial scroll and initial fetch after mount ---
-  useEffect(() => {
-    const ltrIndex = dayList.length - 1 - selectedDayIndexRef.current;
-    const id = setTimeout(() => {
-      scrollViewRef.current?.scrollToOffset({
-        offset: ltrIndex * SCREEN_WIDTH,
-        animated: false,
-      });
-      // ensure initial fetch attempted (if not cached)
-      fetchMatchesOnce(dayList[selectedDayIndexRef.current].id);
-    }, 50);
-
-    return () => clearTimeout(id);
-    // run only once on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // polling for day id = 2 every 10 seconds
+  const fetchMatchesOnce = (dayId: number) => {
+    if (matchCache[dayId] !== undefined && !failedDays[dayId]) return;
+    requestMatchesOnce(dayId);
+  };
+
   useEffect(() => {
     const POLL_DAY_ID = 2;
     const interval = setInterval(() => {
       requestMatchesOnce(POLL_DAY_ID, { force: true });
     }, 10000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // start: request for active day when selectedDayIndex changes
   useEffect(() => {
     const dayId = dayList[selectedDayIndex].id;
     fetchMatchesOnce(dayId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDayIndex]);
-
-  // helper used by DaySelector / initial behavior
-  const fetchMatchesOnce = (dayId: number) => {
-    // if we already have cached value, skip fetching
-    // NEW: also retry if previously failed
-    if (matchCache[dayId] !== undefined && !failedDays[dayId]) return;
-    requestMatchesOnce(dayId);
-  };
 
   const onScrollEnd = (event: any) => {
     const rawX = event.nativeEvent.contentOffset.x;
@@ -289,11 +243,8 @@ export default function LiveMatchScreen() {
     }
   };
 
-  const listRefs = useRef<{ [key: number]: any | null }>({});
-
   const onDaySelect = (index: number) => {
     fetchMatchesOnce(dayList[index].id);
-
     const dayId = dayList[index].id;
     const ref = listRefs.current[dayId];
     if (ref) {
@@ -309,7 +260,6 @@ export default function LiveMatchScreen() {
     });
   };
 
-  // --- render ---
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#000" }}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
@@ -320,66 +270,72 @@ export default function LiveMatchScreen() {
         scrollX={scrollX}
       />
 
-      <Animated.FlatList
-        ref={scrollViewRef}
-        data={dayList}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(item) => item.id.toString()}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-          { useNativeDriver: false }
-        )}
-        onMomentumScrollEnd={onScrollEnd}
-        initialScrollIndex={dayList.length - 1 - selectedDayIndex}
-        getItemLayout={(_, index) => ({
-          length: SCREEN_WIDTH,
-          offset: SCREEN_WIDTH * index,
-          index,
-        })}
-        // reduced extraData: avoid passing whole matchCache (which would re-render everything)
-        extraData={[loadingDays, selectedDayIndex]}
-        initialNumToRender={1}
-        windowSize={3}
-        removeClippedSubviews={false}
-        renderItem={({ item }) => {
-          const matches = matchCache[item.id];
-          // treat "no cached value yet" as loading so UI doesn't go blank
-          const isLoading = matches === undefined ? true : !!loadingDays[item.id];
-          const isFailed = !!failedDays[item.id];
+      {/* === NEW: FlatList render only when ready === */}
+      {ready ? (
+        <Animated.FlatList
+          ref={scrollViewRef}
+          data={dayList}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(item) => item.id.toString()}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+            { useNativeDriver: false }
+          )}
+          onMomentumScrollEnd={onScrollEnd}
+          initialScrollIndex={dayList.length - 1 - selectedDayIndex}
+          getItemLayout={(_, index) => ({
+            length: SCREEN_WIDTH,
+            offset: SCREEN_WIDTH * index,
+            index,
+          })}
+          extraData={[loadingDays, selectedDayIndex]}
+          initialNumToRender={1}
+          windowSize={3}
+          removeClippedSubviews={false}
+          renderItem={({ item }) => {
+            const matches = matchCache[item.id];
+            const isLoading = matches === undefined ? true : !!loadingDays[item.id];
 
-          if (isLoading && !matches) {
+            if (isLoading && !matches) {
+              return (
+                <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
+                  <View style={styles.centered}>
+                    <ActivityIndicator color={"#fff"} />
+                  </View>
+                </View>
+              );
+            }
+
+            if (Array.isArray(matches) && matches.length === 0) {
+              return (
+                <View style={{ width: SCREEN_WIDTH }}>
+                  <AppText style={styles.text}>هیچ بازی‌ای یافت نشد</AppText>
+                </View>
+              );
+            }
+
             return (
               <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-                <View style={styles.centered}>
-                  <ActivityIndicator color={"#fff"} />
-                </View>
+                <MatchList
+                  data={matches || []}
+                  listRef={(r: any) => (listRefs.current[item.id] = r)}
+                  extraDataForList={matches}
+                />
               </View>
             );
-          }
+          }}
+        />
+      ) : (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator color="#fff" size={24} />
+        </View>
+      )}
 
-          if (Array.isArray(matches) && matches.length === 0) {
-            return (
-              <View style={{ width: SCREEN_WIDTH }}>
-                <AppText style={styles.text}>هیچ بازی‌ای یافت نشد</AppText>
-              </View>
-            );
-          }
-
-          return (
-            <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-              {/* Pass a stable ref and matches only to the MatchList child */}
-              <MatchList
-                data={matches || []}
-                listRef={(r: any) => (listRefs.current[item.id] = r)}
-                extraDataForList={matches}
-              />
-            </View>
-          );
-        }}
-      />
-      <AppText style={styles.copyright}>مالکیت فکری بازی ها متعلق به corner است</AppText>
+      <AppText style={styles.copyright}>
+        مالکیت فکری بازی ها متعلق به corner است
+      </AppText>
     </SafeAreaView>
   );
 }
@@ -398,28 +354,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  retryButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  retryText: {
-    color: "#1f1f1fff",
-    fontSize: 14,
-    fontFamily: "SFArabic-Regular",
-  },
-  smallRetry: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.6)",
-  },
   copyright: {
     color: "#555",
     fontSize: 10,
     textAlign: "center",
     paddingVertical: 5,
-    paddingBottom:0.3,
+    paddingBottom: 0.3,
     fontFamily: "SFArabic-Regular",
-  }
+  },
 });
