@@ -27,7 +27,7 @@ const MAX_PREFETCH_BATCHES = 2;
 const PER_GROUP_CONCURRENCY = 3; // used inside loadBatch for group concurrency
 const TD_CONCURRENCY = 6; // global limit for TdLib calls
 const POLL_INTERVAL_MS = 2400;
-const MAX_OPENED_CHATS = 15; // LRU cap for opened chats
+const MAX_OPENED_CHATS = 8; // LRU cap for opened chats
 
 const TD_WARMUP_ENABLED = true;
 const TD_WARMUP_WAIT_MS_BEFORE_FETCH = 2000;
@@ -714,136 +714,131 @@ function processSearchQueue() {
   // ------------------
   // loadBatch (uses resolveChannelToChatId)
   // ------------------
-const loadBatch = useCallback(
-  async (batchIdx: number, opts: { initial?: boolean } = {}) => {
-    const isInitialMode = !!opts.initial;
-    const myGen = activeTabGenRef.current;
-    const now = Date.now();
-    const isThrottled = adaptiveThrottleUntilRef.current > now;
-    const effectiveStaggerWindow = isThrottled ? STAGGER_WINDOW_MS * ADAPTIVE_STAGGER_MULTIPLIER : STAGGER_WINDOW_MS;
-    // reduce per-group concurrency in initial mode to avoid many TD calls
-    const effectivePerGroupConcurrency = isInitialMode
-      ? Math.max(1, Math.floor(PER_GROUP_CONCURRENCY / 2)) // e.g. lower concurrency
-      : (isThrottled ? Math.max(1, PER_GROUP_CONCURRENCY - ADAPTIVE_CONCURRENCY_REDUCTION) : PER_GROUP_CONCURRENCY);
+  const loadBatch = useCallback(
+    async (batchIdx: number) => {
+      const myGen = activeTabGenRef.current;
+      const now = Date.now();
+      const isThrottled = adaptiveThrottleUntilRef.current > now;
+      const effectiveStaggerWindow = isThrottled ? STAGGER_WINDOW_MS * ADAPTIVE_STAGGER_MULTIPLIER : STAGGER_WINDOW_MS;
+      const effectivePerGroupConcurrency = isThrottled ? Math.max(1, PER_GROUP_CONCURRENCY - ADAPTIVE_CONCURRENCY_REDUCTION) : PER_GROUP_CONCURRENCY;
 
-    const start = batchIdx * BATCH_SIZE;
-    const metas = datasRef.current.slice(start, start + BATCH_SIZE);
-    if (!metas.length) return [];
+      const start = batchIdx * BATCH_SIZE;
+      const metas = datasRef.current.slice(start, start + BATCH_SIZE);
+      if (!metas.length) return [];
 
-    const results: any[] = [];
-    const toFetch: any[] = [];
+      const results: any[] = [];
+      const toFetch: any[] = [];
 
-    for (const m of metas) {
-      const key = mk(m.chatId ?? m.channel, m.messageId);
-      const cached = messageCacheRef.current.get(key);
-      if (cached) results.push(cached);
-      else toFetch.push(m);
-    }
-
-    if (toFetch.length === 0) return results;
-
-    const groups: Record<string, any[]> = {};
-    for (const t of toFetch) {
-      const gKey = t.chatId ? `c:${t.chatId}` : `ch:${t.channel}`;
-      if (!groups[gKey]) groups[gKey] = [];
-      groups[gKey].push(t);
-    }
-
-    for (const gKey of Object.keys(groups)) {
-      if (myGen !== activeTabGenRef.current) return [];
-
-      const group = groups[gKey];
-      let resolvedChatId: number | undefined;
-      const sample = group[0];
-
-      if (sample.channel) {
-        try {
-          const resolved = await resolveChannelToChatId(sample.channel, myGen);
-          if (typeof resolved === 'number' && resolved) resolvedChatId = Number(resolved);
-        } catch (e) {}
+      for (const m of metas) {
+        const key = mk(m.chatId ?? m.channel, m.messageId);
+        const cached = messageCacheRef.current.get(key);
+        if (cached) results.push(cached);
+        else toFetch.push(m);
       }
 
-      if (!resolvedChatId && sample.chatId) resolvedChatId = Number(sample.chatId);
+      if (toFetch.length === 0) return results;
 
-      // IMPORTANT: in initial mode we SKIP aggressive openChat — postpone opens until visible
-      if (resolvedChatId && !isInitialMode) {
-        try {
-          if (!openedChats.current.has(resolvedChatId) && !openingChatsRef.current.has(resolvedChatId)) {
-            openingChatsRef.current.add(resolvedChatId);
-            try {
-              if (myGen !== activeTabGenRef.current) { openingChatsRef.current.delete(resolvedChatId); }
-              else {
-                await tdCall('openChat', resolvedChatId);
-                openedChats.current.set(resolvedChatId, Date.now());
-              }
-            } catch (e) { /* ignore */ } finally { openingChatsRef.current.delete(resolvedChatId); }
-          } else {
-            touchOpenedChat(resolvedChatId);
-          }
-        } catch (e) { }
-      } else if (resolvedChatId && isInitialMode) {
-        // in initial mode: still record LRU touch if already opened
-        if (openedChats.current.has(resolvedChatId)) touchOpenedChat(resolvedChatId);
+      const groups: Record<string, any[]> = {};
+      for (const t of toFetch) {
+        const gKey = t.chatId ? `c:${t.chatId}` : `ch:${t.channel}`;
+        if (!groups[gKey]) groups[gKey] = [];
+        groups[gKey].push(t);
       }
 
-      const perItemStagger = Math.floor(effectiveStaggerWindow / Math.max(1, group.length));
-      group.forEach((g, idx) => { (g as any)._stagger = Math.min(effectiveStaggerWindow, idx * perItemStagger || 0); });
+      for (const gKey of Object.keys(groups)) {
+        if (myGen !== activeTabGenRef.current) return [];
 
-      const fetched = await limitConcurrency(
-        group,
-        effectivePerGroupConcurrency,
-        async (meta) => {
-          if (myGen !== activeTabGenRef.current) return null;
-          const kk = mk(meta.chatId ?? meta.channel, meta.messageId);
-          const c = messageCacheRef.current.get(kk);
-          if (c) return c;
+        const group = groups[gKey];
+        let resolvedChatId: number | undefined;
+        const sample = group[0];
+
+        // NEW: centralized resolution
+        if (sample.channel) {
           try {
-            const s = (meta as any)._stagger || Math.floor(Math.random() * STAGGER_BASE_MS);
-            if (s) await delay(s);
-
-            if (myGen !== activeTabGenRef.current) return null;
-
-            // Use resolvedChatId first; if not present, resolve per-item via centralized helper
-            let cidToUse = resolvedChatId || (meta.chatId ? Number(meta.chatId) : undefined);
-            if (!cidToUse && meta.channel) {
-              try {
-                const resolvedPerItem = await resolveChannelToChatId(meta.channel, myGen);
-                if (typeof resolvedPerItem === 'number' && resolvedPerItem) cidToUse = Number(resolvedPerItem);
-              } catch (e) { /* ignore */ }
-            }
-
-            if (cidToUse) {
-              if (myGen !== activeTabGenRef.current) return null;
-              // in initial mode we might want to call getMessage with a shorter timeout — handled by tdCall/promiseTimeout
-              const r: any = await tdCall('getMessage', Number(cidToUse), Number(meta.messageId));
-              if (myGen !== activeTabGenRef.current) return null;
-              const parsed = JSON.parse(r.raw);
-              const k2 = mk(parsed.chatId || cidToUse, parsed.id);
-              const stored = withUuid(parsed);
-              messageCacheRef.current.set(k2, stored);
-              return stored;
-            } else {
-              return null;
-            }
-          } catch (e) { console.warn('[loadBatch group fetch] failed', e); return null; }
+            const resolved = await resolveChannelToChatId(sample.channel, myGen);
+            // resolved may be number | null | undefined
+            if (typeof resolved === 'number' && resolved) resolvedChatId = Number(resolved);
+            // if resolved === null -> negative cache => do not attempt to resolve further now
+            // if resolved === undefined -> treat as unresolved (will try sample.chatId fallback below)
+          } catch (e) { /* ignore - continue */ }
         }
-      );
 
-      for (const f of fetched) if (f) results.push(f);
+        if (!resolvedChatId && sample.chatId) resolvedChatId = Number(sample.chatId);
 
-      // small pause per group to avoid bursts
-      await delay(60);
-    }
+        if (resolvedChatId) {
+          try {
+            if (!openedChats.current.has(resolvedChatId) && !openingChatsRef.current.has(resolvedChatId)) {
+              openingChatsRef.current.add(resolvedChatId);
+              try {
+                if (myGen !== activeTabGenRef.current) { openingChatsRef.current.delete(resolvedChatId); }
+                else {
+                  await tdCall('openChat', resolvedChatId);
+                  openedChats.current.set(resolvedChatId, Date.now());
+                }
+              } catch (e) { /* ignore */ } finally { openingChatsRef.current.delete(resolvedChatId); }
+            } else {
+              touchOpenedChat(resolvedChatId);
+            }
+          } catch (e) { /* ignore */ }
+        }
 
-    persistCachesDebounced();
+        const perItemStagger = Math.floor(effectiveStaggerWindow / Math.max(1, group.length));
+        group.forEach((g, idx) => { (g as any)._stagger = Math.min(effectiveStaggerWindow, idx * perItemStagger || 0); });
 
-    const ordered = metas
-      .map((m) => results.find((r) => String(r.id) === String(m.messageId) && (!m.chatId || String(r.chatId) === String(m.chatId))))
-      .filter(Boolean);
+        const fetched = await limitConcurrency(
+          group,
+          effectivePerGroupConcurrency,
+          async (meta) => {
+            if (myGen !== activeTabGenRef.current) return null;
+            const kk = mk(meta.chatId ?? meta.channel, meta.messageId);
+            const c = messageCacheRef.current.get(kk);
+            if (c) return c;
+            try {
+              const s = (meta as any)._stagger || Math.floor(Math.random() * STAGGER_BASE_MS);
+              if (s) await delay(s);
 
-    return ordered;
-  }, [tdCall, touchOpenedChat, persistCachesDebounced, withUuid]
-);
+              if (myGen !== activeTabGenRef.current) return null;
+
+              // Use resolvedChatId first; if not present, resolve per-item via centralized helper
+              let cidToUse = resolvedChatId || (meta.chatId ? Number(meta.chatId) : undefined);
+              if (!cidToUse && meta.channel) {
+                try {
+                  const resolvedPerItem = await resolveChannelToChatId(meta.channel, myGen);
+                  if (typeof resolvedPerItem === 'number' && resolvedPerItem) cidToUse = Number(resolvedPerItem);
+                  // if resolvedPerItem === null => negative cached -> leave cidToUse undefined
+                } catch (e) { /* ignore */ }
+              }
+
+              if (cidToUse) {
+                if (myGen !== activeTabGenRef.current) return null;
+                const r: any = await tdCall('getMessage', Number(cidToUse), Number(meta.messageId));
+                if (myGen !== activeTabGenRef.current) return null;
+                const parsed = JSON.parse(r.raw);
+                const k2 = mk(parsed.chatId || cidToUse, parsed.id);
+                const stored = withUuid(parsed);
+                messageCacheRef.current.set(k2, stored);
+                return stored;
+              } else {
+                return null;
+              }
+            } catch (e) { console.warn('[loadBatch group fetch] failed', e); return null; }
+          }
+        );
+
+        for (const f of fetched) if (f) results.push(f);
+
+        await delay(60);
+      }
+
+      persistCachesDebounced();
+
+      const ordered = metas
+        .map((m) => results.find((r) => String(r.id) === String(m.messageId) && (!m.chatId || String(r.chatId) === String(m.chatId))))
+        .filter(Boolean);
+
+      return ordered;
+    }, [tdCall, touchOpenedChat, persistCachesDebounced, withUuid]
+  );
 
   // prefetch next batches staggered
   const prefetchNextBatches = useCallback(
@@ -1164,96 +1159,62 @@ const loadBatch = useCallback(
   // ------------------
   // INITIAL LOAD (with wait for td warmup up to TD_WARMUP_WAIT_MS_BEFORE_FETCH)
   // ------------------
-useEffect(() => {
-  let mounted = true;
-  (async () => {
-    try {
-      await loadPersistedCaches();
-      if (!activeTab) {
-        setInitialLoading(false);
-        return;
-      }
-
-      // Optionally start warmup but don't block UI for long
-      if (TD_WARMUP_ENABLED) {
-        tryTdWarmup(); // fire-and-forget; earlier you were waiting up to 2s — keep it async
-      }
-
-      setInitialLoading(true);
-      setInitialError(false);
-      const parsed = await getStoredUserInfo();
-      const parsedUuid = parsed.uuid;
-      if (!parsedUuid) { setInitialLoading(false); return; }
-      const serverTab = activeTabRef.current || activeTab;
-      const res = await fetchFeedInitial(serverTab as string, parsedUuid, timestamp);
-      const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
-      if (!mounted) return;
-
-      // keep only reasonable amount (you already had 200) — can reduce to 100 to speed parsing
-      const datas = datass.sort((a, b) => +b.messageId - +a.messageId).slice(0, 200);
-      datasRef.current = datas;
-      prefetchRef.current.clear();
-      prefetchInFlightRef.current.clear();
-      setCurrentBatchIdx(0);
-
-      // --- FAST PATH: try to render immediately from persisted message cache ---
-      // build cached items for first BATCH_SIZE metas
-      const firstMetas = datas.slice(0, BATCH_SIZE);
-      const cachedItems: any[] = [];
-      for (const m of firstMetas) {
-        const k = mk(m.chatId ?? m.channel, m.messageId);
-        const cached = messageCacheRef.current.get(k);
-        if (cached) cachedItems.push(withUuid(cached));
-      }
-      if (cachedItems.length) {
-        setMessages(dedupeByUuid(cachedItems));
-        // stop showing "initial loader" if we have something
-        setInitialLoading(false);
-      } else {
-        // if no cached content we can show skeleton by keeping setInitialLoading(true)
-        // optionally set a lightweight skeleton state here
-      }
-
-      // --- BACKGROUND: fetch the real first batch but in "initial" mode (lower concurrency, no openChat spam)
-      (async () => {
-        try {
-          const first = await loadBatch(0, { initial: true });
-          if (!mounted) return;
-          const enrichedFirst = await ensureRepliesForMessages(first);
-          if (!mounted) return;
-
-          // merge cached UI with real results, prefer real results
-          setMessages(prev => {
-            const base = Array.isArray(prev) ? prev : [];
-            const merged = dedupeByUuid([...base.filter(Boolean), ...enrichedFirst.map(withUuid)]);
-            return merged;
-          });
-
-          setCurrentBatchIdx(0);
-
-          // warm chatInfos for visible items (low concurrency)
-          const chatIds = Array.from(new Set(enrichedFirst.map((m) => m.chatId).filter(Boolean)));
-          await limitConcurrency(chatIds, 2, async (cid) => { await getAndCacheChatInfo(+cid); return null; });
-
-          notifyServerBatchReached(0, serverTab).catch(() => {});
-          prefetchNextBatches(0);
-        } catch (e) {
-          console.warn('[initialLoad background fetch] failed', e);
-        } finally {
-          if (mounted) setInitialLoading(false);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        await loadPersistedCaches();
+        if (!activeTab) {
+          setInitialLoading(false);
+          return;
         }
-      })();
 
-    } catch (err) {
-      console.warn('[initialLoad] failed', err);
-      if (mounted) {
+        // const warmupPromise = tryTdWarmup();
+        // if (TD_WARMUP_ENABLED) {
+        //   const timed = Promise.race([
+        //     warmupPromise,
+        //     new Promise((res) => setTimeout(() => res(false), TD_WARMUP_WAIT_MS_BEFORE_FETCH)),
+        //   ]);
+        //   const ok = await timed;
+        //   console.log('[initialLoad] tdWarmup ok=', ok);
+        // } else {
+        //   console.log('[initialLoad] tdWarmup disabled');
+        // }
+
+        setInitialLoading(true);
+        setInitialError(false);
+        const parsed = await getStoredUserInfo();
+        const parsedUuid = parsed.uuid;
+        if (!parsedUuid) { setInitialLoading(false); return; }
+        const serverTab = activeTabRef.current || activeTab;
+        const res = await fetchFeedInitial(serverTab as string, parsedUuid, timestamp);
+        const datass: { chatId: string; messageId: string; channel: string }[] = await res.json();
+        if (!mounted) return;
+        const datas = datass.sort((a, b) => +b.messageId - +a.messageId).slice(0, 200);
+        datasRef.current = datas;
+        prefetchRef.current.clear();
+        prefetchInFlightRef.current.clear();
+        setMessages([]);
+        setCurrentBatchIdx(0);
+        const first = await loadBatch(0);
+        if (!mounted) return;
+        const enrichedFirst = await ensureRepliesForMessages(first);
+        if (!mounted) return;
+        setMessages(dedupeByUuid(enrichedFirst.map(withUuid)));
+        setCurrentBatchIdx(0);
+        const chatIds = Array.from(new Set(enrichedFirst.map((m) => m.chatId).filter(Boolean)));
+        await limitConcurrency(chatIds, 2, async (cid) => { await getAndCacheChatInfo(+cid); return null; });
+        notifyServerBatchReached(0, serverTab).catch(() => { });
+        prefetchNextBatches(0);
+        setInitialLoading(false);
+      } catch (err) {
+        console.warn('[initialLoad] failed', err);
         setInitialError(true);
         setInitialLoading(false);
       }
-    }
-  })();
-  return () => { mounted = false; };
-}, [activeTab, loadBatch, getAndCacheChatInfo, prefetchNextBatches, loadPersistedCaches, notifyServerBatchReached, ensureRepliesForMessages, withUuid, fetchFeedInitial]);
+    })();
+    return () => { mounted = false; };
+  }, [activeTab, loadBatch, getAndCacheChatInfo, prefetchNextBatches, loadPersistedCaches, notifyServerBatchReached, ensureRepliesForMessages, withUuid, fetchFeedInitial]);
 
   // ------------------
   // POLLING VISIBLE
@@ -1629,7 +1590,7 @@ useEffect(() => {
         ) : (
           <FlatList
             ref={(r:any) => (listRef.current = r)}
-            style={{ paddingHorizontal: 10 }}
+            style={{ paddingHorizontal: 12.5 }}
             data={messages}
             keyExtractor={(item, index) => item?.__uuid ?? `${item?.chatId ?? 'ch'}:${String(item?.id ?? item?.messageId ?? index)}`}
             renderItem={renderItem}
