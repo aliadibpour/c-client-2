@@ -27,7 +27,7 @@ const MAX_PREFETCH_BATCHES = 2;
 const PER_GROUP_CONCURRENCY = 3; // used inside loadBatch for group concurrency
 const TD_CONCURRENCY = 6; // global limit for TdLib calls
 const POLL_INTERVAL_MS = 2400;
-const MAX_OPENED_CHATS = 5; // LRU cap for opened chats
+const MAX_OPENED_CHATS = 15; // LRU cap for opened chats
 
 const TD_WARMUP_ENABLED = true;
 const TD_WARMUP_WAIT_MS_BEFORE_FETCH = 2000;
@@ -394,7 +394,7 @@ export default function HomeScreen() {
       const firstKey = openedChats.current.keys().next().value;
       if (firstKey !== undefined) {
         const removing = firstKey;
-        tdCall("closeChat", removing).catch((e: any) => console.warn('[touchOpenedChat] closeChat failed', e));
+        //tdCall("closeChat", removing).catch((e: any) => console.warn('[touchOpenedChat] closeChat failed', e));
         openedChats.current.delete(removing);
       } else break;
     }
@@ -499,12 +499,6 @@ export default function HomeScreen() {
   // ------------------
   // Persisted recent-search cache helpers
   // ------------------
-  async function loadRecentSearchCachePersisted() {
-    try {
-      const raw = await AsyncStorage.getItem(RECENT_SEARCH_PERSIST_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch (e) { return {}; }
-  }
   async function saveRecentSearchCachePersisted(obj: Record<string, any>) {
     try { await AsyncStorage.setItem(RECENT_SEARCH_PERSIST_KEY, JSON.stringify(obj)); } catch (e) { console.warn('[persistSearchCache] failed', e); }
   }
@@ -772,7 +766,7 @@ function processSearchQueue() {
               try {
                 if (myGen !== activeTabGenRef.current) { openingChatsRef.current.delete(resolvedChatId); }
                 else {
-                  await tdCall('openChat', resolvedChatId);
+                  //await tdCall('openChat', resolvedChatId);
                   openedChats.current.set(resolvedChatId, Date.now());
                 }
               } catch (e) { /* ignore */ } finally { openingChatsRef.current.delete(resolvedChatId); }
@@ -1169,18 +1163,6 @@ function processSearchQueue() {
           return;
         }
 
-        // const warmupPromise = tryTdWarmup();
-        // if (TD_WARMUP_ENABLED) {
-        //   const timed = Promise.race([
-        //     warmupPromise,
-        //     new Promise((res) => setTimeout(() => res(false), TD_WARMUP_WAIT_MS_BEFORE_FETCH)),
-        //   ]);
-        //   const ok = await timed;
-        //   console.log('[initialLoad] tdWarmup ok=', ok);
-        // } else {
-        //   console.log('[initialLoad] tdWarmup disabled');
-        // }
-
         setInitialLoading(true);
         setInitialError(false);
         const parsed = await getStoredUserInfo();
@@ -1334,12 +1316,11 @@ function processSearchQueue() {
         const chatId = msg.chatId;
         currentChatIds.add(chatId);
         if (!openedChats.current.has(chatId)) {
-          try { await tdCall("openChat", chatId); openedChats.current.set(chatId, Date.now()); } catch (e:any) { console.warn('[activeDownloads] openChat failed', e); }
+          //try { await tdCall("openChat", chatId); openedChats.current.set(chatId, Date.now()); } catch (e:any) { console.warn('[activeDownloads] openChat failed', e); }
         } else touchOpenedChat(chatId);
       }
     })();
   }, [activeDownloads, messages, tdCall, touchOpenedChat]);
-
   // ------------------
   // INTEGRATED FIX: resetAndFetchInitial
   // ------------------
@@ -1476,14 +1457,14 @@ function processSearchQueue() {
   const onEndReached = useCallback(() => { loadMore(); }, [loadMore]);
 
   // cleanup openedChats on blur/unmount
-  useFocusEffect(
-    useCallback(() => {
-      return () => {
-        const promises = Array.from(openedChats.current.keys()).map((chatId) => tdCall("closeChat", chatId).catch((e:any) => console.warn('[cleanup] closeChat failed', e)));
-        Promise.all(promises).then(() => openedChats.current.clear());
-      };
-    }, [tdCall])
-  );
+  // useFocusEffect(
+  //   useCallback(() => {
+  //     return () => {
+  //       //const promises = Array.from(openedChats.current.keys()).map((chatId) => tdCall("closeChat", chatId).catch((e:any) => console.warn('[cleanup] closeChat failed', e)));
+  //       //Promise.all(promises).then(() => openedChats.current.clear());
+  //     };
+  //   }, [tdCall])
+  // );
 
   // renderItem (pass chatInfo)
   const renderItem = useCallback(
