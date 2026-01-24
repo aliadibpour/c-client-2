@@ -78,3 +78,43 @@ export function safeParse(raw: any) {
   }
 }
 
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export async function fetchWithRetry(url: string, opts: any = {}) {
+    const {
+      retries = 2,
+      timeout = 8000,
+      backoffBase = 300,
+      fetchOptions = {},
+      acceptNonOk = false,
+    } = opts;
+
+    let attempt = 0;
+    while (true) {
+      attempt++;
+      const controller = new AbortController();
+      const signal = controller.signal;
+      const timer = setTimeout(() => controller.abort(), timeout);
+
+      try {
+        const res = await fetch(url, { signal, ...fetchOptions });
+        clearTimeout(timer);
+
+        if (!res.ok && !acceptNonOk) {
+          const text = await res.text().catch(() => null);
+          const err: any = new Error(`HTTP ${res.status} ${res.statusText}${text ? " - " + text : ""}`);
+          err.status = res.status;
+          throw err;
+        }
+
+        return res;
+      } catch (err: any) {
+        clearTimeout(timer);
+        if (attempt > retries) {
+          throw err;
+        }
+        const backoff = backoffBase * Math.pow(2, attempt - 1);
+        const jitter = Math.floor(Math.random() * 200);
+        await delay(backoff + jitter);
+      }
+    }
+}

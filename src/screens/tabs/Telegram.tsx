@@ -65,25 +65,58 @@ export default function TelegramScreen() {
   }, [teamsSlugs]);
 
   // fetch channels for a slug
-  const fetchForTeam = async (teamSlug: string) => {
+  const fetchForTeam = async (teamSlug: string, retry = 0) => {
     if (!teamSlug) return;
+
+    // اگر قبلاً دیتا داریم، دیگه fetch نکن
     if (Array.isArray(channelsByTeam[teamSlug])) {
       setGlobalLoading(false);
       return;
     }
+
+    const MAX_RETRY = 12;
+    const RETRY_DELAY = 1500; // ms
+
     setGlobalLoading(true);
     latestFetchForTeamRef.current = teamSlug;
+
     try {
-      const res: any = await fetch(`https://cornerlive.ir/feed-channel?team=${encodeURIComponent(teamSlug)}`);
+      const res = await fetch(
+        `https://cornerlive.ir/feed-channel?team=${encodeURIComponent(teamSlug)}`
+      );
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
       const data = await res.json();
+
+      // اگر وسط کار تیم عوض شد
       if (latestFetchForTeamRef.current !== teamSlug) return;
+
       const arr = Array.isArray(data) ? data : [];
       setChannelsByTeam(p => ({ ...p, [teamSlug]: arr }));
       setGlobalLoading(false);
+
     } catch (err) {
-      console.error('fetchChannelsList error:', err);
-      setChannelsByTeam(p => ({ ...p, [teamSlug]: [] }));
-      setGlobalLoading(false);
+      console.error(`fetch error (retry ${retry})`, err);
+
+      // اگر هنوز اجازه retry داریم و تیم عوض نشده
+      if (
+        retry < MAX_RETRY &&
+        latestFetchForTeamRef.current === teamSlug
+      ) {
+        setTimeout(() => {
+          fetchForTeam(teamSlug, retry + 1);
+        }, RETRY_DELAY);
+        return;
+      }
+
+      // آخرین retry هم شکست خورد
+      if (latestFetchForTeamRef.current === teamSlug) {
+        setChannelsByTeam(p => ({ ...p, [teamSlug]: [] }));
+        setGlobalLoading(false);
+      }
     }
   };
 

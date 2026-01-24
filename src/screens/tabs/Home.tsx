@@ -20,6 +20,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import HomeHeader, { pepe } from "../../components/tabs/home/HomeHeader";
 import { Buffer } from "buffer";
 import uuid from 'react-native-uuid';
+import { fetchWithRetry } from "../../hooks";
 
 // ---- CONFIG ----
 const BATCH_SIZE = 5;
@@ -28,16 +29,7 @@ const PER_GROUP_CONCURRENCY = 3; // used inside loadBatch for group concurrency
 const TD_CONCURRENCY = 6; // global limit for TdLib calls
 const POLL_INTERVAL_MS = 2400;
 const MAX_OPENED_CHATS = 15; // LRU cap for opened chats
-
-const TD_WARMUP_ENABLED = true;
-const TD_WARMUP_WAIT_MS_BEFORE_FETCH = 2000;
 const TD_WARMUP_CALL_TIMEOUT_MS = 7000;
-
-// Search / rate-limiting config (updated conservative defaults)
-const SEARCH_LIMIT = 5; // sliding window calls
-const SEARCH_WINDOW_MS = 10_000;
-const SEARCH_SERIAL_DELAY_MS = 300; // minimal gap between serialized TD search calls
-const SEARCH_SERIAL_POLL_DELAY_MS = 50; // polling while waiting for serialization
 
 // Persisted recent search cache key and TTL
 const RECENT_SEARCH_PERSIST_KEY = 'recent_search_cache_v1';
@@ -250,49 +242,6 @@ export default function HomeScreen() {
     },
     [tdEnqueue]
   );
-
-  // ------------------
-  // fetch helpers
-  // ------------------
-  async function fetchWithRetry(url: string, opts: any = {}) {
-    const {
-      retries = 2,
-      timeout = 8000,
-      backoffBase = 300,
-      fetchOptions = {},
-      acceptNonOk = false,
-    } = opts;
-
-    let attempt = 0;
-    while (true) {
-      attempt++;
-      const controller = new AbortController();
-      const signal = controller.signal;
-      const timer = setTimeout(() => controller.abort(), timeout);
-
-      try {
-        const res = await fetch(url, { signal, ...fetchOptions });
-        clearTimeout(timer);
-
-        if (!res.ok && !acceptNonOk) {
-          const text = await res.text().catch(() => null);
-          const err: any = new Error(`HTTP ${res.status} ${res.statusText}${text ? " - " + text : ""}`);
-          err.status = res.status;
-          throw err;
-        }
-
-        return res;
-      } catch (err: any) {
-        clearTimeout(timer);
-        if (attempt > retries) {
-          throw err;
-        }
-        const backoff = backoffBase * Math.pow(2, attempt - 1);
-        const jitter = Math.floor(Math.random() * 200);
-        await delay(backoff + jitter);
-      }
-    }
-  }
 
   const fetchFeedInitial = useCallback(
     (tab: string, uuid: string, ts: number) => {
@@ -967,34 +916,6 @@ function processSearchQueue() {
     } catch (error) { console.error(error); }
   }, [getStoredUserInfo, timestamp]);
 
-  // ------------------
-  // TDLib warmup
-  // ------------------
-  async function tryTdWarmup() {
-    if (!TD_WARMUP_ENABLED) return false;
-    if (tdWarmupInFlightRef.current) return tdReadyRef.current;
-    tdWarmupInFlightRef.current = true;
-    try {
-      console.log('[td-warmup] starting warmup');
-      try {
-        const r = await tdCall('getMe').catch(() => null);
-        if (r) { console.log('[td-warmup] getMe ok'); tdReadyRef.current = true; return true; }
-      } catch (e) { console.warn('[td-warmup] getMe threw', e); }
-      try {
-        const r = await tdCall('getAuthorizationState').catch(() => null);
-        if (r) { console.log('[td-warmup] getAuthorizationState ok'); tdReadyRef.current = true; return true; }
-      } catch (e) { console.warn('[td-warmup] getAuthorizationState threw', e); }
-      try {
-        const r = await tdCall('getChats', 0, 1).catch(() => null);
-        if (r) { console.log('[td-warmup] getChats ok'); tdReadyRef.current = true; return true; }
-      } catch (e) { console.warn('[td-warmup] getChats threw', e); }
-      console.warn('[td-warmup] warmup calls did not succeed (yet)');
-      return false;
-    } finally {
-      tdWarmupInFlightRef.current = false;
-    }
-  }
-
   // Listener to capture first tdlib-update (for debugging)
   useEffect(() => {
     const onFirst = (event: any) => {
@@ -1455,16 +1376,6 @@ function processSearchQueue() {
   }, [currentBatchIdx, appendAndAdvance, getStoredUserInfo, fetchFeedMore, timestamp, resetAndFetchInitial]);
 
   const onEndReached = useCallback(() => { loadMore(); }, [loadMore]);
-
-  // cleanup openedChats on blur/unmount
-  // useFocusEffect(
-  //   useCallback(() => {
-  //     return () => {
-  //       //const promises = Array.from(openedChats.current.keys()).map((chatId) => tdCall("closeChat", chatId).catch((e:any) => console.warn('[cleanup] closeChat failed', e)));
-  //       //Promise.all(promises).then(() => openedChats.current.clear());
-  //     };
-  //   }, [tdCall])
-  // );
 
   // renderItem (pass chatInfo)
   const renderItem = useCallback(
