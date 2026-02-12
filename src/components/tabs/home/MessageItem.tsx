@@ -160,8 +160,6 @@ function MessageItem({ data, isVisible, activeDownload, chatInfo }: Props) {
             </View>
           ) : null }
           <AppText
-            numberOfLines={1}
-            ellipsizeMode="tail"   // keep end of text, trim start
             style={styles.replyText}
           >
             {normalizeReplyPreview(

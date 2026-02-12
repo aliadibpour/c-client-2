@@ -275,7 +275,7 @@ export default function MessageReactions({
 
   return (
     <View style={[styles.container, customStyles?.container]}>
-      {localReactions.map((reaction, idx) => {
+      {localReactions.slice(0,6).map((reaction, idx) => {
         const isSelected = selected === reaction.type.emoji;
         return (
           <TouchableOpacity
