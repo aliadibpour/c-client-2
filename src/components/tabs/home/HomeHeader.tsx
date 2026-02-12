@@ -1,166 +1,225 @@
-// HomeHeader.tsx (ویرایش شده)
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Redo } from "lucide-react-native";
-import React, { useEffect, useState } from "react";
-import { View, Text, Image, StyleSheet, TouchableOpacity } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { View, Image, StyleSheet, TouchableOpacity } from "react-native";
 import AppText from "../../ui/AppText";
 
-const teamRecord : { [key: string]: string } = {
-  'پرسپولیس': 'perspolis',
-  'استقلال': 'esteghlal',
-  'سپاهان': 'sepahan',
-  'تراکتور': 'tractor',
-  'بارسلونا': 'barcelona',
-  'رئال مادرید': 'realmadrid',
-  'آرسنال': 'arsenal',
-  'منچستر یونایتد': 'manchesterunited',
-  'لیورپول': 'liverpool',
-  'چلسی': 'chelsea',
-  'بایرن': 'bayern',
-  'اینتر': 'inter',
-  'میلان': 'milan',
+// -------------------- Data --------------------
+const teamRecord: Record<string, string> = {
+  "پرسپولیس": "perspolis",
+  "استقلال": "esteghlal",
+  "سپاهان": "sepahan",
+  "تراکتور": "tractor",
+  "بارسلونا": "barcelona",
+  "رئال مادرید": "realmadrid",
+  "آرسنال": "arsenal",
+  "منچستر یونایتد": "manchesterunited",
+  "لیورپول": "liverpool",
+  "چلسی": "chelsea",
+  "بایرن": "bayern",
+  "اینتر": "inter",
+  "میلان": "milan",
 };
-export const pepe = (team:string) => {
-  return teamRecord[team];
-}
 
-function HomeHeaderInner({ activeTab, setActiveTab, hasNewMessage, onRefresh }: any) {
+export const pepe = (team:string) => { return teamRecord[team]; }
+
+const reverseTeamRecord: Record<string, string> = Object.fromEntries(
+  Object.entries(teamRecord).map(([fa, en]) => [en, fa])
+);
+
+const charts: Record<number, string[]> = {
+  1: ["perspolis", "esteghlal", "tractor", "sepahan"],
+  2: ["barcelona", "realmadrid"],
+  3: ["arsenal", "manchesterunited", "liverpool", "chelsea"],
+  4: ["bayern", "inter", "milan"],
+};
+
+const toEn = (fa: string) => teamRecord[fa];
+const toFa = (en: string) => reverseTeamRecord[en];
+
+// -------------------- Component --------------------
+function HomeHeader({ activeTab, setActiveTab, hasNewMessage, onRefresh }: any) {
   const [teams, setTeams] = useState<string[]>([]);
 
   useEffect(() => {
     let mounted = true;
+
     const getTeams = async () => {
       try {
         const raw = await AsyncStorage.getItem("teams");
         if (!raw) return;
+
         const parsed = JSON.parse(raw);
-        let values: (string | null)[] = [];
+
+        let values: string[] = [];
+
         if (Array.isArray(parsed)) {
-          values = parsed.map((v: any) => (typeof v === 'string' ? v : v?.name ?? null));
-        } else if (typeof parsed === 'object' && parsed !== null) {
-          values = [parsed.team1 ?? null, parsed.team2 ?? null, parsed.team3 ?? null];
+          values = parsed
+            .map((v: any) => (typeof v === "string" ? v : v?.name))
+            .filter(Boolean);
+        } else if (parsed && typeof parsed === "object") {
+          values = [parsed.team1, parsed.team2, parsed.team3].filter(Boolean);
         }
-        const final = values.filter(v => v && typeof v === 'string') as string[];
-        if (mounted) setTeams(final);
+
+        let list = values.map(toEn).filter(Boolean);
+
+        for (const key of Object.keys(charts)) {
+          if (list.length >= 4) break;
+
+          const group = charts[+key];
+          const hasSame = group.some((t) => list.includes(t));
+
+          if (!hasSame) {
+            const random = group[Math.floor(Math.random() * group.length)];
+            list.push(random);
+          }
+        }
+
+        if (mounted) setTeams(list.map(toFa));
       } catch (e) {
-        console.warn("HomeHeader: failed to read teams from AsyncStorage", e);
+        console.warn("HomeHeader: failed to read teams", e);
       }
     };
+
     getTeams();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const widthPercent: any = teams.length === 0 ? 'auto' : `${Math.max(1, Math.floor(100 / teams.length * 1000) / 1000)}%`;
+  const itemWidth = useMemo(() => {
+    if (!teams.length) return "auto";
+    return `${100 / teams.length}%`;
+  }, [teams.length]);
 
+  // -------------------- UI --------------------
   return (
-    <View style={styles.headerContainer}>
-      <Image source={require("../../../assets/images/cornerLogoCopy.jpg")} style={[styles.logo, teams.length > 1 ? {marginBottom: 0}: {marginBottom:0}]} />
+    <View style={styles.container}>
+      {/* Logo */}
+      <Image source={require("../../../assets/images/cornerLogoCopy.jpg")} style={styles.logo} />
 
-      <View style={styles.tabsRow}>
-        {teams.length > 1 &&
-          teams.slice(0, 3).map((item: string, idx: number) => {
-            const isActive = activeTab === pepe(item);
+      {/* Tabs */}
+      <View style={styles.tabsWrapper}>
+        <View style={styles.tabsRow}>
+          {teams.map((faName, idx) => {
+            const en = toEn(faName);
+            const isActive = activeTab === en;
+
             return (
               <TouchableOpacity
-                key={`${item}-${idx}`}
-                onPress={() => setActiveTab(pepe(item))}
-                activeOpacity={0.8}
+                key={`${faName}-${idx}`}
+                onPress={() => setActiveTab(en)}
+                activeOpacity={0.9}
                 style={[
-                  styles.tabItemGrid,
-                  { width: widthPercent },
-                  isActive && styles.activeTab,
+                  styles.tabModern,
+                  { width: itemWidth },
+                  isActive && styles.tabModernActive,
                 ]}
               >
-                <AppText style={[styles.tabText, isActive && styles.activeTabText]}>
-                  {item}
+                <AppText style={[styles.tabText, isActive && styles.tabTextActive]}>
+                  {faName}
                 </AppText>
+
+                {/* glowing indicator */}
+                {isActive && <View style={styles.activeGlow} />}
               </TouchableOpacity>
             );
-          })
-        }
+          })}
+        </View>
       </View>
 
-      {/* این باکس خارج از جریانِ layout قرار گرفته تا هیچ shift ای ایجاد نکند */}
-      {/* {hasNewMessage && (
-        <TouchableOpacity style={styles.hasNewboxAbsolute} onPress={() => onRefresh()}>
-          <AppText style={styles.hasNewText}>جدیدترین ها</AppText>
-          <Redo width={15}/>
+      {/* floating refresh badge */}
+      {hasNewMessage && (
+        <TouchableOpacity style={styles.newBadge} onPress={onRefresh}>
+          <Redo width={14} />
         </TouchableOpacity>
-      )} */}
+      )}
     </View>
   );
 }
 
-// memo با مقایسه‌ی propsِ ضروری
-export default React.memo(HomeHeaderInner, (prev, next) => {
+export default React.memo(HomeHeader, (prev, next) => {
   return prev.activeTab === next.activeTab && prev.hasNewMessage === next.hasNewMessage;
 });
 
+// -------------------- Styles --------------------
 const styles = StyleSheet.create({
-  headerContainer: {
-    borderColor: "#111",
-    borderBottomWidth: 0.7,
-    gap: 0,
-    paddingTop: 3.2,
-    backgroundColor: "#000000ff",
-    minHeight: 50,
-    // paddingHorizontal: 8,
+  container: {
+    backgroundColor: "#000",
+    paddingTop: 3,
+    paddingBottom: 0,
+    overflow: "visible"
   },
+
   logo: {
-    width: 35,
-    height: 35,
-    borderRadius: 5,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     alignSelf: "center",
+    marginBottom: 2,
+  },
+
+  // outer glass container
+  tabsWrapper: {
+    marginHorizontal: 5,
+    borderRadius: 18,
+    backgroundColor: "#0e0e0ed8",
+    padding: 3.7,
   },
 
   tabsRow: {
     flexDirection: "row",
-    width: "100%",
-    alignItems: "center",
-    paddingHorizontal: 5,
-    paddingTop:1
+    gap: 1.4,
   },
 
-  tabItemGrid: {
-    paddingVertical: 4,
+  // 🔷 ultra modern tab
+  tabModern: {
+    paddingVertical: 7,
+    borderRadius: 14,
     alignItems: "center",
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
-    paddingHorizontal: 8,
+    justifyContent: "center",
+    backgroundColor: "transparent",
   },
 
-  activeTab: {
-    borderBottomColor: "#e6e6e6",
+  tabModernActive: {
+    backgroundColor: "#ffffffe8",
+    shadowColor: "#ffffff00",
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
   },
 
   tabText: {
-    color: "#aaa",
-    fontSize: 13.3,
+    color: "#9a9a9a",
+    fontSize: 13,
     fontFamily: "SFArabic-Regular",
-  },
-  activeTabText: {
-    color: "#dcdcdcff",
-    fontWeight: "600",
   },
 
-  hasNewboxAbsolute:{
-    position: "absolute",
-    left: 6,
-    top: 7,
-    backgroundColor: "#fffffff6",
-    paddingHorizontal:8,
-    paddingVertical:4,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: 6,
-    // elevation/ shadow اگر خواستی اضافه کن برای برجسته شدن
-  },
-  hasNewText:{
+  tabTextActive: {
     color: "#000",
     fontFamily: "SFArabic-Regular",
-    fontSize: 12,
-    marginRight: 6,
-    textAlign: "center",
-  }
+  },
+
+  // glow line under active tab
+  activeGlow: {
+    position: "absolute",
+    bottom: -2,
+    width: "40%",
+    height: 3,
+    borderRadius: 2,
+  },
+
+  // minimal floating refresh button
+  newBadge: {
+    position: "absolute",
+    left: 10,
+    top: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 4,
+  },
 });
