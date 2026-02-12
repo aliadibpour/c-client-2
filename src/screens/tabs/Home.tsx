@@ -22,20 +22,20 @@ import { Buffer } from "buffer";
 import uuid from 'react-native-uuid';
 import { fetchWithRetry } from "../../hooks";
 
-// ---- CONFIG ----
+// ---- CONFIG (tuned for speed / stability) ----
 const BATCH_SIZE = 5;
-const MAX_PREFETCH_BATCHES = 2;
-const PER_GROUP_CONCURRENCY = 3; // used inside loadBatch for group concurrency
-const TD_CONCURRENCY = 6; // global limit for TdLib calls
-const POLL_INTERVAL_MS = 2400;
-const MAX_OPENED_CHATS = 15; // LRU cap for opened chats
+const MAX_PREFETCH_BATCHES = 1;         // کمتر prefetch تا فشار TD کم شود
+const PER_GROUP_CONCURRENCY = 2;        // گروه‌های کوچکتر
+const TD_CONCURRENCY = 12;              // افزایش نسبت به قبل برای throughput بهتر
+let POLL_INTERVAL_MS = 1000;           // polling کندتر تا صف آرام بماند
+const MAX_OPENED_CHATS = 15;
 const TD_WARMUP_CALL_TIMEOUT_MS = 7000;
 
 // Persisted recent search cache key and TTL
 const RECENT_SEARCH_PERSIST_KEY = 'recent_search_cache_v1';
-const RECENT_SEARCH_TTL_MS = 700000 * 80 * 100000000; // hours (you can change)
-const SEARCH_MIN_INTERVAL_MS_MANAGED = 800; // minimal gap enforced by managed queue
-const MAX_SEARCH_CONCURRENCY_MANAGED = 1; // only one searchPublicChat at a time
+const RECENT_SEARCH_TTL_MS = 700000 * 80 * 100000000;
+const SEARCH_MIN_INTERVAL_MS_MANAGED = 800;
+const MAX_SEARCH_CONCURRENCY_MANAGED = 2;
 
 // storage keys
 const STORAGE_KEYS = {
@@ -125,7 +125,7 @@ export default function HomeScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
 
   // caches
-  const messageCacheRef = useRef<Map<string, any>>(new Map()); // key: `${chatId}:${messageId}`
+  const messageCacheRef = useRef<Map<string, any>>(new Map());
   const chatInfoRef = useRef<Map<number, any>>(new Map());
 
   // prefetch
@@ -133,7 +133,7 @@ export default function HomeScreen() {
   const prefetchInFlightRef = useRef<Set<string>>(new Set());
 
   // opened chats LRU
-  const openedChats = useRef<Map<number, number>>(new Map()); // chatId -> lastTouchedTimestamp
+  const openedChats = useRef<Map<number, number>>(new Map());
   const openingChatsRef = useRef<Set<number>>(new Set());
 
   // semaphore queue for TdLib calls
@@ -161,17 +161,17 @@ export default function HomeScreen() {
   const listRef = useRef<FlatList<any> | null>(null);
 
   // Search-related refs (new managed approach)
-  const activeTabGenRef = useRef<number>(0); // bump on tab change to cancel older in-flight work
+  const activeTabGenRef = useRef<number>(0);
 
   // legacy promise map (kept for compatibility but not used as primary)
   const searchPublicChatPromiseRef = useRef<Map<string, Promise<number | null>>>(new Map());
 
-  const STAGGER_BASE_MS = 30;
-  const STAGGER_WINDOW_MS = 120;
+  const STAGGER_BASE_MS = 20;
+  const STAGGER_WINDOW_MS = 80;
 
-  const ADAPTIVE_THROTTLE_MS = 2000;
-  const ADAPTIVE_STAGGER_MULTIPLIER = 4;
-  const ADAPTIVE_CONCURRENCY_REDUCTION = 2;
+  const ADAPTIVE_THROTTLE_MS = 1500;
+  const ADAPTIVE_STAGGER_MULTIPLIER = 3;
+  const ADAPTIVE_CONCURRENCY_REDUCTION = 1;
   const adaptiveThrottleUntilRef = useRef<number>(0);
 
   // new managed search queue refs
@@ -181,47 +181,102 @@ export default function HomeScreen() {
   const lastSearchAtRef = useRef<number>(0);
   const globalAdaptiveThrottleUntilRef = useRef<number>(0);
 
-  // --- New: search rate-limit (sliding window + serializing)
-  const searchTimestampsRef = useRef<number[]>([]); // oldest-first
-  const searchInFlightRef = useRef<boolean>(false); // serializes actual td search calls to avoid bursts
+  // --- New: search rate-limit
+  const searchTimestampsRef = useRef<number[]>([]);
+  const searchInFlightRef = useRef<boolean>(false);
 
-  // --- New: recent-search cache (remember last N channel lookups to avoid re-search)
+  // --- New: recent-search cache
   const RECENT_SEARCH_LIMIT = 110;
-  const recentSearchCacheRef = useRef<Map<string, number | null>>(new Map()); // channel -> chatId|null
-  const recentSearchOrderRef = useRef<string[]>([]); // oldest-first
+  const recentSearchCacheRef = useRef<Map<string, number | null>>(new Map());
+  const recentSearchOrderRef = useRef<string[]>([]);
 
   // persisted recent search cache
   const recentSearchPersistedRef = useRef<Record<string, any> | null>(null);
 
   // ------------------
-  // Stable tdEnqueue + tdCall with extra logging
+  // NEW refs for queue control / back-pressure
   // ------------------
-  const tdEnqueue = useCallback((fn: () => Promise<any>, opts = { timeoutMs: TD_WARMUP_CALL_TIMEOUT_MS }) => {
+  const loadMoreInFlightRef = useRef(false);
+  const queueThrottledRef = useRef(false);
+  const tdWaitersRef = useRef<Array<() => void>>([]);
+
+  // thresholds — قابل تنظیم
+  const QUEUE_HIGH_WATER = 32;     // وقتی از این عبور کردیم، throttle میکنیم
+  const QUEUE_CRITICAL_WATER = 128; // خیلی بزرگ شد: reject یا delay سنگین
+  const QUEUE_MAX = 64; // max queued tasks before rejecting non-priority
+
+  // ------------------
+  // Smart tdEnqueue (semaphore + queue + back-pressure)
+  // ------------------
+  const tryStartQueued = useCallback(() => {
+    try {
+      while (tdActiveCountRef.current < TD_CONCURRENCY && tdQueueRef.current.length) {
+        const next = tdQueueRef.current.shift();
+        if (!next) break;
+        try {
+          next(); // run will increment tdActiveCountRef itself
+        } catch (e) { console.warn('[tdEnqueue] queued task start failed', e); }
+      }
+    } catch (e) {
+      console.warn('[tdEnqueue] tryStartQueued failed', e);
+    }
+  }, []);
+
+  const tdEnqueue = useCallback((fn: () => Promise<any>, opts: any = { timeoutMs: TD_WARMUP_CALL_TIMEOUT_MS, priority: false }) => {
     return new Promise<any>((resolve, reject) => {
       const run = async () => {
+        // run() increments and executes the fn
         tdActiveCountRef.current += 1;
         try {
           const r = await promiseTimeout(fn(), opts.timeoutMs);
           resolve(r);
         } catch (err) {
-          console.warn('[tdEnqueue] error', err);
+          // bubble up
           reject(err);
         } finally {
           tdActiveCountRef.current -= 1;
-          const next = tdQueueRef.current.shift();
-          if (next) {
-            try { next(); } catch (e) { console.warn('[tdEnqueue] next() failed', e); }
+          // start queued tasks if capacity
+          tryStartQueued();
+          // notify waiters
+          if (tdQueueRef.current.length < QUEUE_HIGH_WATER && tdWaitersRef.current.length) {
+            const waiters = tdWaitersRef.current.splice(0, tdWaitersRef.current.length);
+            waiters.forEach(w => { try { w(); } catch(e){} });
+          }
+          if (tdQueueRef.current.length < Math.floor(QUEUE_HIGH_WATER * 0.8)) {
+            queueThrottledRef.current = false;
           }
         }
       };
 
-      if (tdActiveCountRef.current < TD_CONCURRENCY) run();
-      else {
-        tdQueueRef.current.push(run);
-        console.log('[tdEnqueue] pushed to queue newLen=', tdQueueRef.current.length);
+      const qlen = tdQueueRef.current.length;
+      // mark throttle state
+      if (qlen >= QUEUE_HIGH_WATER && !queueThrottledRef.current) {
+        queueThrottledRef.current = true;
+        console.warn('[tdEnqueue] queue exceeded high water, enabling throttle qlen=', qlen);
       }
+
+      // critical: reject non-priority producers if queue is enormous
+      if (qlen >= QUEUE_MAX && !opts.priority) {
+        console.warn('[tdEnqueue] rejecting enqueue because queue is full qlen=', qlen);
+        reject(new Error('TDLIB_QUEUE_FULL'));
+        return;
+      }
+
+      // if capacity now, run immediately
+      if (tdActiveCountRef.current < TD_CONCURRENCY && tdQueueRef.current.length === 0) {
+        run();
+        return;
+      }
+
+      // otherwise enqueue (priority to front)
+      if (opts.priority) tdQueueRef.current.unshift(run);
+      else tdQueueRef.current.push(run);
+
+      console.log('[tdEnqueue] pushed to queue newLen=', tdQueueRef.current.length);
+      // try to start queued tasks (in case activeCount decreased between checks)
+      setTimeout(tryStartQueued, 0);
     });
-  }, []);
+  }, [tryStartQueued]);
 
   const tdCall = useCallback(
     async (method: string, ...args: any[]) => {
@@ -238,7 +293,28 @@ export default function HomeScreen() {
           throw err;
         }
       };
-      return tdEnqueue(() => attemptCall(), { timeoutMs: TD_WARMUP_CALL_TIMEOUT_MS });
+      return tdEnqueue(() => attemptCall(), { timeoutMs: TD_WARMUP_CALL_TIMEOUT_MS, priority: false });
+    },
+    [tdEnqueue]
+  );
+
+  // faster variant for user-visible getMessage: shorter timeout and priority
+  const tdCallFast = useCallback(
+    async (method: string, ...args: any[]) => {
+      const attemptCall = async (retries = 1): Promise<any> => {
+        try {
+          const res = await (TdLib as any)[method](...args);
+          return res;
+        } catch (err) {
+          if (retries > 0) {
+            await delay(120);
+            return attemptCall(retries - 1);
+          }
+          throw err;
+        }
+      };
+      // priority true so loadMore gets ahead in queue
+      return tdEnqueue(() => attemptCall(), { timeoutMs: 2500, priority: true });
     },
     [tdEnqueue]
   );
@@ -343,7 +419,6 @@ export default function HomeScreen() {
       const firstKey = openedChats.current.keys().next().value;
       if (firstKey !== undefined) {
         const removing = firstKey;
-        //tdCall("closeChat", removing).catch((e: any) => console.warn('[touchOpenedChat] closeChat failed', e));
         openedChats.current.delete(removing);
       } else break;
     }
@@ -377,7 +452,7 @@ export default function HomeScreen() {
     }, [tdCall, persistCachesDebounced]
   );
 
-  // ensureRepliesForMessages: fetch missing replied messages in parallel up to TD_CONCURRENCY
+  // ensureRepliesForMessages: fetch missing replied messages in parallel up to limited concurrency
   const ensureRepliesForMessages = useCallback(
     async (msgs: any[]) => {
       if (!msgs || msgs.length === 0) return msgs;
@@ -401,9 +476,10 @@ export default function HomeScreen() {
 
       const toFetch = Array.from(toFetchMap.values());
       if (toFetch.length > 0) {
+        // keep concurrency modest so we don't saturate TD
         await limitConcurrency(
           toFetch,
-          TD_CONCURRENCY,
+          Math.min(4, TD_CONCURRENCY),
           async (t) => {
             try {
               if (myGen !== activeTabGenRef.current) return null;
@@ -516,57 +592,47 @@ export default function HomeScreen() {
     return null;
   }
 
-function processSearchQueue() {
-  // global throttle from FLOOD_WAIT
-  if (Date.now() < globalAdaptiveThrottleUntilRef.current) {
-    const wait = Math.max(800, globalAdaptiveThrottleUntilRef.current - Date.now() + 50);
-    setTimeout(processSearchQueue, wait);
-    return;
+  function processSearchQueue() {
+    // global throttle from FLOOD_WAIT
+    if (Date.now() < globalAdaptiveThrottleUntilRef.current) {
+      const wait = Math.max(800, globalAdaptiveThrottleUntilRef.current - Date.now() + 50);
+      setTimeout(processSearchQueue, wait);
+      return;
+    }
+
+    if (searchActiveCountRef.current >= MAX_SEARCH_CONCURRENCY_MANAGED) return;
+
+    const task = searchQueueRef.current.shift();
+    if (!task) return;
+
+    searchActiveCountRef.current += 1;
+
+    const now = Date.now();
+    const sinceLast = now - lastSearchAtRef.current;
+    const gap = Math.max(0, SEARCH_MIN_INTERVAL_MS_MANAGED - sinceLast);
+
+    setTimeout(() => {
+      lastSearchAtRef.current = Date.now();
+      (async () => {
+        try {
+          await task();
+        } finally {
+          searchActiveCountRef.current -= 1;
+          setTimeout(processSearchQueue, SEARCH_MIN_INTERVAL_MS_MANAGED);
+        }
+      })();
+    }, gap);
   }
-
-  // only allow one concurrent managed search
-  if (searchActiveCountRef.current >= MAX_SEARCH_CONCURRENCY_MANAGED) return;
-
-  const task = searchQueueRef.current.shift();
-  if (!task) return;
-
-  // RESERVE a slot IMMEDIATELY so concurrent invocations can't both consume slots.
-  searchActiveCountRef.current += 1;
-
-  const now = Date.now();
-  const sinceLast = now - lastSearchAtRef.current;
-  const gap = Math.max(0, SEARCH_MIN_INTERVAL_MS_MANAGED - sinceLast);
-
-  // schedule task so that lastSearchAtRef is updated exactly when we start the task
-  setTimeout(() => {
-    // mark lastSearchAt right when task actually runs
-    lastSearchAtRef.current = Date.now();
-
-    (async () => {
-      try {
-        await task();
-      } finally {
-        // RELEASE the slot and schedule next processing after enforced interval
-        searchActiveCountRef.current -= 1;
-        setTimeout(processSearchQueue, SEARCH_MIN_INTERVAL_MS_MANAGED);
-      }
-    })();
-  }, gap);
-}
-
 
   async function searchPublicChatManaged(channel: string, genAtCall: number): Promise<number | null> {
     const key = normChannelKey(channel);
     if (!key) return null;
 
-    // 1) check persisted recent cache first
     const persisted = getPersistedCachedChannel(key);
     if (persisted !== undefined) return persisted;
 
-    // 2) in-memory recent cache
     if (recentSearchCacheRef.current.has(key)) return recentSearchCacheRef.current.get(key) ?? null;
 
-    // 3) reuse in-flight
     const existing = searchInFlightPromisesRef.current.get(key);
     if (existing) return existing;
 
@@ -579,7 +645,6 @@ function processSearchQueue() {
           if (genAtCall !== activeTabGenRef.current) { resolve(null); return; }
 
           try {
-            console.log(`[searchPublicChatManaged] attempting search for key=${key} attempt=${attempt}`);
             const res: any = await tdCall('searchPublicChat', key);
             const fid = res?.id || res?.chat?.id || res?.chatId || (typeof res === 'number' ? res : undefined);
             const fidNum = fid ? Number(fid) : null;
@@ -602,14 +667,12 @@ function processSearchQueue() {
           }
         }
 
-        // all attempts failed -> negative cache
         recentSearchCacheRef.current.set(key, null);
         addToRecentSearch(key, null);
         setPersistedCachedChannel(key, null);
         resolve(null);
       };
 
-      // IMMEDIATELY register the promise BEFORE enqueuing the task so other callers will reuse it
       searchInFlightPromisesRef.current.set(key, p);
       searchQueueRef.current.push(task);
       setTimeout(processSearchQueue, 0);
@@ -620,33 +683,16 @@ function processSearchQueue() {
     return p;
   }
 
-  // ------------------
-  // NEW helper: centralized resolve (ALWAYS checks persisted first)
-  // ------------------
   async function resolveChannelToChatId(channel: string, genAtCall: number): Promise<number | null | undefined> {
-    // returns:
-    // - number => resolved chat id
-    // - null => negative cached (found earlier that it does not exist)
-    // - undefined => not known (shouldn't happen often because searchPublicChatManaged will return null/number)
     if (!channel) return undefined;
     try {
       const key = normChannelKey(channel);
-
-      // 1) check persisted (definitive for immediate decision) - IMPORTANT: do not call search if this returns anything
       const persisted = getPersistedCachedChannel(key);
-      if (persisted !== undefined) {
-        // persisted may be number (positive) or null (negative)
-        return persisted;
-      }
-
-      // 2) check in-memory cache
+      if (persisted !== undefined) return persisted;
       if (recentSearchCacheRef.current.has(key)) {
         return recentSearchCacheRef.current.get(key) ?? null;
       }
-
-      // 3) no knowledge -> call managed search (throttled)
       const r = await searchPublicChatManaged(channel, genAtCall);
-      // searchPublicChatManaged stores persist & memory itself
       return r;
     } catch (e) {
       console.warn('[resolveChannelToChatId] failed', e);
@@ -681,6 +727,19 @@ function processSearchQueue() {
 
       if (toFetch.length === 0) return results;
 
+      // Batch-resolve unique channels first to reduce serial calls
+      const uniqueChannels = Array.from(new Set(toFetch.filter(t => t.channel).map(t => normChannelKey(t.channel))));
+      const channelMap = new Map<string, number | null | undefined>();
+      if (uniqueChannels.length) {
+        await limitConcurrency(uniqueChannels, Math.min(3, uniqueChannels.length), async (ch) => {
+          try {
+            const rid = await resolveChannelToChatId(ch, myGen);
+            channelMap.set(ch, rid as any);
+          } catch (e) { channelMap.set(ch, undefined); }
+          return null;
+        });
+      }
+
       const groups: Record<string, any[]> = {};
       for (const t of toFetch) {
         const gKey = t.chatId ? `c:${t.chatId}` : `ch:${t.channel}`;
@@ -695,15 +754,11 @@ function processSearchQueue() {
         let resolvedChatId: number | undefined;
         const sample = group[0];
 
-        // NEW: centralized resolution
         if (sample.channel) {
           try {
-            const resolved = await resolveChannelToChatId(sample.channel, myGen);
-            // resolved may be number | null | undefined
-            if (typeof resolved === 'number' && resolved) resolvedChatId = Number(resolved);
-            // if resolved === null -> negative cache => do not attempt to resolve further now
-            // if resolved === undefined -> treat as unresolved (will try sample.chatId fallback below)
-          } catch (e) { /* ignore - continue */ }
+            const cachedResolved = channelMap.get(normChannelKey(sample.channel));
+            if (typeof cachedResolved === 'number') resolvedChatId = Number(cachedResolved);
+          } catch (e) { /* ignore */ }
         }
 
         if (!resolvedChatId && sample.chatId) resolvedChatId = Number(sample.chatId);
@@ -715,7 +770,6 @@ function processSearchQueue() {
               try {
                 if (myGen !== activeTabGenRef.current) { openingChatsRef.current.delete(resolvedChatId); }
                 else {
-                  //await tdCall('openChat', resolvedChatId);
                   openedChats.current.set(resolvedChatId, Date.now());
                 }
               } catch (e) { /* ignore */ } finally { openingChatsRef.current.delete(resolvedChatId); }
@@ -742,25 +796,45 @@ function processSearchQueue() {
 
               if (myGen !== activeTabGenRef.current) return null;
 
-              // Use resolvedChatId first; if not present, resolve per-item via centralized helper
               let cidToUse = resolvedChatId || (meta.chatId ? Number(meta.chatId) : undefined);
               if (!cidToUse && meta.channel) {
-                try {
-                  const resolvedPerItem = await resolveChannelToChatId(meta.channel, myGen);
-                  if (typeof resolvedPerItem === 'number' && resolvedPerItem) cidToUse = Number(resolvedPerItem);
-                  // if resolvedPerItem === null => negative cached -> leave cidToUse undefined
-                } catch (e) { /* ignore */ }
+                const pre = channelMap.get(normChannelKey(meta.channel));
+                if (typeof pre === 'number') cidToUse = Number(pre);
+                else {
+                  try {
+                    const resolvedPerItem = await resolveChannelToChatId(meta.channel, myGen);
+                    if (typeof resolvedPerItem === 'number' && resolvedPerItem) cidToUse = Number(resolvedPerItem);
+                  } catch (e) { /* ignore */ }
+                }
               }
 
               if (cidToUse) {
                 if (myGen !== activeTabGenRef.current) return null;
-                const r: any = await tdCall('getMessage', Number(cidToUse), Number(meta.messageId));
-                if (myGen !== activeTabGenRef.current) return null;
-                const parsed = JSON.parse(r.raw);
-                const k2 = mk(parsed.chatId || cidToUse, parsed.id);
-                const stored = withUuid(parsed);
-                messageCacheRef.current.set(k2, stored);
-                return stored;
+                // use fast prioritized call first
+                try {
+                  const r: any = await tdCallFast('getMessage', Number(cidToUse), Number(meta.messageId));
+                  if (myGen !== activeTabGenRef.current) return null;
+                  const parsed = JSON.parse(r.raw);
+                  const k2 = mk(parsed.chatId || cidToUse, parsed.id);
+                  const stored = withUuid(parsed);
+                  messageCacheRef.current.set(k2, stored);
+                  return stored;
+                } catch (fastErr) {
+                  // fallback once
+                  console.warn('[loadBatch] tdCallFast failed, falling back to tdCall', fastErr);
+                  try {
+                    const r2: any = await tdCall('getMessage', Number(cidToUse), Number(meta.messageId));
+                    if (myGen !== activeTabGenRef.current) return null;
+                    const parsed2 = JSON.parse(r2.raw);
+                    const k22 = mk(parsed2.chatId || cidToUse, parsed2.id);
+                    const stored2 = withUuid(parsed2);
+                    messageCacheRef.current.set(k22, stored2);
+                    return stored2;
+                  } catch (e) {
+                    console.warn('[loadBatch] getMessage both fast+fallback failed', e);
+                    return null;
+                  }
+                }
               } else {
                 return null;
               }
@@ -770,7 +844,8 @@ function processSearchQueue() {
 
         for (const f of fetched) if (f) results.push(f);
 
-        await delay(60);
+        // small delay between groups to avoid spikes
+        await delay(20);
       }
 
       persistCachesDebounced();
@@ -780,7 +855,7 @@ function processSearchQueue() {
         .filter(Boolean);
 
       return ordered;
-    }, [tdCall, touchOpenedChat, persistCachesDebounced, withUuid]
+    }, [tdCall, touchOpenedChat, persistCachesDebounced, withUuid, tdCallFast]
   );
 
   // prefetch next batches staggered
@@ -1041,8 +1116,6 @@ function processSearchQueue() {
         return prev;
       });
     }
-
-    //console.log(`[td-flush] flushed items=${items.length} interactions=${interactionUpdates.length} fullMsgs=${fullMessages.length}`);
   }, [withUuid, persistCachesDebounced, mk]);
 
   useEffect(() => {
@@ -1072,7 +1145,7 @@ function processSearchQueue() {
   }, [flushUpdateQueue]);
 
   // ------------------
-  // INITIAL LOAD (with wait for td warmup up to TD_WARMUP_WAIT_MS_BEFORE_FETCH)
+  // INITIAL LOAD
   // ------------------
   useEffect(() => {
     let mounted = true;
@@ -1120,24 +1193,30 @@ function processSearchQueue() {
   }, [activeTab, loadBatch, getAndCacheChatInfo, prefetchNextBatches, loadPersistedCaches, notifyServerBatchReached, ensureRepliesForMessages, withUuid, fetchFeedInitial]);
 
   // ------------------
-  // POLLING VISIBLE
+  // POLLING VISIBLE (paused during loadMore or heavy queue)
   // ------------------
   const pollVisibleMessages = useCallback(() => {
+    if (loadMoreInFlightRef.current) return;
+    if (queueThrottledRef.current) return;
     if (!visibleIds.length) return;
 
     const toUpdate: Array<{ msg: any; id: number }> = [];
     for (const id of visibleIds) {
-      const msg = messagesRef.current.find((m) => m.id === id);
+      // use index map for fast lookup
+      const idx = msgIndexRef.current.get(String(id));
+      // fallback: scan messagesRef
+      const msg = messagesRef.current.find(m => m.id === id) ?? null;
       if (!msg) continue;
       toUpdate.push({ msg, id });
     }
 
     limitConcurrency(
       toUpdate,
-      TD_CONCURRENCY,
+      Math.min(TD_CONCURRENCY, 6),
       async ({ msg, id }) => {
         try {
-          const raw: any = await tdCall("getMessage", msg.chatId, msg.id);
+          // use fast call for visible polling
+          const raw: any = await tdCallFast("getMessage", msg.chatId, msg.id);
           const full = JSON.parse(raw.raw);
           const enrichedArray = await ensureRepliesForMessages([full]);
           const enrichedFull = enrichedArray[0] || full;
@@ -1155,7 +1234,7 @@ function processSearchQueue() {
         } catch (e:any) { console.warn('[pollVisibleMessages] getMessage failed', e); }
       }
     ).catch(() => {});
-  }, [visibleIds, tdCall, persistCachesDebounced, ensureRepliesForMessages, withUuid, dedupeByUuid]);
+  }, [visibleIds, tdCallFast, persistCachesDebounced, ensureRepliesForMessages, withUuid, dedupeByUuid]);
 
   useEffect(() => {
     if (pollingIntervalRef.current) {
@@ -1176,7 +1255,6 @@ function processSearchQueue() {
   // ------------------
   // onViewable changed - batch viewMessages by chat
   // ------------------
-
   const visibleIdsRef = useRef<number[]>([]);
   const onViewRef = useCallback(
     ({ viewableItems }: any) => {
@@ -1237,11 +1315,12 @@ function processSearchQueue() {
         const chatId = msg.chatId;
         currentChatIds.add(chatId);
         if (!openedChats.current.has(chatId)) {
-          //try { await tdCall("openChat", chatId); openedChats.current.set(chatId, Date.now()); } catch (e:any) { console.warn('[activeDownloads] openChat failed', e); }
+          // optionally open chat
         } else touchOpenedChat(chatId);
       }
     })();
   }, [activeDownloads, messages, tdCall, touchOpenedChat]);
+
   // ------------------
   // INTEGRATED FIX: resetAndFetchInitial
   // ------------------
@@ -1327,6 +1406,7 @@ function processSearchQueue() {
   const loadMore = useCallback(async () => {
     if (isLoadingMoreRef.current) return;
     isLoadingMoreRef.current = true;
+    loadMoreInFlightRef.current = true; // block polling while loading more
     setLoadingMore(true);
     try {
       if (!datasRef.current || datasRef.current.length === 0) {
@@ -1334,6 +1414,7 @@ function processSearchQueue() {
         await resetAndFetchInitial();
         setLoadingMore(false);
         isLoadingMoreRef.current = false;
+        loadMoreInFlightRef.current = false;
         return;
       }
 
@@ -1344,6 +1425,7 @@ function processSearchQueue() {
         if (!parsed?.uuid) {
           setLoadingMore(false);
           isLoadingMoreRef.current = false;
+          loadMoreInFlightRef.current = false;
           return;
         }
         const tab = activeTabRef.current || activeTab;
@@ -1353,6 +1435,7 @@ function processSearchQueue() {
           if (!newDatas || newDatas.length === 0) {
             setLoadingMore(false);
             isLoadingMoreRef.current = false;
+            loadMoreInFlightRef.current = false;
             return;
           }
           const combined = [...datasRef.current, ...newDatas];
@@ -1363,6 +1446,7 @@ function processSearchQueue() {
           console.warn('[loadMore] fetch failed', err);
           setLoadingMore(false);
           isLoadingMoreRef.current = false;
+          loadMoreInFlightRef.current = false;
           return;
         }
       } else {
@@ -1372,6 +1456,7 @@ function processSearchQueue() {
     finally {
       setLoadingMore(false);
       isLoadingMoreRef.current = false;
+      loadMoreInFlightRef.current = false;
     }
   }, [currentBatchIdx, appendAndAdvance, getStoredUserInfo, fetchFeedMore, timestamp, resetAndFetchInitial]);
 
@@ -1482,7 +1567,7 @@ function processSearchQueue() {
         ) : (
           <FlatList
             ref={(r:any) => (listRef.current = r)}
-            style={{ paddingHorizontal: 12.5 }}
+            style={{ paddingHorizontal: 6.5 }}
             data={messages}
             keyExtractor={(item, index) => item?.__uuid ?? `${item?.chatId ?? 'ch'}:${String(item?.id ?? item?.messageId ?? index)}`}
             renderItem={renderItem}
@@ -1506,5 +1591,11 @@ function processSearchQueue() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
-  animatedHeader: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 999, elevation: 50 },
+  animatedHeader: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    zIndex: 50,
+  },
 });
