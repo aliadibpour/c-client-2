@@ -10,10 +10,16 @@ import { StatusBar } from "react-native";
 import changeNavigationBarColor from 'react-native-navigation-bar-color';
 import TdLib from 'react-native-tdlib';
 import RNRestart from 'react-native-restart'; 
+import RNBootSplash from "react-native-bootsplash";
 
 const RTL_FLAG_KEY = 'rtl_applied_v1'; // وقتی خواستی مجددا تست کنی، مقدار این کلید را پاک کن
 
 function App(): React.JSX.Element {
+
+  useEffect(() => {
+    RNBootSplash.hide({ fade: true });
+  }, []);
+
   useEffect(() => {
     (async () => {
       try {
@@ -66,16 +72,6 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const configTdlib = async () => {
       await TelegramService.start();
-      // try {
-      //   const authState = await TdLib.getAuthorizationState();
-      //   const data = JSON.parse(authState);
-      //   console.log(data);
-      //   if (data['@type'] !== "authorizationStateReady") {
-      //     await AsyncStorage.setItem("auth-status", JSON.stringify({ status: "Intro" }));
-      //   }
-      // } catch (e) {
-      //   console.warn('[TdLib] getAuthorizationState failed', e);
-      // }
     };
     configTdlib();
   }, []);
@@ -95,6 +91,22 @@ function App(): React.JSX.Element {
 
     // return () => subscription.remove();
   }, []);
+
+  useEffect(() => {
+    let lastState = AppState.currentState;
+
+    const sub = AppState.addEventListener('change', async (nextState) => {
+      if (lastState.match(/inactive|background/) && nextState === 'active') {
+        console.log('[AppState] back to foreground');
+        await TelegramService.ensureConnected();
+      }
+
+      lastState = nextState;
+    });
+
+    return () => sub.remove();
+  }, []);
+
 
   return (
     <NavigationContainer>

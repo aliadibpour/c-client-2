@@ -126,6 +126,27 @@ export class TelegramService {
     return await this.start();
   }
 
+  static async ensureConnected() {
+    try {
+      const authRaw = await TdLib.getAuthorizationState();
+      const auth = typeof authRaw === "string" ? JSON.parse(authRaw) : authRaw;
+      const state = auth['@type'];
+
+      console.log('[TDLib] auth state check:', state);
+
+      // Only restart if TDLib is completely closed
+      if (state === 'authorizationStateClosed') {
+        console.log('[TDLib] CLOSED → restarting TDLib');
+        await this.restart();
+      }
+
+      // Ready or waiting for code/password → do nothing
+    } catch (e) {
+      console.warn('[TDLib] ensureConnected failed, restarting...', e);
+      await this.restart();
+    }
+  }
+
 
   static async getLastMessagesFromChannel(username = 'toofan_sorkh64') {
     try {
@@ -217,6 +238,7 @@ export async function getChat(chatId: number) {
     console.error("error on getChat:",error)
   }
 }
+
 
 function translateError(error: any): string {
   const message = typeof error === 'string' ? error : error?.message || '';
