@@ -15,6 +15,8 @@
 		048E91A311DF4F3891D207E5 /* Fontyab.ir.url in Resources */ = {isa = PBXBuildFile; fileRef = A913620EF97E4394A9F1E3B7 /* Fontyab.ir.url */; };
 		95074F968DE54FC4B61DF349 /* read me!.txt in Resources */ = {isa = PBXBuildFile; fileRef = 2F5C4191AE1E4E978F7956C7 /* read me!.txt */; };
 		862093FFC3174290BFEB1241 /* IranianSans.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7F9AD2EFEA614FF395AFB255 /* IranianSans.ttf */; };
+		DD50EEAEC4394870979C6237 /* BootSplash.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 2A93F099927C4538AE6DF447 /* BootSplash.storyboard */; };
+		334F2A47795B49E299D91640 /* Colors.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 66103426946A4ABAB1E886F4 /* Colors.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -43,6 +45,8 @@
 		A913620EF97E4394A9F1E3B7 /* Fontyab.ir.url */ = {isa = PBXFileReference; name = "Fontyab.ir.url"; path = "../src/assets/fonts/A-Iranian-Sans/Fontyab.ir.url"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
 		2F5C4191AE1E4E978F7956C7 /* read me!.txt */ = {isa = PBXFileReference; name = "read me!.txt"; path = "../src/assets/fonts/A-Iranian-Sans/read me!.txt"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
 		7F9AD2EFEA614FF395AFB255 /* IranianSans.ttf */ = {isa = PBXFileReference; name = "IranianSans.ttf"; path = "../src/assets/fonts/A-Iranian-Sans/IranianSans.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		2A93F099927C4538AE6DF447 /* BootSplash.storyboard */ = {isa = PBXFileReference; name = "BootSplash.storyboard"; path = "corner/BootSplash.storyboard"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		66103426946A4ABAB1E886F4 /* Colors.xcassets */ = {isa = PBXFileReference; name = "Colors.xcassets"; path = "corner/Colors.xcassets"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = folder.assetcatalog; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -73,6 +77,8 @@
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
+				2A93F099927C4538AE6DF447 /* BootSplash.storyboard */,
+				66103426946A4ABAB1E886F4 /* Colors.xcassets */,
 			);
 			name = corner;
 			sourceTree = "<group>";
@@ -210,6 +216,8 @@
 				048E91A311DF4F3891D207E5 /* Fontyab.ir.url in Resources */,
 				95074F968DE54FC4B61DF349 /* read me!.txt in Resources */,
 				862093FFC3174290BFEB1241 /* IranianSans.ttf in Resources */,
+				DD50EEAEC4394870979C6237 /* BootSplash.storyboard in Resources */,
+				334F2A47795B49E299D91640 /* Colors.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
