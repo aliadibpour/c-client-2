@@ -159,11 +159,11 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
+    paddingVertical: 11,
     paddingHorizontal: 6,
     borderBottomWidth: 0.9,
-    borderColor: "#222222ac",
-    backgroundColor: "#0a0a0aff",
+    borderColor: "#111111ac",
+    backgroundColor: "rgb(0, 0, 0)",
   },
   avatar: {
     width: 52,
