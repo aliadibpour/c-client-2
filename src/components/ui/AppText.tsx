@@ -19,7 +19,7 @@ type Props = {
   children: React.ReactNode;
 };
 
-export default function AppText({ style, children, ...rest }: Props) {
+export default function AppText({ style, children, ...rest }: any) {
   const { width } = useWindowDimensions();
 
   const flatStyle = StyleSheet.flatten(style) || {};
