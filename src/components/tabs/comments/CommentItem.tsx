@@ -443,14 +443,14 @@ const styles = StyleSheet.create({
   },
   commentText: {
     color: "#ccc",
-    fontSize: 13.8,
+    fontSize: 14.5,
     lineHeight: 22,
     fontFamily: "SFArabic-Regular",
     marginBottom: 8,
   },
   avatar: {
-    width: 37,
-    height: 37,
+    width: 42,
+    height: 42,
     borderRadius: 18,
     marginHorizontal: 4,
     backgroundColor: "#444",

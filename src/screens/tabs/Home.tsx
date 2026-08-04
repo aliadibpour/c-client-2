@@ -1567,7 +1567,7 @@ export default function HomeScreen() {
         ) : (
           <FlatList
             ref={(r:any) => (listRef.current = r)}
-            style={{ paddingHorizontal: 6.5 }}
+            style={{ paddingHorizontal: 5 }}
             data={messages}
             keyExtractor={(item, index) => item?.__uuid ?? `${item?.chatId ?? 'ch'}:${String(item?.id ?? item?.messageId ?? index)}`}
             renderItem={renderItem}

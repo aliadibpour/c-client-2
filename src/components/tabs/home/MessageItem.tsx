@@ -194,9 +194,9 @@ function MessageItem({ data, isVisible, activeDownload, chatInfo }: Props) {
           onReact={(emoji: any) => console.log("🧡", emoji)}
           customStyles={{
             container: { paddingBottom: 2 },
-            emoji: { fontSize: 12.5 },
-            count: { fontSize: 11.5 },
-            reactionBox: { paddingHorizontal: 6 },
+            emoji: { fontSize: 13 },
+            count: { fontSize: 12 },
+            reactionBox: { paddingHorizontal: 5 },
           }}
         />
       )}
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
   container: {
     borderBottomColor: "#111",
     borderBottomWidth: 1,
-    paddingVertical: 12.4,
+    paddingVertical: 10,
     gap: 2
   },
   headerRow: {
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
   replyBox: {
     backgroundColor: "#111", // no solid bg
     paddingVertical: 6,
-    paddingHorizontal: 8,
+    paddingHorizontal: 3,
     borderWidth: 1,
     borderColor: "rgba(219, 219, 219, 0.06)", // subtle border
     borderRadius: 6,
@@ -282,7 +282,7 @@ const styles = StyleSheet.create({
   },
   replyText: {
     color: "#999",
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "SFArabic-Regular",
     flexShrink: 1,        // allow shrinking
     includeFontPadding: false,
@@ -296,20 +296,20 @@ const styles = StyleSheet.create({
   },
   bodyText: {
     color: "#ccc",
-    fontSize: 13.1,
+    fontSize: 13.5,
     fontFamily: "SFArabic-Regular",
     lineHeight: 25,
   },
   commentsRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginLeft: 4.5,
-    gap: 1,
-    marginTop:2
+    marginLeft: 1,
+    gap: 0.4,
+    marginTop:1.5
   },
   commentsText: {
     color: "#adadad",
-    fontSize: 13,
+    fontSize: 13.5,
     fontFamily: "SFArabic-Regular",
   },
 });

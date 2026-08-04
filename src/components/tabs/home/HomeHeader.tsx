@@ -152,8 +152,8 @@ const styles = StyleSheet.create({
   },
 
   logo: {
-    width: 34,
-    height: 34,
+    width: 37,
+    height: 37,
     borderRadius: 10,
     alignSelf: "center",
     marginBottom: 2,
@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
   tabsWrapper: {
     marginHorizontal: 5,
     borderRadius: 18,
-    backgroundColor: "#0e0e0ed8",
+    backgroundColor: "#131313",
     padding: 3.7,
   },
 
@@ -191,7 +191,7 @@ const styles = StyleSheet.create({
 
   tabText: {
     color: "#9a9a9a",
-    fontSize: 13,
+    fontSize: 13.5,
     fontFamily: "SFArabic-Regular",
   },
 

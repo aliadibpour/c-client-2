@@ -191,13 +191,13 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   avatar: {
-    width: 35,
-    height: 35,
+    width: 39,
+    height: 39,
     borderRadius: 25,
     backgroundColor: "#eee",
   },
   title: {
-    fontSize: 16,
+    fontSize: 16.5,
     marginLeft: 7,
     fontFamily: "SFArabic-Heavy",
     color: "#edededff",
